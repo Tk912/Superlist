@@ -265,17 +265,21 @@ function merge(local, server) {
   };
 }
 
+let priceTimer = null;
 function commit() {
   try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
   dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(push, 600);
   render();
+  // מחיר הסל מתעדכן אחרי כל שינוי ברשימה
+  clearTimeout(priceTimer);
+  priceTimer = setTimeout(() => refreshCompare().then(render), 300);
 }
 
 // ---------- שמירה ב-Firebase (cloud.js) ----------
 // כל שמירה ממזגת את מה שבשרת עם המקומי, כך ששני אנשים יכולים לערוך באותו זמן.
-let members = [], unwatch = null;
+let members = [], unwatch = null, onlineChecked = false;
 
 async function push() {
   if (saving || !dirty || !window.Cloud?.user) return;
@@ -306,6 +310,8 @@ function onServerData(data) {
   const before = new Map(S.items.map(i => [i.id, i]));
   S = dirty ? merge(S, data) : fill(data);
   notifyOthers(before);
+  if (!onlineChecked) { onlineChecked = true; setTimeout(ensureOnlineStores, 0); }
+  refreshCompare().then(render);
   try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
   render();
   if (dirty) push();
@@ -441,6 +447,7 @@ function renderList() {
   ${done.length ? `<h2>בעגלה (${done.length})</h2><div class="card">${done.map(itemRow).join("")}</div>
     <button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center">לחיצה על פריט מעבירה אותו לעגלה</div>` : ""}
+  ${basketCard()}
   ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>` : ""}
   <div class="row" style="margin-top:8px">
     <button class="btn ghost grow" data-act="import">📥 ייבוא מ-AddIt</button>
@@ -458,7 +465,7 @@ function sendSheet() {
     ${others.length ? `<div class="muted" style="margin-bottom:8px">ברשימה יש גם פריטים ש${esc(others.join(" ו"))} הוסיפו. העגלה תכלול את כולם.</div>` : ""}
     <div class="card">${order.map(c => `<div class="result row" data-fill="${c}">
       <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""}
-      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר` : c === "victory" ? "בלי השוואת מחירים (ויקטורי לא מפרסמת קבצים כרגע)" : "בלי השוואה (לא נבחר סניף)"}</div></div>
+      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירי אונליין)" : "בלי השוואה (לא נכלל בהגדרות)"}</div></div>
       <span>←</span></div>`).join("")}</div>
     <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
   $("#sheet-root").querySelectorAll("[data-fill]").forEach(el => el.onclick = () => fillCart(el.dataset.fill));
@@ -737,9 +744,42 @@ function planSheet(day) {
 function selected() { return Object.fromEntries(Object.entries(S.settings.stores).filter(([, v]) => v)); }
 
 async function refreshCompare() {
-  const items = live().filter(i => i.code).map(i => ({ code: i.code, qty: i.qty || 1, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }));
   if (!Object.keys(selected()).length) { compareCache = null; return; }
-  try { await PriceDB.load(selected()); compareCache = PriceDB.compare(items); } catch (e) { console.warn(e); compareCache = null; }
+  try {
+    await PriceDB.load(selected());
+    // פריט חדש מקבל מוצר אוטומטית (אפשר להחליף ב-🔗), כדי שמחיר הסל יופיע מיד
+    let linked = 0;
+    for (const i of live().filter(i => !i.code && !i.noLink)) {
+      const r = PriceDB.search(i.name, 10);
+      const pick = (i.unit === "kg" && r.find(x => x.weighted)) || r[0];
+      if (pick) { matchUnit(i, pick.weighted); Object.assign(i, { code: pick.code, product: pick.name, auto: true, t: now() }); linked++; }
+    }
+    if (linked) commit();
+    const items = live().filter(i => i.code).map(i => ({ code: i.code, qty: i.qty || 1, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }));
+    compareCache = PriceDB.compare(items);
+  } catch (e) { console.warn(e); compareCache = null; }
+}
+
+// כרטיס "מחיר הסל" מתחת לרשימה: כמה עולה כל הרשימה בכל רשת
+function basketCard() {
+  const c = compareCache;
+  const open = live().filter(i => !i.done);
+  if (!open.length) return "";
+  if (!Object.keys(selected()).length) return `<div class="card muted">💰 כדי לראות כמה עולה הסל בכל רשת, בחר סניפי אונליין ב<b>הגדרות</b>.</div>`;
+  if (!c || !c.lines.length) return `<div class="card muted">💰 מחשב את מחיר הסל…</div>`;
+  const total = c.lines.length;
+  const ranked = c.chains.slice().sort((a, b) => (b.found === total) - (a.found === total) || a.total - b.total);
+  const best = ranked[0];
+  const unlinked = open.filter(i => !i.code).length;
+  return `<h2>💰 מחיר הסל</h2><div class="card">
+    ${ranked.map(x => `<div class="chain-card">
+      <div class="grow"><div class="row"><b>${esc(x.name)}</b>${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}</div>
+        <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}</div></div>
+      <div style="text-align:center"><div class="total">${money(x.total)}</div>
+        <button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button></div></div>`).join("")}
+    ${ranked.length > 1 && best.found === total && ranked[ranked.length - 1].found === total ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה: <b>${money(ranked[ranked.length - 1].total - best.total)}</b></div>` : ""}
+    ${unlinked ? `<div class="muted" style="margin-top:6px">${unlinked} פריטים לא נמצאו במחירונים ולא נספרו.</div>` : ""}
+    <button class="btn ghost small" style="width:100%;margin-top:8px" data-tab-go="prices">פירוט לפי מוצר</button></div>`;
 }
 
 function renderPrices() {
@@ -821,7 +861,8 @@ function matchUnit(item, weighted) {
 }
 function setLink(item, code, pname, weighted) {
   if (code) matchUnit(item, weighted);
-  Object.assign(item, { code, product: pname, t: now() });
+  // ביטול קישור ידני: לא לקשר שוב אוטומטית
+  Object.assign(item, { code, product: pname, auto: false, noLink: !code, t: now() });
   if (code && S.history[norm(item.name)]) S.history[norm(item.name)].unit = item.unit;
   const k = norm(item.name);
   if (S.history[k]) Object.assign(S.history[k], { code, product: pname, t: now() });
@@ -846,16 +887,57 @@ async function autoLink() {
 
 // ================= הגדרות =================
 let chainUpdates = {};
+
+// משווים רק סניפי אונליין (המחירים של האתר), לא סניפים רגילים.
+// שופרסל ורמי לוי: סניף אונליין אחד ארצי. טיב טעם: מרכז ליקוט לפי אזור.
+// אושר עד לא מוכרת אונליין. יוחננוף וויקטורי לא מפרסמות קובצי מחירים לאתר (רק מילוי עגלה).
+const ONLINE = {
+  shufersal: { fixed: "413", label: "שופרסל ONLINE" },
+  ramilevy: { fixed: "39", label: "רמי לוי אונליין (מרלוג אינטרנט)" },
+  tivtaam: { match: /^ליקוט/, hint: "מרכז הליקוט של האתר שמשרת את האזור שלך" },
+};
+const NO_ONLINE_PRICES = {
+  yochananof: "יוחננוף לא מפרסמת קובץ מחירים לאתר האונליין (רק לסניפים רגילים), לכן אין לה השוואה. מילוי עגלה עובד.",
+  victory: "ויקטורי לא מפרסמת כרגע קובצי מחירים, לכן אין לה השוואה. מילוי עגלה עובד.",
+};
+
+// מסדר את הבחירה: רק סניפי אונליין. בפעם הראשונה בוחר לבד את שופרסל ורמי לוי.
+function ensureOnlineStores() {
+  const st = S.settings.stores, names = (S.settings.storeNames ||= {});
+  let changed = false;
+  for (const c of Object.keys(st)) {
+    const o = ONLINE[c];
+    const ok = o && (o.fixed ? st[c] === o.fixed : st[c] && o.match.test(names[c] || ""));
+    if (st[c] && !ok) { st[c] = o?.fixed && S.settings.onlineV ? o.fixed : null; changed = true; }
+  }
+  if (!S.settings.onlineV) {
+    for (const [c, o] of Object.entries(ONLINE)) if (o.fixed && !st[c]) { st[c] = o.fixed; names[c] = o.label; }
+    S.settings.onlineV = 1;
+    changed = true;
+  }
+  if (!changed) return;
+  S.settings.t = now();
+  commit();
+  if (window.Cloud?.user) Cloud.setPublicStores(selected()).catch(() => {});
+  loadChains().then(refreshCompare).then(render);
+}
+
 function renderSettings() {
   const sel = S.settings.stores;
-  return `<h2>הסניפים שלך</h2>
-  <div class="card"><div class="muted" style="margin-bottom:8px">בחר סניף בכל רשת שתרצה להשוות (לרוב הסניף שממנו נשלחות ההזמנות לאזור שלך). "ללא" – הרשת לא תיכלל.</div>
-    ${Object.entries(chains).map(([c, name]) => { const u = chainUpdates[`${c}:${sel[c]}`];
-      return `<div class="item"><div class="grow"><b>${esc(name)}</b>
-      <div class="muted">${sel[c] ? (S.settings.storeNames?.[c] || "סניף " + sel[c]) + (u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · עוד לא הורד") : "ללא"}</div></div>
-      <button class="btn small ghost" data-pick-store="${c}">${sel[c] ? "שנה" : "בחר"}</button></div>`; }).join("")}
+  const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
+  return `<h2>השוואת מחירים: סניפי אונליין</h2>
+  <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא רק בין המחירים של אתרי הקנייה (סניפי האונליין), לא של סניפים רגילים.</div>
+    ${Object.entries(ONLINE).map(([c, o]) => {
+      const on = !!sel[c], u = chainUpdates[`${c}:${sel[c]}`];
+      const status = on ? (o.fixed ? o.label : S.settings.storeNames?.[c] || "סניף " + sel[c]) + when(u) : o.fixed ? "לא נכלל בהשוואה" : "לא נבחר: " + o.hint;
+      const btn = o.fixed
+        ? `<button class="btn small ghost" data-toggle-online="${c}">${on ? "הסר" : "הוסף"}</button>`
+        : `<button class="btn small ghost" data-pick-store="${c}">${on ? "שנה" : "בחר אזור"}</button>`;
+      return `<div class="item"><div class="grow"><b>${esc(chains[c] || c)}</b><div class="muted">${esc(status)}</div></div>${btn}</div>`;
+    }).join("")}
+    ${Object.entries(NO_ONLINE_PRICES).map(([c, why]) => `<div class="item"><div class="grow"><b>${esc(CART_NAMES[c])}</b><div class="muted">${esc(why)}</div></div></div>`).join("")}
   </div>
-  <div class="muted" style="margin-top:4px">המחירים מתעדכנים אוטומטית כל שעה (ב-GitHub), כך שסניף חדש שבחרת יופיע תוך שעה בערך. המקור: קבצי שקיפות המחירים שהרשתות מפרסמות לפי חוק; ייתכנו הבדלים קטנים ממחיר האתר (מבצעים, דמי משלוח).</div>
+  <div class="muted" style="margin-top:4px">המחירים מתעדכנים אוטומטית כל שעה. המקור: קבצי שקיפות המחירים שהרשתות מפרסמות לפי חוק; ייתכנו הבדלים קטנים מהאתר (מבצעי מועדון, דמי משלוח).</div>
   <h2>כפתור מילוי העגלה</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">סימנייה שממלאת את העגלה באתר הסופר מתוך הרשימה. מוסיפים אותה פעם אחת.</div>
     <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>
@@ -875,8 +957,9 @@ async function storeSheet(chain) {
     <div id="s-res" class="muted" style="padding:10px 0">טוען סניפים… (בפעם הראשונה זה יכול לקחת כמה שניות)</div>
     <div class="row"><button class="btn ghost grow" id="s-none">ללא</button><button class="btn ghost grow" data-close>סגור</button></div>`);
   let stores = [];
-  try { stores = await PriceDB.stores(chain); }
+  try { stores = (await PriceDB.stores(chain)).filter(s => !ONLINE[chain]?.match || ONLINE[chain].match.test(s.name)); }
   catch (e) { $("#s-res").textContent = "רשימת הסניפים עוד לא הורדה. היא מתעדכנת אוטומטית כל שעה – נסה שוב מאוחר יותר."; return; }
+  if (ONLINE[chain]?.hint) $("#s-q").placeholder = "בחר " + ONLINE[chain].hint;
   const draw = () => {
     const q = norm($("#s-q")?.value);
     const list = stores.filter(s => !q || norm(`${s.name} ${s.city} ${s.address}`).includes(q)).slice(0, 80);
@@ -893,6 +976,7 @@ async function storeSheet(chain) {
 function setStore(chain, id, name) {
   S.settings.stores[chain] = id;
   (S.settings.storeNames ||= {})[chain] = name;
+  S.settings.onlineV = 1;
   S.settings.t = now();
   closeSheet(); commit();
   // העדכון האוטומטי ב-GitHub קורא את הסניפים מכאן (רק מספרי סניפים, בלי מידע אישי)
@@ -963,6 +1047,10 @@ $("#view").addEventListener("click", e => {
   if (er) return recipeSheet(er.dataset.editRecipe);
   const fc = t.closest("[data-fill]");
   if (fc) return fillCart(fc.dataset.fill);
+  const go = t.closest("[data-tab-go]");
+  if (go) return document.querySelector(`nav button[data-tab="${go.dataset.tabGo}"]`)?.click();
+  const tg = t.closest("[data-toggle-online]");
+  if (tg) { const c = tg.dataset.toggleOnline; return setStore(c, S.settings.stores[c] ? null : ONLINE[c].fixed, ONLINE[c].label); }
   const ps = t.closest("[data-pick-store]");
   if (ps) return storeSheet(ps.dataset.pickStore);
   const act = t.closest("[data-act]")?.dataset.act;
@@ -1041,6 +1129,7 @@ function startCloud() {
   if (!window.Cloud || !Cloud.configured) {
     // בלי Firebase (למשל בבדיקה): הכל נשמר רק בדפדפן הזה
     gate = "ok"; setOnline(false); render();
+    onlineChecked = true; ensureOnlineStores();
     loadChains().then(refreshCompare).then(render);
     return;
   }
