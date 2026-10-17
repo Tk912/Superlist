@@ -1,0 +1,1068 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f7a4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>הסל החכם</title>
+<style>
+:root {
+  --bg: #f4f6f3; --card: #ffffff; --text: #1b2620; --muted: #6b7a71; --line: #e3e8e4;
+  --accent: #0f7a4a; --accent-soft: #e2f3ea; --warn: #b5470b; --warn-soft: #fdeee4;
+  --chip: #eef2ef; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111613; --card: #1a211d; --text: #e6ece8; --muted: #93a39a; --line: #2a332e;
+    --accent: #3cc486; --accent-soft: #173326; --warn: #f0965a; --warn-soft: #3a2518;
+    --chip: #232c27; --shadow: none;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Rubik, Arial, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+header { position: sticky; top: 0; z-index: 5; background: var(--bg);
+  padding: calc(10px + env(safe-area-inset-top)) 16px 8px; display: flex; align-items: center; gap: 10px; }
+header h1 { font-size: 20px; margin: 0; flex: 1; }
+#sync { font-size: 12px; color: var(--muted); }
+#sync.off { color: var(--warn); }
+main { padding: 0 16px calc(90px + env(safe-area-inset-bottom)); max-width: 680px; margin: 0 auto; }
+nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 6; display: flex; background: var(--card);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+nav button { flex: 1; border: 0; background: none; padding: 9px 0 8px; font-size: 12px; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+nav button .i { font-size: 21px; line-height: 1; }
+nav button.on { color: var(--accent); font-weight: 600; }
+.card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; margin: 0 0 12px; }
+.row { display: flex; align-items: center; gap: 8px; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--muted); font-size: 13px; }
+h2 { font-size: 15px; margin: 18px 2px 8px; color: var(--muted); font-weight: 600; }
+h2:first-child { margin-top: 4px; }
+input[type=text], input[type=search], select, textarea { width: 100%; border: 1px solid var(--line); background: var(--card);
+  border-radius: 10px; padding: 10px 12px; outline: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+.btn { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; white-space: nowrap; }
+@media (prefers-color-scheme: dark) { .btn { color: #0b1a12; } }
+.btn.ghost { background: var(--chip); color: var(--text); font-weight: 500; }
+.btn.small { padding: 6px 10px; font-size: 14px; }
+.btn:disabled { opacity: .5; }
+.icon-btn { border: 0; background: none; padding: 6px; cursor: pointer; font-size: 18px; color: var(--muted); line-height: 1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 0; background: var(--chip); border-radius: 999px; padding: 6px 12px; font-size: 14px; cursor: pointer; }
+.chip.add::before { content: "+ "; color: var(--accent); font-weight: 700; }
+.item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+.check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); flex: none; cursor: pointer;
+  display: grid; place-items: center; background: none; padding: 0; }
+.item.done .check { background: var(--accent); border-color: var(--accent); }
+.item.done .check::after { content: "✓"; color: #fff; font-size: 14px; font-weight: 700; }
+.item.done .name { text-decoration: line-through; color: var(--muted); }
+.item .name { cursor: pointer; }
+.qty { display: flex; align-items: center; gap: 2px; background: var(--chip); border-radius: 999px; }
+.qty button { border: 0; background: none; width: 28px; height: 28px; cursor: pointer; font-size: 16px; }
+.qty span { min-width: 18px; text-align: center; font-size: 14px; cursor: pointer; }
+.qty.kg span { min-width: 52px; white-space: nowrap; }
+.price-tag { font-size: 12px; color: var(--accent); }
+.who { font-size: 11px; background: var(--chip); color: var(--muted); border-radius: 999px; padding: 1px 7px; margin-inline-start: 4px; vertical-align: middle; }
+.price-tag.none { color: var(--muted); }
+.cat-title { font-size: 13px; color: var(--muted); margin: 6px 0 0; font-weight: 600; }
+.empty { text-align: center; color: var(--muted); padding: 28px 10px; }
+.day { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.day:last-child { border-bottom: 0; }
+.day b { display: inline-block; width: 52px; }
+.meal-chip { background: var(--accent-soft); color: var(--text); border: 0; border-radius: 999px; padding: 4px 10px; font-size: 14px; cursor: pointer; }
+.meal-chip::after { content: " ✕"; color: var(--muted); font-size: 11px; }
+.chain-card { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.chain-card:last-child { border-bottom: 0; }
+.chain-card .total { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.badge { background: var(--accent); color: #fff; border-radius: 6px; font-size: 11px; padding: 2px 6px; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .badge { color: #0b1a12; } }
+.bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: start; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.best { color: var(--accent); font-weight: 700; }
+.scroll-x { overflow-x: auto; }
+.warn { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--bg); width: 100%; max-width: 680px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+.result { padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.result:hover { background: var(--chip); }
+.result .prices { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-top: 2px; }
+.hidden { display: none !important; }
+.toast { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom)); inset-inline: 16px; margin: auto; max-width: 420px;
+  background: #1b2620; color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 30; text-align: center; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 הסל החכם</h1>
+  <span id="sync"></span>
+</header>
+<main id="view"></main>
+<nav>
+  <button data-tab="list" class="on"><span class="i">📝</span>רשימה</button>
+  <button data-tab="meals"><span class="i">🍽️</span>ארוחות</button>
+  <button data-tab="prices"><span class="i">💰</span>מחירים</button>
+  <button data-tab="settings"><span class="i">⚙️</span>הגדרות</button>
+</nav>
+<div id="sheet-root"></div>
+
+<script src="prices.js"></script>
+<script>
+"use strict";
+// ================= נתונים בסיסיים =================
+const DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const CATS = [
+  ["פירות וירקות", "עגבני מלפפון בצל שום תפוח בננה גזר פלפל חסה לימון תפוחי אדמה תפו\"א אבוקדו פטרוזיליה כוסברה שמיר נענע קישוא חציל ענבים תות אבטיח מלון פטריות כרוב ברוקולי כרובית בטטה תפוז קלמנטינה אגס אפרסק שזיף מנגו ירקות פירות דלעת סלק צנון"],
+  ["חלב וביצים", "חלב גבינ יוגורט שמנת חמאה ביצים ביצה קוטג' קוטג לבן לבנה מעדן מילקי פודינג בולגרית צפתית ריקוטה מוצרלה פרמזן"],
+  ["בשר ודגים", "עוף חזה שניצל בשר טחון סטייק כרעיים שוקיים פרגית כנפיים דג סלמון אמנון דניס נקניק נקניקיות הודו קבב המבורגר אנטריקוט"],
+  ["לחם ומאפים", "לחם פיתות פיתה לחמני חלה באגט טורטיה עוגה עוגיות קרואסון בורקס לחמניות פירורי לחם"],
+  ["מזווה", "אורז פסטה ספגטי קמח סוכר מלח שמן רוטב קטשופ מיונז חרדל תבלין פפריקה כמון כורכום פלפל שחור עדשים חומוס שעועית קפה תה דגני קורנפלקס ריבה דבש טחינה שוקולד ממרח שימורים רסק פתיתים קוסקוס אטריות תירס טונה זיתים חמוצים אבקת אפייה שמרים קקאו גרנולה שיבולת"],
+  ["משקאות", "מים סודה קולה מיץ בירה יין משקה פריגת ספרייט נביעות"],
+  ["קפואים", "קפוא קפואה קפואים גלידה אפונה ירקות קפואים בצק עלים פיצה"],
+  ["חטיפים", "במבה ביסלי חטיף צ'יפס תפוצ'יפס קרקר בייגלה פופקורן ופל אגוזים שקדים גרעינים"],
+  ["ניקיון ובית", "נייר טואלט מגבות נייר סבון כלים נוזל כלים אקונומיקה אבקת כביסה ג'ל כביסה מרכך כביסה מרכך שקיות אשפה שקיות נייר אלומיניום ניילון נצמד מגבונים ספוג מטליות מנקה פיירי טבליות למדיח"],
+  ["טיפוח ותינוקות", "שמפו מרכך שיער משחת שיניים מברשת שיניים דאודורנט סבון גוף ג'ל רחצה טיטולים חיתולים מגבונים לחים קרם תחבושות צמר גפן"],
+];
+// רשתות שאפשר למלא בהן עגלה אוטומטית (לויקטורי אין קובצי מחירים, רק מילוי עגלה)
+const CART_CHAINS = ["shufersal", "ramilevy", "yochananof", "tivtaam", "victory"];
+const CART_NAMES = { shufersal: "שופרסל", ramilevy: "רמי לוי", yochananof: "יוחננוף", tivtaam: "טיב טעם", victory: "ויקטורי" };
+const ME_KEY = "superlist-me";
+let me = (() => { try { return localStorage.getItem(ME_KEY) || ""; } catch { return ""; } })();
+const CAT_ORDER =[...CATS.map(c => c[0]), "אחר"];
+const QUICK = ["חלב", "לחם", "ביצים", "עגבניות", "מלפפונים", "בננות", "גבינה צהובה", "קוטג'", "עוף", "אורז", "פסטה", "נייר טואלט"];
+const SEED_RECIPES = [
+  ["שקשוקה", [["ביצים", 1], ["עגבניות", 6], ["בצל", 1], ["פלפל אדום", 1], ["רסק עגבניות", 1], ["לחם", 1]]],
+  ["פסטה ברוטב עגבניות", [["פסטה", 1], ["רוטב עגבניות", 1], ["גבינה צהובה מגורדת", 1], ["שום", 1]]],
+  ["עוף בתנור עם תפוחי אדמה", [["כרעיים עוף", 1], ["תפוחי אדמה", 6], ["בצל", 2], ["שום", 1], ["פפריקה", 1]]],
+  ["שניצל ופירה", [["חזה עוף", 1], ["פירורי לחם", 1], ["ביצים", 1], ["תפוחי אדמה", 6], ["חמאה", 1]]],
+  ["סלט ישראלי", [["עגבניות", 4], ["מלפפונים", 4], ["בצל סגול", 1], ["לימון", 1]]],
+];
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const now = () => Date.now();
+const norm = s => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+const money = n => "₪" + (Math.round(n * 100) / 100).toFixed(2);
+
+// השוואה בעברית: אותיות סופיות כרגילות (מלפפון/מלפפונים), ובלי ה' בסוף מילת מפתח (בננה/בננות)
+const FINALS = { "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" };
+const fin = s => norm(s).replace(/[ךםןףץ]/g, c => FINALS[c]);
+const kw = w => { const k = fin(w); return k.length >= 4 && k.endsWith("ה") ? k.slice(0, -1) : k; };
+const hasWord = (name, w) => fin(name).includes(kw(w));
+
+function guessCat(name) {
+  const n = " " + fin(name);
+  let best = null;
+  for (const [cat, words] of CATS) {
+    const ws = words.split(" ");
+    for (const w of ws.concat(ws.slice(1).map((x, k) => ws[k] + " " + x)).map(kw)) {
+      const i = n.indexOf(w);
+      if (i < 0) continue;
+      const score = [i, -w.length];
+      if (!best || score[0] < best.s[0] || (score[0] === best.s[0] && score[1] < best.s[1])) best = { cat, s: score };
+    }
+  }
+  return best ? best.cat : "אחר";
+}
+
+// ================= משקל או כמות =================
+// ירקות ופירות נקנים לפי משקל (ק"ג), כל השאר לפי כמות יחידות/אריזות
+const KG_STEP = 0.5;
+// ירקות שנמכרים ביחידות או באריזה (צרור, קופסה) למרות שהם בקטגוריית ירקות
+const PRODUCE_BY_UNIT = ["פטרוזיליה", "כוסברה", "שמיר", "נענע", "בזיליקום", "בצל ירוק", "פטריות", "תות", "שרי", "נבטים", "חסה", "כרוב", "כרובית", "אבטיח", "מלון", "אננס", "ארוז", "מארז", "סלסלה"];
+// משקל ממוצע ליחידה, כדי להמיר "6 עגבניות" (במתכון) לק"ג
+const UNIT_WEIGHT = [["תפוחי אדמה", 0.2], ["תפו\"א", 0.2], ["בטטה", 0.3], ["חציל", 0.35], ["מנגו", 0.3], ["אבוקדו", 0.25], ["פלפל", 0.2],
+  ["עגבני", 0.15], ["מלפפון", 0.12], ["בצל", 0.15], ["תפוח", 0.18], ["תפוז", 0.2], ["בננ", 0.15], ["אגס", 0.18], ["קישוא", 0.2],
+  ["גזר", 0.1], ["לימון", 0.1], ["קלמנטינ", 0.08], ["אפרסק", 0.15], ["שזיף", 0.07], ["שום", 0.05], ["סלק", 0.2], ["צנון", 0.05]];
+const unitWeight = name => (UNIT_WEIGHT.find(([w]) => hasWord(name, w)) || [0, 0.2])[1];
+const soldByWeight = name => guessCat(name) === "פירות וירקות" && !PRODUCE_BY_UNIT.some(w => hasWord(name, w));
+const roundKg = kg => Math.max(KG_STEP, Math.ceil(kg / KG_STEP - 1e-9) * KG_STEP);
+const fmtNum = x => (Math.round(x * 100) / 100).toString();
+const fmtQty = i => i.unit === "kg" ? `${fmtNum(i.qty)} ק״ג` : `${i.qty}`;
+const itemKg = i => i.unit === "kg" ? i.qty : roundKg((i.qty || 1) * unitWeight(i.name));
+
+// "1.5 ק"ג עגבניות" / "עגבניות 2 קילו" / "500 גרם בננות" / "3 עגבניות" / "חלב x2" -> {name, qty, unit}
+const KG_RE = /^(?:ק"ג|ק״ג|קג|קילו|kg)$/i, G_RE = /^(?:גרם|גר'?|ג'|g)$/i;
+function parseQty(text) {
+  let s = String(text || "").trim().replace(/\s+/g, " "), m;
+  const num = x => Number(String(x).replace(",", "."));
+  const unitOf = (n, u) => KG_RE.test(u) ? { qty: num(n), unit: "kg" } : { qty: num(n) / 1000, unit: "kg" };
+  if ((m = s.match(/^(\d+(?:[.,]\d+)?)\s*(ק"ג|ק״ג|קג|קילו|kg|גרם|גר'?|ג'|g)\s+(.+)$/i))) return { name: m[3], ...unitOf(m[1], m[2]) };
+  if ((m = s.match(/^(.+?)\s+(\d+(?:[.,]\d+)?)\s*(ק"ג|ק״ג|קג|קילו|kg|גרם|גר'?|ג'|g)$/i))) return { name: m[1], ...unitOf(m[2], m[3]) };
+  if ((m = s.match(/^(.+?)\s*(?:[xX×*]\s*(\d+)|\((\d+)\)|[-–:]\s*(\d+)(?:\s*(?:יח'?|יחידות))?)$/))) return { name: m[1], qty: Number(m[2] || m[3] || m[4]), unit: "unit" };
+  if ((m = s.match(/^(\d+)\s*[xX×*]?\s+(.+)$/))) return { name: m[2], qty: Number(m[1]), unit: "unit" };
+  if ((m = s.match(/^(.+?)\s+(\d+)\s*(?:יח'?|יחידות|אריזות|חבילות)$/))) return { name: m[1], qty: Number(m[2]), unit: "unit" };
+  return { name: s, qty: 1, unit: null };
+}
+
+// ================= מצב וסנכרון =================
+const LS = "superlist-state-v1";
+let S = loadLocal();
+let chains = {};        // {chain: "שם"}
+let compareCache = null;
+let online = false, saving = false, dirty = false, saveTimer = null;
+let tab = "list";
+
+function blank() {
+  return { rev: 0, items: [], history: {}, recipes: SEED_RECIPES.map(([name, ing]) => ({ id: uid(), t: 1, name, ingredients: ing.map(([n, q]) => ({ name: n, qty: q })) })),
+    plan: { t: 0, days: {} }, settings: { t: 0, stores: {} } };
+}
+function loadLocal() {
+  try { const s = JSON.parse(localStorage.getItem(LS)); if (s && s.items) return s; } catch {}
+  return blank();
+}
+function fill(s) {
+  const b = blank();
+  if (!s || !Array.isArray(s.items)) return b;
+  s.history ||= {}; s.recipes ||= b.recipes; s.plan ||= b.plan; s.plan.days ||= {}; s.settings ||= b.settings; s.settings.stores ||= {};
+  // פריטים מגרסה קודמת: ירקות ופירות עוברים לק"ג, כל השאר ליחידות; מחלקה מחושבת מחדש (תיקון אותיות סופיות)
+  for (const i of s.items) {
+    if (i.uv === 2) continue;
+    const h = s.history[norm(i.name)];
+    if (!i.cat || i.cat === "אחר") i.cat = h?.cat && h.cat !== "אחר" ? h.cat : guessCat(i.name);
+    const unit = h?.unit || (soldByWeight(i.name) ? "kg" : "unit");
+    // כמות 1 ("מלפפונים") = 1 ק"ג, כמו בהוספה חדשה; מספר יחידות ("6 עגבניות") -> משקל משוער
+    if (unit === "kg" && i.unit !== "kg") i.qty = (i.qty || 1) <= 1 ? 1 : roundKg(i.qty * unitWeight(i.name));
+    i.unit = unit;
+    i.uv = 2;
+  }
+  return s;
+}
+
+function mergeById(a = [], b = []) {
+  const m = new Map();
+  for (const x of [...a, ...b]) { const y = m.get(x.id); if (!y || (x.t || 0) > (y.t || 0)) m.set(x.id, x); }
+  const cutoff = now() - 30 * 864e5;
+  return [...m.values()].filter(x => !x.deleted || x.t > cutoff);
+}
+function merge(local, server) {
+  server = fill(server);
+  const hist = { ...server.history };
+  for (const [k, h] of Object.entries(local.history || {})) {
+    const o = hist[k];
+    if (!o) { hist[k] = h; continue; }
+    const buys = [...new Set([...(o.buys || []), ...(h.buys || [])])].sort((x, y) => x - y).slice(-12);
+    hist[k] = { ...((h.t || 0) > (o.t || 0) ? h : o), buys };
+  }
+  return {
+    rev: server.rev,
+    items: mergeById(server.items, local.items),
+    recipes: mergeById(server.recipes, local.recipes),
+    history: hist,
+    plan: (local.plan.t || 0) > (server.plan.t || 0) ? local.plan : server.plan,
+    settings: (local.settings.t || 0) > (server.settings.t || 0) ? local.settings : server.settings,
+  };
+}
+
+function commit() {
+  try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
+  dirty = true;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(push, 600);
+  render();
+}
+
+// ---------- שמירה ב-Firebase (cloud.js) ----------
+// כל שמירה ממזגת את מה שבשרת עם המקומי, כך ששני אנשים יכולים לערוך באותו זמן.
+let members = [], unwatch = null;
+
+async function push() {
+  if (saving || !dirty || !window.Cloud?.user) return;
+  saving = true;
+  const sent = JSON.stringify(S);
+  try {
+    const result = await Cloud.save(server => server ? merge(JSON.parse(sent), server) : JSON.parse(sent));
+    members = result.members || members;
+    // שינויים שנעשו בזמן השמירה לא הולכים לאיבוד
+    if (JSON.stringify(S) !== sent) { S = merge(S, result); dirty = true; }
+    else { S = fill(result); dirty = false; }
+    try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
+    setOnline(true);
+  } catch (e) {
+    console.warn("save failed", e);
+    setOnline(false);
+  }
+  saving = false;
+  if (dirty) { clearTimeout(saveTimer); saveTimer = setTimeout(push, 3000); }
+  render();
+}
+
+// עדכונים בזמן אמת מהשותפים
+function onServerData(data) {
+  setOnline(true);
+  members = data.members || [];
+  if (saving) return;
+  const before = new Map(S.items.map(i => [i.id, i]));
+  S = dirty ? merge(S, data) : fill(data);
+  notifyOthers(before);
+  try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
+  render();
+  if (dirty) push();
+}
+
+function pull() {} // העדכונים מגיעים לבד (onSnapshot)
+
+// הודעה כשמישהו אחר הוסיף או מחק פריטים
+function notifyOthers(before) {
+  const added = {}, removed = {};
+  for (const i of S.items) {
+    const b = before.get(i.id), who = i.by || "מישהו";
+    if (!b && !i.deleted && !(me && i.by === me)) (added[who] ||= []).push(i.name);
+    else if (b && !b.deleted && i.deleted && i.delBy && i.delBy !== me) (removed[i.delBy] ||= []).push(i.name);
+  }
+  const msg = [
+    ...Object.entries(added).map(([w, n]) => `${w} הוסיף/ה: ${n.slice(0, 4).join(", ")}${n.length > 4 ? "…" : ""}`),
+    ...Object.entries(removed).map(([w, n]) => `${w} הוריד/ה: ${n.slice(0, 4).join(", ")}${n.length > 4 ? "…" : ""}`),
+  ].join(" · ");
+  if (msg && before.size) toast(msg);
+}
+
+function setOnline(v) {
+  online = v;
+  const el = $("#sync");
+  el.textContent = v ? "● מסונכרן" : window.Cloud?.configured === false ? "● מצב מקומי" : "● לא מסונכרן";
+  el.className = v ? "" : "off";
+}
+
+// ================= רשימה =================
+const live = () => S.items.filter(i => !i.deleted);
+
+// unit: "kg" / "unit" / null (= לפי סוג המוצר). qty בק"ג כשהיחידה ק"ג.
+function addItem(name, qty = 1, from, unit = null) {
+  name = String(name || "").trim();
+  if (!name) return;
+  const key = norm(name);
+  const h = S.history[key];
+  const ex = live().find(i => norm(i.name) === key && !i.done);
+  const want = ex?.unit || h?.unit || (soldByWeight(name) ? "kg" : "unit");
+  // "3 עגבניות" לפריט שנמכר במשקל -> הערכה בק"ג ("עגבניות" בלי כמות = 1 ק"ג);
+  // "1 ק"ג" לפריט ביחידות -> יחידה אחת לפחות
+  let q = Number(qty) || 1;
+  if (want === "kg" && unit === "unit") q = q * unitWeight(name);
+  if (want === "unit" && unit === "kg") q = Math.max(1, Math.round(q));
+  if (ex) {
+    ex.qty = want === "kg" ? roundKg((ex.qty || 0) + q) : (ex.qty || 1) + q;
+    ex.t = now();
+  } else {
+    S.items.push({ id: uid(), t: now(), name, qty: want === "kg" ? roundKg(q) : q, unit: want, uv: 2, done: false, cat: h?.cat || guessCat(name),
+      code: h?.code || null, product: h?.product || null, from: from || null, by: me || null });
+  }
+}
+
+function suggestions() {
+  const onList = new Set(live().map(i => norm(i.name)));
+  const t = now(), due = [], freq = [];
+  for (const [k, h] of Object.entries(S.history)) {
+    if (onList.has(k) || !h.buys?.length) continue;
+    const b = h.buys;
+    if (b.length >= 2) {
+      const avg = (b[b.length - 1] - b[0]) / (b.length - 1);
+      if (avg > 864e5 && t - b[b.length - 1] >= avg * 0.85) { due.push({ name: h.name, score: (t - b[b.length - 1]) / avg }); continue; }
+    }
+    freq.push({ name: h.name, score: b.length });
+  }
+  due.sort((a, b) => b.score - a.score); freq.sort((a, b) => b.score - a.score);
+  return { due: due.slice(0, 8).map(x => x.name), freq: freq.slice(0, 10).map(x => x.name) };
+}
+
+function finishShopping() {
+  const done = live().filter(i => i.done);
+  if (!done.length) return toast("סמן קודם את מה שקנית");
+  const t = now();
+  for (const i of done) {
+    const k = norm(i.name), h = S.history[k] || { name: i.name, buys: [] };
+    // קנייה באותו יום נחשבת אחת
+    if (!h.buys.length || t - h.buys[h.buys.length - 1] > 12 * 36e5) h.buys = [...h.buys, t].slice(-12);
+    Object.assign(h, { name: i.name, cat: i.cat, code: i.code || h.code || null, product: i.product || h.product || null, unit: i.unit || h.unit, t });
+    S.history[k] = h;
+    Object.assign(i, { deleted: true, t });
+  }
+  commit();
+  toast(`נשמרו ${done.length} פריטים בהיסטוריה 👍`);
+}
+
+function priceFor(item) {
+  if (!item.code || !compareCache) return null;
+  const line = compareCache.lines.find(l => l.code === String(item.code).replace(/^0+/, ""));
+  if (!line) return null;
+  const e = Object.entries(line.prices);
+  if (!e.length) return { none: true };
+  e.sort((a, b) => a[1] - b[1]);
+  return { price: e[0][1], chain: chains[e[0][0]] || e[0][0], weighted: line.weighted };
+}
+
+function renderList() {
+  const items = live();
+  const open = items.filter(i => !i.done), done = items.filter(i => i.done);
+  const sug = suggestions();
+  const groups = {};
+  for (const i of open) (groups[i.cat || "אחר"] ||= []).push(i);
+  const names = [...new Set([...Object.values(S.history).map(h => h.name), ...QUICK, ...S.recipes.flatMap(r => r.ingredients.map(x => x.name))])];
+
+  const itemRow = i => {
+    const p = priceFor(i);
+    const ptag = !i.code ? "" : p?.none ? `<div class="price-tag none">לא נמצא בסניפים שנבחרו</div>`
+      : p ? `<div class="price-tag">${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${i.product ? " · " + esc(i.product) : ""}</div>` : "";
+    const who = i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "";
+    return `<div class="item ${i.done ? "done" : ""}" data-id="${i.id}">
+      <button class="check" data-act="toggle" aria-label="סמן"></button>
+      <div class="grow"><div class="name" data-act="toggle">${esc(i.name)} ${who}</div>${ptag}</div>
+      ${i.done ? `<span class="muted">${i.unit === "kg" ? fmtQty(i) : i.qty > 1 ? "×" + i.qty : ""}</span>`
+        : `<div class="qty ${i.unit === "kg" ? "kg" : ""}"><button data-act="dec" aria-label="פחות">−</button>
+          <span data-act="unit" title="${i.unit === "kg" ? "נמכר במשקל. לחיצה: להחליף ליחידות" : "כמות יחידות/אריזות. לחיצה: להחליף לק״ג"}">${fmtQty(i)}</span>
+          <button data-act="inc" aria-label="יותר">+</button></div>`}
+      <button class="icon-btn" data-act="link" title="קשר למוצר">🔗</button>
+      <button class="icon-btn" data-act="del" title="מחק">✕</button>
+    </div>`;
+  };
+
+  return `
+  <form class="card row" id="add-form" autocomplete="off">
+    <input type="text" id="add-input" list="names" placeholder="למשל: 2 חלב, או 1.5 ק״ג עגבניות" enterkeyhint="done">
+    <button class="btn">הוסף</button>
+    <datalist id="names">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+  </form>
+  ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
+  ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
+  <h2>${open.length ? `ברשימה (${open.length})` : ""}</h2>
+  ${open.length ? `<div class="card">${CAT_ORDER.filter(c => groups[c]).map(c => `<div class="cat-title">${c}</div>${groups[c].map(itemRow).join("")}`).join("")}</div>`
+    : `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או לתכנן ארוחות בלשונית ארוחות."}</div>`}
+  ${done.length ? `<h2>בעגלה (${done.length})</h2><div class="card">${done.map(itemRow).join("")}</div>
+    <button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה</button>` : ""}
+  ${items.length && !done.length ? `<div class="muted" style="text-align:center">לחיצה על פריט מעבירה אותו לעגלה</div>` : ""}
+  ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>` : ""}
+  <div class="row" style="margin-top:8px">
+    <button class="btn ghost grow" data-act="import">📥 ייבוא מ-AddIt</button>
+    <button class="btn ghost grow" data-act="share">👥 שיתוף הרשימה</button>
+  </div>`;
+}
+
+// בחירת רשת למילוי עגלה; הזולה ביותר (לפי ההשוואה) למעלה
+function sendSheet() {
+  const totals = Object.fromEntries((compareCache?.chains || []).filter(c => c.found).map(c => [c.chain, c]));
+  const order = [...CART_CHAINS].sort((a, b) => (totals[a]?.total ?? 1e9) - (totals[b]?.total ?? 1e9));
+  const best = order.find(c => totals[c]);
+  const others = [...new Set(live().filter(i => !i.done && i.by && i.by !== me).map(i => i.by))];
+  sheet(`<h2 style="margin-top:0">לאיזה סופר לשלוח?</h2>
+    ${others.length ? `<div class="muted" style="margin-bottom:8px">ברשימה יש גם פריטים ש${esc(others.join(" ו"))} הוסיפו. העגלה תכלול את כולם.</div>` : ""}
+    <div class="card">${order.map(c => `<div class="result row" data-fill="${c}">
+      <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""}
+      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר` : c === "victory" ? "בלי השוואת מחירים (ויקטורי לא מפרסמת קבצים כרגע)" : "בלי השוואה (לא נבחר סניף)"}</div></div>
+      <span>←</span></div>`).join("")}</div>
+    <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
+  $("#sheet-root").querySelectorAll("[data-fill]").forEach(el => el.onclick = () => fillCart(el.dataset.fill));
+}
+
+// ================= שיתוף =================
+function nameSheet(then) {
+  sheet(`<h2 style="margin-top:0">איך קוראים לך?</h2>
+    <div class="muted" style="margin-bottom:8px">השם יופיע ליד פריטים שאתה מוסיף, כדי שמי שמשתף איתך יידע מי הוסיף מה.</div>
+    <input type="text" id="me-name" value="${esc(me)}" placeholder="למשל: תומר">
+    <div class="row" style="margin-top:12px"><button class="btn grow" id="me-save">שמור</button><button class="btn ghost" data-close>אחר כך</button></div>`);
+  $("#me-save").onclick = () => {
+    me = $("#me-name").value.trim().slice(0, 20);
+    try { localStorage.setItem(ME_KEY, me); } catch {}
+    closeSheet(); render();
+    if (then) then();
+  };
+}
+
+// שיתוף: מוסיפים את כתובת ה-Gmail של השותף. הוא נכנס לאותו אתר עם Google ורואה את אותה רשימה.
+function shareSheet() {
+  if (!window.Cloud?.user) return toast("צריך להתחבר עם Google כדי לשתף");
+  const link = location.origin + location.pathname;
+  const mine = Cloud.email();
+  const msg = encodeURIComponent(`${me || "הוספתי אותך"} – רשימת הקניות המשותפת שלנו 🛒\n${link}\nנכנסים עם חשבון ה-Google שלך.`);
+  sheet(`<h2 style="margin-top:0">👥 שיתוף הרשימה</h2>
+    <div class="muted" style="margin-bottom:10px">מוסיפים כאן את כתובת ה-Gmail של מי שמשתף איתך (בן/בת זוג, ילדים). הוא נכנס לקישור עם חשבון ה-Google שלו, ויכול להוסיף ולהוריד פריטים. השינויים מופיעים אצל כולם מיד, ושם מי שהוסיף מופיע ליד הפריט.</div>
+    <div class="card"><b>מי משתף ברשימה</b>
+      ${members.map(m => `<div class="item"><div class="grow" style="direction:ltr;text-align:right">${esc(m)}${m === mine ? ' <span class="muted">(אתה)</span>' : ""}</div>
+        ${m !== mine ? `<button class="icon-btn" data-rm="${esc(m)}" title="הסר">✕</button>` : ""}</div>`).join("")}
+      <form class="row" id="sh-add" style="margin-top:8px" autocomplete="off">
+        <input type="email" id="sh-email" placeholder="example@gmail.com" style="direction:ltr" required>
+        <button class="btn">הוסף</button></form>
+    </div>
+    <div class="card"><b>הקישור לאפליקציה</b>
+      <input type="text" readonly value="${esc(link)}" style="margin:8px 0;direction:ltr;font-size:13px" onclick="this.select()">
+      <div class="row"><button class="btn grow" id="sh-copy">העתק קישור</button>
+      <a class="btn ghost grow" style="text-align:center;text-decoration:none" href="https://wa.me/?text=${msg}" target="_blank" rel="noopener">שלח בוואטסאפ</a></div></div>
+    <div class="row"><button class="btn ghost grow" data-act="rename">שינוי השם שלי (${esc(me)})</button>
+    <button class="btn ghost grow" id="sh-out">התנתקות</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  $("#sh-add").onsubmit = async e => {
+    e.preventDefault();
+    const em = $("#sh-email").value.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(em)) return toast("כתובת מייל לא תקינה");
+    try { await Cloud.setMembers([...members, em]); members = [...new Set([...members, em])]; toast(`${em} נוסף/ה. שלח לו/ה את הקישור`); shareSheet(); }
+    catch (err) { toast("לא הצלחתי להוסיף: " + (err.code || err.message)); }
+  };
+  $("#sheet-root").querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => {
+    if (!confirm(`להסיר את ${b.dataset.rm} מהרשימה המשותפת?`)) return;
+    try { await Cloud.setMembers(members.filter(m => m !== b.dataset.rm)); members = members.filter(m => m !== b.dataset.rm); shareSheet(); }
+    catch (err) { toast("לא הצלחתי להסיר: " + (err.code || err.message)); }
+  });
+  $("#sh-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(link); toast("הקישור הועתק"); } catch { toast("סמן את הקישור והעתק"); }
+  };
+  $("#sheet-root").querySelector("[data-act=rename]").onclick = () => nameSheet(shareSheet);
+  $("#sh-out").onclick = async () => { if (confirm("להתנתק מהחשבון במכשיר הזה?")) { closeSheet(); await Cloud.signOut(); } };
+}
+
+// ================= ייבוא מ-AddIt (או כל רשימה כטקסט) =================
+function parseListText(text) {
+  const out = [];
+  for (let line of text.split(/\r?\n/)) {
+    line = line.trim();
+    if (!line || /https?:\/\//.test(line) || /addit/i.test(line) || /:$/.test(line)) continue;
+    if (/^[✓✔✅☑]/.test(line) || /^\[[xX✓]\]/.test(line)) continue; // כבר נקנה
+    // תבליטים, תיבות סימון ומספור ("1." / "1)")
+    line = line.replace(/^(?:\[\s?\]\s*|[-–•*·▪◦☐⬜🔲]\s*|\d+[.)]\s+)+/u, "").trim();
+    const p = parseQty(line);
+    const name = p.name.trim();
+    const qty = p.unit === "kg" ? Math.min(Math.max(p.qty || KG_STEP, 0.1), 50) : Math.min(Math.max(p.qty || 1, 1), 50);
+    if (name && name.length <= 60) out.push({ name, qty, unit: p.unit });
+  }
+  return out;
+}
+
+// תצוגה מקדימה: איך הפריט ייכנס לרשימה (ק"ג או יחידות)
+function previewQty(x) {
+  const kg = soldByWeight(x.name) && x.unit !== "unit" ? true : soldByWeight(x.name) ? "est" : false;
+  if (x.unit === "kg" || kg === true) return `${x.name} ${fmtNum(x.unit === "kg" ? x.qty : 1)} ק״ג`;
+  if (kg === "est") return `${x.name} ~${fmtNum(roundKg(x.qty * unitWeight(x.name)))} ק״ג`;
+  return x.qty > 1 ? `${x.name} ×${x.qty}` : x.name;
+}
+
+function importSheet() {
+  sheet(`<h2 style="margin-top:0">ייבוא מ-AddIt</h2>
+    <div class="muted" style="margin-bottom:8px">ב-AddIt: פותחים את הרשימה ← <b>שיתוף</b> ← <b>העתקה</b> (או שליחה לעצמך בוואטסאפ ולהעתיק משם). אחר כך מדביקים כאן. פריטים שכבר סומנו כנקנו (✓) לא ייובאו.</div>
+    <textarea id="imp-text" rows="9" placeholder="חלב&#10;לחם x2&#10;1.5 ק״ג עגבניות"></textarea>
+    <div id="imp-prev" class="muted" style="padding:8px 0"></div>
+    <div class="row"><button class="btn grow" id="imp-go" disabled>הוסף לרשימה</button><button class="btn ghost" data-close>ביטול</button></div>`);
+  const ta = $("#imp-text"), go = $("#imp-go");
+  ta.oninput = () => {
+    const p = parseListText(ta.value);
+    go.disabled = !p.length;
+    go.textContent = p.length ? `הוסף ${p.length} פריטים` : "הוסף לרשימה";
+    $("#imp-prev").textContent = p.map(previewQty).join(" · ");
+  };
+  go.onclick = () => {
+    const p = parseListText(ta.value);
+    p.forEach(x => addItem(x.name, x.qty, "addit", x.unit));
+    closeSheet(); commit(); refreshCompare().then(render);
+    toast(`יובאו ${p.length} פריטים`);
+  };
+}
+
+// ================= שליחה לסופר (כפתור הסימנייה, cart.js) =================
+const CART_URLS = {
+  shufersal: "https://www.shufersal.co.il/online/he/",
+  ramilevy: "https://www.rami-levy.co.il/he/online",
+  yochananof: "https://yochananof.co.il/",
+  tivtaam: "https://www.tivtaam.co.il/",
+  victory: "https://www.victoryonline.co.il/",
+};
+
+// מה בדיוק לשים בעגלה: לכל פריט הקוד של אותה רשת (מההשוואה), כמות יחידות וק"ג
+function cartJob(chain) {
+  const items = live().filter(i => !i.done);
+  const linked = items.filter(i => i.code);
+  const lines = PriceDB.info().data[chain] && linked.length
+    ? PriceDB.compare(linked.map(i => ({ code: i.code, qty: i.qty, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }))).lines
+    : [];
+  const byName = Object.fromEntries(linked.map((i, k) => [i.id, lines[k]]));
+  return {
+    superlist: 1, chain,
+    items: items.map(i => {
+      const l = byName[i.id];
+      return {
+        name: i.name,
+        qty: i.unit === "kg" ? Math.max(1, Math.round(i.qty)) : i.qty || 1,
+        kg: itemKg(i),
+        weighted: i.unit === "kg" || !!l?.weighted,
+        code: l ? l.codes[chain] || null : i.code || null,
+        product: l ? l.names[chain] || i.product || null : i.product || null,
+      };
+    }),
+  };
+}
+
+const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function fillCart(chain) {
+  if (!live().some(i => !i.done)) return toast("אין פריטים ברשימה");
+  const job = JSON.stringify(cartJob(chain));
+  let copied = false;
+  try { await navigator.clipboard.writeText(job); copied = true; } catch {}
+  // הרשימה עוברת גם בכתובת (#sl=...), וגם בלוח – מה שהאתר ישאיר
+  window.open(CART_URLS[chain] + "#sl=" + b64url(job), "_blank", "noopener");
+  sheet(`<h2 style="margin-top:0">🛒 ${esc(CART_NAMES[chain])} נפתח בלשונית חדשה</h2>
+    <div class="card">
+      <div><b>1.</b> אם צריך, התחבר לחשבון שלך באתר.</div>
+      <div><b>2.</b> לחץ על הסימנייה <b>"🛒 מלא עגלה"</b> בסרגל הסימניות.</div>
+      <div><b>3.</b> הפריטים נוספים לעגלה, ובסוף עוברים לעגלה. בודקים ומשלמים בעצמכם.</div>
+      ${copied ? `<div class="muted" style="margin-top:6px">הרשימה גם הועתקה ללוח, ליתר ביטחון.</div>` : ""}
+    </div>
+    ${localStorage.getItem("superlist-bm") ? "" : `<div class="warn">עוד אין לך את הסימנייה? לחץ למטה על "איך מוסיפים את כפתור המילוי".</div>`}
+    <div class="row"><button class="btn ghost grow" id="fc-bm">איך מוסיפים את כפתור המילוי</button>
+    <button class="btn ghost grow" id="fc-copy">העתק את הרשימה שוב</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  $("#fc-bm").onclick = bookmarkSheet;
+  $("#fc-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(job); toast("הרשימה הועתקה"); }
+    catch { prompt("העתק את הטקסט הזה:", job); }
+  };
+}
+
+// הסבר + הסימנייה עצמה (קישור javascript: שנבנה מ-cart.js)
+async function bookmarkSheet() {
+  let code = "";
+  try { code = await (await fetch("cart.js", { cache: "no-cache" })).text(); } catch {}
+  if (!code) return toast("לא הצלחתי לטעון את כפתור המילוי");
+  // בלי שורות הערה ורווחים בתחילת שורה - כתובת סימנייה קצרה יותר
+  const href = "javascript:" + encodeURIComponent(code.split("\n").filter(l => !/^\s*\/\//.test(l)).map(l => l.trim()).join("\n"));
+  const mobile = matchMedia("(pointer: coarse)").matches;
+  sheet(`<h2 style="margin-top:0">🛒 כפתור "מלא עגלה"</h2>
+    <div class="muted" style="margin-bottom:8px">זו סימנייה (Bookmark) שמוסיפים פעם אחת לדפדפן. לוחצים עליה כשאתה באתר הסופר, והיא ממלאת שם את העגלה מהרשימה.</div>
+    ${mobile ? `<div class="card"><b>בטלפון (Chrome):</b>
+        <div>1. לחץ "העתק את קוד הכפתור".</div>
+        <div>2. הוסף סימנייה לדף הזה (⋮ ← ☆), ואז ערוך אותה: שם <b>מלא עגלה</b>, ובמקום הכתובת הדבק את הקוד.</div>
+        <div>3. באתר הסופר: הקלד בשורת הכתובת <b>מלא עגלה</b>, ולחץ על הסימנייה שמופיעה בהצעות.</div></div>`
+      : `<div class="card"><b>במחשב:</b>
+        <div>1. ודא שסרגל הסימניות מוצג (Ctrl+Shift+B).</div>
+        <div>2. <b>גרור</b> את הכפתור הירוק אל סרגל הסימניות.</div>
+        <div style="text-align:center;margin:12px 0"><a id="bm-link" class="btn" style="text-decoration:none;display:inline-block" href="${esc(href)}" onclick="event.preventDefault();toast('לא לוחצים כאן – גוררים לסרגל הסימניות')">🛒 מלא עגלה</a></div></div>`}
+    <div class="row"><button class="btn ghost grow" id="bm-copy">העתק את קוד הכפתור</button>
+    <button class="btn ghost grow" id="bm-done">הוספתי ✓</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  $("#bm-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(href); toast("הקוד הועתק. הדבק אותו בכתובת של הסימנייה"); }
+    catch { prompt("העתק את הקוד:", href); }
+  };
+  $("#bm-done").onclick = () => { try { localStorage.setItem("superlist-bm", "1"); } catch {} closeSheet(); toast("מעולה! עכשיו אפשר לשלוח לסופר"); };
+}
+
+// ================= ארוחות =================
+function renderMeals() {
+  const rmap = Object.fromEntries(S.recipes.filter(r => !r.deleted).map(r => [r.id, r]));
+  const planned = Object.values(S.plan.days).flat().filter(id => rmap[id]).length;
+  return `
+  <h2>התפריט השבועי</h2>
+  <div class="card">
+    ${DAYS.map((d, di) => `<div class="day row" style="flex-wrap:wrap">
+      <b>${d}</b>
+      ${(S.plan.days[di] || []).filter(id => rmap[id]).map((id, k) => `<button class="meal-chip" data-unplan="${di}:${k}">${esc(rmap[id].name)}</button>`).join(" ")}
+      <button class="chip add" data-plan="${di}">ארוחה</button>
+    </div>`).join("")}
+  </div>
+  <div class="row" style="margin-bottom:12px">
+    <button class="btn grow" data-act="plan-to-list" ${planned ? "" : "disabled"}>🛒 הוסף מצרכים לרשימה</button>
+    <button class="btn ghost" data-act="clear-plan" ${planned ? "" : "disabled"}>נקה שבוע</button>
+  </div>
+  <h2>המתכונים שלי</h2>
+  <div class="card">
+    ${Object.values(rmap).map(r => `<div class="item"><div class="grow"><div>${esc(r.name)}</div>
+      <div class="muted">${r.ingredients.map(x => esc(x.name)).join(", ")}</div></div>
+      <button class="icon-btn" data-edit-recipe="${r.id}">✏️</button></div>`).join("") || `<div class="empty">אין מתכונים עדיין</div>`}
+  </div>
+  <button class="btn ghost" style="width:100%" data-edit-recipe="new">+ מתכון חדש</button>`;
+}
+
+function planToList() {
+  const rmap = Object.fromEntries(S.recipes.filter(r => !r.deleted).map(r => [r.id, r]));
+  const sum = new Map();
+  for (const ids of Object.values(S.plan.days)) for (const id of ids) for (const ing of rmap[id]?.ingredients || []) {
+    // ירקות ופירות מצטברים בק"ג (6 עגבניות ≈ 0.9 ק"ג), כל השאר ביחידות
+    const k = norm(ing.name), cur = sum.get(k) || { name: ing.name, kg: 0, units: 0 };
+    const q = Number(ing.qty) || 1;
+    if (ing.unit === "kg") cur.kg += q;
+    else if (soldByWeight(ing.name)) cur.kg += q * unitWeight(ing.name);
+    else cur.units += q;
+    sum.set(k, cur);
+  }
+  for (const { name, kg, units } of sum.values()) {
+    if (kg) addItem(name, roundKg(kg), "meals", "kg");
+    if (units) addItem(name, Math.ceil(units), "meals", "unit");
+  }
+  commit();
+  toast(`נוספו ${sum.size} מצרכים לרשימה`);
+}
+
+function recipeSheet(id) {
+  const r = id === "new" ? { id: uid(), name: "", ingredients: [] } : S.recipes.find(x => x.id === id);
+  const text = r.ingredients.map(x => (x.unit === "kg" ? `${fmtNum(x.qty)} ק״ג ` : Number(x.qty) > 1 ? x.qty + " " : "") + x.name).join("\n");
+  sheet(`<h2 style="margin-top:0">${id === "new" ? "מתכון חדש" : "עריכת מתכון"}</h2>
+    <input type="text" id="r-name" placeholder="שם המתכון" value="${esc(r.name)}"><br><br>
+    <div class="muted">מצרכים – אחד בכל שורה. לירקות ופירות אפשר לכתוב משקל ("1 ק״ג תפוחי אדמה") או מספר יחידות ("6 עגבניות", ונחשב משקל משוער). לשאר: כמות ("2 פסטה").</div>
+    <textarea id="r-ing" rows="8" placeholder="6 עגבניות&#10;1 ק״ג תפוחי אדמה&#10;ביצים&#10;2 פסטה">${esc(text)}</textarea><br><br>
+    <div class="row"><button class="btn grow" id="r-save">שמור</button>
+    ${id === "new" ? "" : `<button class="btn ghost" id="r-del">מחק</button>`}
+    <button class="btn ghost" data-close>ביטול</button></div>`);
+  $("#r-save").onclick = () => {
+    const name = $("#r-name").value.trim();
+    if (!name) return toast("צריך שם למתכון");
+    const ingredients = $("#r-ing").value.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+      const p = parseQty(l);
+      return p.unit === "kg" ? { name: p.name, qty: p.qty, unit: "kg" } : { name: p.name, qty: p.qty || 1 };
+    });
+    Object.assign(r, { name, ingredients, t: now() });
+    if (id === "new") S.recipes.push(r);
+    closeSheet(); commit();
+  };
+  if ($("#r-del")) $("#r-del").onclick = () => { Object.assign(r, { deleted: true, t: now() }); closeSheet(); commit(); };
+}
+
+function planSheet(day) {
+  const recipes = S.recipes.filter(r => !r.deleted);
+  sheet(`<h2 style="margin-top:0">מה אוכלים ביום ${DAYS[day]}?</h2>
+    <div class="card">${recipes.map(r => `<div class="result" data-pick="${r.id}">${esc(r.name)}</div>`).join("")}</div>
+    <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
+  $("#sheet-root").querySelectorAll("[data-pick]").forEach(el => el.onclick = () => {
+    (S.plan.days[day] ||= []).push(el.dataset.pick); S.plan.t = now(); closeSheet(); commit();
+  });
+}
+
+// ================= מחירים =================
+function selected() { return Object.fromEntries(Object.entries(S.settings.stores).filter(([, v]) => v)); }
+
+async function refreshCompare() {
+  const items = live().filter(i => i.code).map(i => ({ code: i.code, qty: i.qty || 1, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }));
+  if (!Object.keys(selected()).length) { compareCache = null; return; }
+  try { await PriceDB.load(selected()); compareCache = PriceDB.compare(items); } catch (e) { console.warn(e); compareCache = null; }
+}
+
+function renderPrices() {
+  const sel = selected();
+  if (!Object.keys(sel).length) return `<div class="card empty">בחר סניפים להשוואה בלשונית <b>הגדרות</b> ⚙️</div>`;
+  const items = live();
+  const unlinked = items.filter(i => !i.code);
+  const c = compareCache;
+  let html = "";
+  const waiting = Object.entries(PriceDB.info().data).filter(([, d]) => d.missing).map(([ch]) => chains[ch] || ch);
+  if (waiting.length) html += `<div class="warn">המחירים של ${esc(waiting.join(", "))} עוד לא הורדו. הם מתעדכנים אוטומטית כל שעה, כך שסניף שנבחר עכשיו יופיע תוך שעה בערך.</div>`;
+  if (!items.length) html += `<div class="card empty">הרשימה ריקה – אין מה להשוות עדיין</div>`;
+  if (c && c.lines.length) {
+    const ranked = c.chains.filter(x => x.found);
+    const full = ranked.filter(x => x.found === c.lines.length);
+    const best = (full.length ? full : ranked).slice().sort((a, b) => a.total - b.total)[0];
+    const max = Math.max(...ranked.map(x => x.total), 1);
+    html += `<h2>איפה הסל הכי זול?</h2><div class="card">
+      ${c.chains.map(x => `<div class="chain-card">
+        <div class="grow"><div class="row"><b>${esc(x.name)}</b>${best && x.chain === best.chain ? `<span class="badge">הכי זול</span>` : ""}</div>
+        <div class="muted">${x.found} מתוך ${c.lines.length} מוצרים${x.missing.length ? " · חסר: " + esc(x.missing.slice(0, 3).join(", ")) + (x.missing.length > 3 ? "…" : "") : ""}</div>
+        <div class="bar"><i style="width:${(x.total / max) * 100}%"></i></div></div>
+        <div style="text-align:center"><div class="total">${money(x.total)}</div>
+        ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 מלא עגלה</button>` : ""}</div></div>`).join("")}
+      ${best && full.length > 1 ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה ביותר: <b>${money(Math.max(...full.map(x => x.total)) - best.total)}</b></div>` : ""}
+    </div>
+    <h2>פירוט לפי מוצר</h2>
+    <div class="card scroll-x"><table><tr><th>מוצר</th>${c.chains.map(x => `<th>${esc(x.name)}</th>`).join("")}</tr>
+      ${c.lines.map(l => { const vals = Object.values(l.prices); const min = Math.min(...vals);
+        return `<tr><td>${esc(l.name)}${l.weighted ? ` <span class="muted">${fmtNum(l.kg)} ק״ג</span>` : l.units > 1 ? ` ×${l.units}` : ""}</td>${c.chains.map(x => { const p = l.prices[x.chain], ap = l.approx?.[x.chain];
+          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}</td>`; }).join("")}</tr>`; }).join("")}
+    </table></div>
+    <div class="muted">≈ = לא נמצא אותו ברקוד, הושווה מוצר דומה בשמו. המחיר בטבלה הוא ליחידה או לק״ג, והסכום למעלה כבר מחושב לפי הכמות או המשקל שברשימה.</div>`;
+  }
+  if (unlinked.length) html += `<h2>מוצרים שעוד לא הותאמו (${unlinked.length})</h2>
+    <div class="card"><div class="muted" style="margin-bottom:6px">כדי להשוות, צריך לבחור לכל פריט מוצר ספציפי. הבחירה נשמרת לפעם הבאה.</div>
+      ${unlinked.map(i => `<div class="item" data-id="${i.id}"><div class="grow">${esc(i.name)}</div><button class="btn small ghost" data-act="link">בחר מוצר</button></div>`).join("")}
+      <button class="btn" style="width:100%;margin-top:8px" data-act="autolink">✨ התאמה אוטומטית לכולם</button></div>`;
+  html += `<h2>חיפוש מוצר</h2><div class="card"><input type="search" id="free-search" placeholder="למשל: קוטג' 5% או ברקוד">
+    <div id="free-results"></div></div>`;
+  return html;
+}
+
+async function searchProducts(q) {
+  if (!q.trim()) return [];
+  await PriceDB.load(selected());
+  return PriceDB.search(q);
+}
+function resultRow(p) {
+  const e = Object.entries(p.prices).sort((a, b) => a[1] - b[1]);
+  return `<div class="result" data-code="${esc(p.code)}" data-pname="${esc(p.name)}" data-weighted="${p.weighted ? 1 : ""}">
+    <div>${esc(p.name)} <span class="muted">${p.manufacturer ? esc(p.manufacturer) : ""}</span></div>
+    <div class="prices">${e.map(([c, v], k) => `<span class="${k === 0 && e.length > 1 ? "price-tag" : ""}">${esc(chains[c] || c)}: ${money(v)}</span>`).join("")}</div></div>`;
+}
+
+function linkSheet(item) {
+  sheet(`<h2 style="margin-top:0">איזה "${esc(item.name)}"?</h2>
+    <input type="search" id="l-q" value="${esc(item.name)}" placeholder="חיפוש לפי שם או ברקוד">
+    <div id="l-res" class="muted" style="padding:10px 0">מחפש…</div>
+    <div class="row">${item.code ? `<button class="btn ghost grow" id="l-unlink">בטל קישור</button>` : ""}<button class="btn ghost grow" data-close>סגור</button></div>`);
+  const run = async () => {
+    const box = $("#l-res");
+    if (!box) return;
+    try {
+      const res = await searchProducts($("#l-q").value);
+      box.innerHTML = res.length ? res.map(resultRow).join("") : "לא נמצאו מוצרים. נסה מילה אחרת.";
+      box.querySelectorAll(".result").forEach(el => el.onclick = () => { setLink(item, el.dataset.code, el.dataset.pname, !!el.dataset.weighted); closeSheet(); });
+    } catch (e) { box.textContent = "שגיאה בחיפוש: " + e.message; }
+  };
+  let t; $("#l-q").oninput = () => { clearTimeout(t); t = setTimeout(run, 300); };
+  if ($("#l-unlink")) $("#l-unlink").onclick = () => { setLink(item, null, null); closeSheet(); };
+  run();
+}
+// weighted: המוצר שנבחר נמכר במשקל (ירקות בתפזורת) או ביחידות/אריזה (למשל מארז עגבניות שרי)
+function matchUnit(item, weighted) {
+  if (weighted === undefined || weighted === null) return;
+  if (weighted && item.unit !== "kg") Object.assign(item, { unit: "kg", qty: roundKg((item.qty || 1) * unitWeight(item.name)) });
+  if (!weighted && item.unit === "kg") Object.assign(item, { unit: "unit", qty: Math.max(1, Math.round(item.qty)) });
+}
+function setLink(item, code, pname, weighted) {
+  if (code) matchUnit(item, weighted);
+  Object.assign(item, { code, product: pname, t: now() });
+  if (code && S.history[norm(item.name)]) S.history[norm(item.name)].unit = item.unit;
+  const k = norm(item.name);
+  if (S.history[k]) Object.assign(S.history[k], { code, product: pname, t: now() });
+  else S.history[k] = { name: item.name, cat: item.cat, code, product: pname, buys: [], t: now() };
+  commit(); refreshCompare().then(render);
+}
+async function autoLink() {
+  const list = live().filter(i => !i.code);
+  let n = 0;
+  toast("מתאים מוצרים…");
+  for (const i of list) {
+    try {
+      const r = await searchProducts(i.name);
+      // לפריט שנמכר במשקל עדיף מוצר במשקל (עגבניה בתפזורת ולא רסק)
+      const pick = (i.unit === "kg" && r.find(x => x.weighted)) || r[0];
+      if (pick) { matchUnit(i, pick.weighted); Object.assign(i, { code: pick.code, product: pick.name, t: now() }); n++; }
+    } catch {}
+  }
+  commit(); await refreshCompare(); render();
+  toast(`הותאמו ${n} מתוך ${list.length}. כדאי לבדוק – לחיצה על 🔗 מחליפה מוצר.`);
+}
+
+// ================= הגדרות =================
+let chainUpdates = {};
+function renderSettings() {
+  const sel = S.settings.stores;
+  return `<h2>הסניפים שלך</h2>
+  <div class="card"><div class="muted" style="margin-bottom:8px">בחר סניף בכל רשת שתרצה להשוות (לרוב הסניף שממנו נשלחות ההזמנות לאזור שלך). "ללא" – הרשת לא תיכלל.</div>
+    ${Object.entries(chains).map(([c, name]) => { const u = chainUpdates[`${c}:${sel[c]}`];
+      return `<div class="item"><div class="grow"><b>${esc(name)}</b>
+      <div class="muted">${sel[c] ? (S.settings.storeNames?.[c] || "סניף " + sel[c]) + (u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · עוד לא הורד") : "ללא"}</div></div>
+      <button class="btn small ghost" data-pick-store="${c}">${sel[c] ? "שנה" : "בחר"}</button></div>`; }).join("")}
+  </div>
+  <div class="muted" style="margin-top:4px">המחירים מתעדכנים אוטומטית כל שעה (ב-GitHub), כך שסניף חדש שבחרת יופיע תוך שעה בערך. המקור: קבצי שקיפות המחירים שהרשתות מפרסמות לפי חוק; ייתכנו הבדלים קטנים ממחיר האתר (מבצעים, דמי משלוח).</div>
+  <h2>כפתור מילוי העגלה</h2>
+  <div class="card"><div class="muted" style="margin-bottom:8px">סימנייה שממלאת את העגלה באתר הסופר מתוך הרשימה. מוסיפים אותה פעם אחת.</div>
+    <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>
+  <h2>החשבון</h2>
+  <div class="card row"><div class="grow">${window.Cloud?.user ? esc(Cloud.user.email) : "מצב מקומי (בלי Firebase)"}</div>
+    <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>`;
+}
+
+async function loadChains() {
+  chains = PriceDB.CHAIN_NAMES;
+  try { await PriceDB.load(selected()); chainUpdates = PriceDB.info().status?.stores || {}; } catch {}
+}
+
+async function storeSheet(chain) {
+  sheet(`<h2 style="margin-top:0">סניף ${esc(chains[chain])}</h2>
+    <input type="search" id="s-q" placeholder="חיפוש עיר או סניף">
+    <div id="s-res" class="muted" style="padding:10px 0">טוען סניפים… (בפעם הראשונה זה יכול לקחת כמה שניות)</div>
+    <div class="row"><button class="btn ghost grow" id="s-none">ללא</button><button class="btn ghost grow" data-close>סגור</button></div>`);
+  let stores = [];
+  try { stores = await PriceDB.stores(chain); }
+  catch (e) { $("#s-res").textContent = "רשימת הסניפים עוד לא הורדה. היא מתעדכנת אוטומטית כל שעה – נסה שוב מאוחר יותר."; return; }
+  const draw = () => {
+    const q = norm($("#s-q")?.value);
+    const list = stores.filter(s => !q || norm(`${s.name} ${s.city} ${s.address}`).includes(q)).slice(0, 80);
+    const box = $("#s-res");
+    if (!box) return;
+    box.innerHTML = list.map(s => `<div class="result" data-sid="${esc(s.id)}" data-sname="${esc(s.name)}"><b>${esc(s.name)}</b>
+      <div class="muted">${[/^\d+$/.test(s.city) ? "" : s.city, s.address].filter(Boolean).map(esc).join(", ")} · מס' ${esc(s.id)}</div></div>`).join("") || "לא נמצא";
+    box.querySelectorAll(".result").forEach(el => el.onclick = () => setStore(chain, el.dataset.sid, el.dataset.sname));
+  };
+  $("#s-q").oninput = draw;
+  $("#s-none").onclick = () => setStore(chain, null, null);
+  draw();
+}
+function setStore(chain, id, name) {
+  S.settings.stores[chain] = id;
+  (S.settings.storeNames ||= {})[chain] = name;
+  S.settings.t = now();
+  closeSheet(); commit();
+  // העדכון האוטומטי ב-GitHub קורא את הסניפים מכאן (רק מספרי סניפים, בלי מידע אישי)
+  if (window.Cloud?.user) Cloud.setPublicStores(selected()).catch(e => toast("לא הצלחתי לשמור את הסניף: " + (e.code || e.message)));
+  if (id) toast("הסניף נשמר. המחירים שלו יופיעו תוך שעה בערך");
+  loadChains().then(() => { refreshCompare().then(render); });
+}
+
+// ================= תשתית תצוגה =================
+function render() {
+  const view = $("#view");
+  const focus = document.activeElement?.id, val = focus && $("#" + focus)?.value;
+  view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings }[tab]();
+  if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
+  const fs = $("#free-search");
+  if (fs) { let t; fs.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
+    const res = await searchProducts(fs.value).catch(() => []);
+    $("#free-results").innerHTML = res.map(resultRow).join("");
+    $("#free-results").querySelectorAll(".result").forEach(el => el.onclick = () => { addItem(el.dataset.pname); const it = live().find(i => i.name === el.dataset.pname); if (it) setLink(it, el.dataset.code, el.dataset.pname, !!el.dataset.weighted); toast("נוסף לרשימה"); });
+  }, 300); }; }
+}
+
+function sheet(html) {
+  $("#sheet-root").innerHTML = `<div class="sheet-bg"><div class="sheet">${html}</div></div>`;
+  const bg = $(".sheet-bg");
+  bg.onclick = e => { if (e.target === bg || e.target.matches("[data-close]")) closeSheet(); };
+  const first = bg.querySelector("input");
+  if (first && matchMedia("(pointer: fine)").matches) first.focus();
+}
+function closeSheet() { $("#sheet-root").innerHTML = ""; }
+let toastTimer;
+function toast(msg) {
+  document.querySelector(".toast")?.remove();
+  const el = document.createElement("div"); el.className = "toast"; el.textContent = msg; document.body.append(el);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), 3200);
+}
+
+document.querySelector("nav").onclick = async e => {
+  const b = e.target.closest("button[data-tab]");
+  if (!b) return;
+  tab = b.dataset.tab;
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  window.scrollTo(0, 0);
+  render();
+  if (tab === "prices") { await refreshCompare(); render(); }
+  if (tab === "settings") { await loadChains(); render(); }
+};
+
+$("#view").addEventListener("submit", e => {
+  if (e.target.id !== "add-form") return;
+  e.preventDefault();
+  const inp = $("#add-input");
+  // "1.5 ק"ג עגבניות", "500 גרם בננות", "3 חלב", "חלב x2"
+  const p = parseQty(inp.value);
+  addItem(p.name, p.qty, null, p.unit);
+  inp.value = "";
+  commit(); refreshCompare().then(render);
+});
+
+$("#view").addEventListener("click", e => {
+  const t = e.target;
+  const add = t.closest("[data-add]");
+  if (add) { addItem(add.dataset.add); commit(); return; }
+  if (t.closest("[data-plan]")) return planSheet(Number(t.closest("[data-plan]").dataset.plan));
+  const up = t.closest("[data-unplan]");
+  if (up) { const [d, k] = up.dataset.unplan.split(":").map(Number); S.plan.days[d].splice(k, 1); S.plan.t = now(); commit(); return; }
+  const er = t.closest("[data-edit-recipe]");
+  if (er) return recipeSheet(er.dataset.editRecipe);
+  const fc = t.closest("[data-fill]");
+  if (fc) return fillCart(fc.dataset.fill);
+  const ps = t.closest("[data-pick-store]");
+  if (ps) return storeSheet(ps.dataset.pickStore);
+  const act = t.closest("[data-act]")?.dataset.act;
+  if (!act) return;
+  const item = S.items.find(i => i.id === t.closest("[data-id]")?.dataset.id);
+  const touch = () => { item.t = now(); commit(); };
+  switch (act) {
+    case "toggle": item.done = !item.done; return touch();
+    case "inc": item.qty = item.unit === "kg" ? roundKg((item.qty || 0) + KG_STEP) : (item.qty || 1) + 1; touch(); return refreshCompare().then(render);
+    case "dec": {
+      const min = item.unit === "kg" ? KG_STEP : 1;
+      if ((item.qty || min) > min) { item.qty = item.unit === "kg" ? roundKg(item.qty - KG_STEP) : item.qty - 1; touch(); refreshCompare().then(render); }
+      return;
+    }
+    case "unit": {
+      // החלפה בין ק"ג ליחידות (למשל אבטיח אחד, או מלפפונים במארז). נזכר לפעם הבאה.
+      if (item.unit === "kg") Object.assign(item, { unit: "unit", qty: Math.max(1, Math.round(item.qty / unitWeight(item.name))) });
+      else Object.assign(item, { unit: "kg", qty: roundKg(item.qty * unitWeight(item.name)) });
+      const h = S.history[norm(item.name)];
+      if (h) h.unit = item.unit; else S.history[norm(item.name)] = { name: item.name, cat: item.cat, unit: item.unit, buys: [], t: now() };
+      toast(item.unit === "kg" ? `${item.name}: לפי משקל (ק״ג)` : `${item.name}: לפי כמות (יחידות/אריזות)`);
+      touch(); return refreshCompare().then(render);
+    }
+    case "del": item.deleted = true; item.delBy = me || null; return touch();
+    case "link": return linkSheet(item);
+    case "finish": return finishShopping();
+    case "plan-to-list": return planToList();
+    case "clear-plan": S.plan = { t: now(), days: {} }; return commit();
+    case "autolink": return autoLink();
+    case "import": return importSheet();
+    case "send": return sendSheet();
+    case "share": return shareSheet();
+    case "bookmark": return bookmarkSheet();
+    case "login": return Cloud.signIn().catch(e => toast("ההתחברות נכשלה: " + (e.code || e.message)));
+    case "logout": return Cloud.signOut();
+  }
+});
+
+// ================= התחברות והפעלה =================
+let gate = "loading"; // loading / login / denied / ok
+
+function renderGate() {
+  if (gate === "loading") return `<div class="card empty">טוען…</div>`;
+  if (gate === "login") return `<div class="card" style="text-align:center;padding:28px 16px">
+      <div style="font-size:42px">🛒</div><h2 style="color:var(--text);font-size:20px">ברוך הבא לסל החכם</h2>
+      <div class="muted" style="margin-bottom:16px">נכנסים עם חשבון Google. הרשימה נשמרת בענן ומשותפת עם מי שתבחר.</div>
+      <button class="btn" data-act="login" style="width:100%">התחברות עם Google</button></div>`;
+  return `<div class="card" style="text-align:center;padding:24px 16px">
+      <div style="font-size:36px">🔒</div><h2 style="color:var(--text)">אין לך עדיין גישה לרשימה</h2>
+      <div class="muted">אתה מחובר בתור <b dir="ltr">${esc(window.Cloud?.email() || "")}</b>.<br>
+      בקש ממי שיצר את הרשימה להוסיף את המייל הזה ב"שיתוף הרשימה", ואז רענן את הדף.</div>
+      <div class="row" style="margin-top:14px"><button class="btn grow" onclick="location.reload()">רענון</button>
+      <button class="btn ghost grow" data-act="logout">חשבון אחר</button></div></div>`;
+}
+
+function listen() {
+  if (unwatch) unwatch();
+  unwatch = Cloud.watch(data => {
+    if (gate !== "ok") { gate = "ok"; render(); }
+    if (data) onServerData(data);
+  }, async code => {
+    unwatch = null;
+    if (code !== "permission-denied") { setOnline(false); return; }
+    // אין גישה: או שהרשימה עוד לא קיימת (אז יוצרים אותה), או שהמייל לא ברשימת השותפים
+    try {
+      await Cloud.createList(JSON.parse(JSON.stringify(S)));
+      toast("נוצרה רשימה חדשה. אפשר לשתף אותה דרך \"שיתוף הרשימה\"");
+      listen();
+    } catch {
+      gate = "denied"; render();
+    }
+  });
+}
+
+function startCloud() {
+  if (!window.Cloud || !Cloud.configured) {
+    // בלי Firebase (למשל בבדיקה): הכל נשמר רק בדפדפן הזה
+    gate = "ok"; setOnline(false); render();
+    loadChains().then(refreshCompare).then(render);
+    return;
+  }
+  Cloud.onUser(user => {
+    if (!user) { gate = "login"; if (unwatch) { unwatch(); unwatch = null; } render(); return; }
+    if (!me && user.displayName) { me = user.displayName.split(" ")[0]; try { localStorage.setItem(ME_KEY, me); } catch {} }
+    gate = "loading"; render();
+    listen();
+    loadChains().then(refreshCompare).then(render);
+  });
+}
+
+S = fill(S);
+setOnline(false);
+render();
+if (window.Cloud) startCloud();
+else {
+  window.addEventListener("cloud-ready", startCloud, { once: true });
+  // אם Firebase לא נטען (אין אינטרנט) - ממשיכים במצב מקומי
+  setTimeout(() => { if (!window.Cloud) { gate = "ok"; render(); } }, 8000);
+}
+</script>
+<script type="module" src="cloud.js"></script>
+</body>
+</html>

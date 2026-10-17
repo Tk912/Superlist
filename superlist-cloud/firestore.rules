@@ -1,0 +1,28 @@
+rules_version = '2';
+// הכללים שמגנים על הרשימה. מדביקים אותם ב-Firebase Console -> Firestore Database -> Rules -> Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function email() { return request.auth.token.email.lower(); }
+    function member() { return signedIn() && email() in get(/databases/$(database)/documents/lists/home).data.members; }
+
+    // הרשימה המשותפת: רק מי שברשימת החברים יכול לקרוא ולערוך.
+    // הפעם הראשונה: מי שיוצר את הרשימה חייב להכניס את עצמו לחברים.
+    match /lists/home {
+      allow read, update: if signedIn() && email() in resource.data.members;
+      allow create: if signedIn() && email() in request.resource.data.members;
+    }
+
+    // מספרי הסניפים שנבחרו (בלי שום מידע אישי): כולם יכולים לקרוא, כדי שהעדכון האוטומטי של המחירים
+    // ב-GitHub ידע מה להוריד. רק חברי הרשימה יכולים לשנות.
+    match /public/config {
+      allow read: if true;
+      allow write: if member();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
