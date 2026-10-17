@@ -38,6 +38,7 @@ CHAINS = {
 # PriceFull<chain>-<subchain>-<store>-<yyyymmdd>-<hhmmss>
 FILE_RE = re.compile(r"PriceFull\d+-(\d+)-(\d+)-(\d{8})-?(\d{4,6})", re.I)
 STAMP_RE = re.compile(r"-(20\d{6})-?(\d{4,6})")
+ONLINE_FILE_RE = re.compile(r"^pricefull\d+-(\d{3})-20\d{10}", re.I)
 
 
 # ---------- רשת ----------
@@ -162,6 +163,8 @@ def cerberus_pricefull(user, store_id):
     c = Cerberus(user)
     sid = f"{int(store_id):03d}"
     names = [n for n in c.files("PriceFull") if (m := FILE_RE.search(n)) and m.group(2) == sid]
+    # סניפי אונליין (למשל רמי לוי 039) מפרסמים בשם אחר: pricefull<רשת>-<סניף>-<yyyymmddhhmm>
+    names += [n for n in c.files("pricefull") if (m := ONLINE_FILE_RE.search(n)) and m.group(1) == sid]
     name = _latest(names)
     if not name:
         raise RuntimeError(f"לא נמצא קובץ מחירים לסניף {store_id}")
