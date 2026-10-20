@@ -110,13 +110,14 @@ td.best { color: var(--accent); font-weight: 700; }
 <main id="view"></main>
 <nav>
   <button data-tab="list" class="on"><span class="i">📝</span>רשימה</button>
-  <button data-tab="meals"><span class="i">🍽️</span>ארוחות</button>
+  <button data-tab="meals"><span class="i">📖</span>מתכונים</button>
   <button data-tab="prices"><span class="i">💰</span>מחירים</button>
   <button data-tab="settings"><span class="i">⚙️</span>הגדרות</button>
 </nav>
 <div id="sheet-root"></div>
 
 <script src="prices.js"></script>
+<script src="recipes.js"></script>
 <script>
 "use strict";
 // ================= נתונים בסיסיים =================
@@ -180,7 +181,7 @@ function guessCat(name) {
 // ירקות ופירות נקנים לפי משקל (ק"ג), כל השאר לפי כמות יחידות/אריזות
 const KG_STEP = 0.5;
 // ירקות שנמכרים ביחידות או באריזה (צרור, קופסה) למרות שהם בקטגוריית ירקות
-const PRODUCE_BY_UNIT = ["פטרוזיליה", "כוסברה", "שמיר", "נענע", "בזיליקום", "בצל ירוק", "פטריות", "תות", "שרי", "נבטים", "חסה", "כרוב", "כרובית", "אבטיח", "מלון", "אננס", "ארוז", "מארז", "סלסלה"];
+const PRODUCE_BY_UNIT = ["שום", "פטרוזיליה", "כוסברה", "שמיר", "נענע", "בזיליקום", "בצל ירוק", "פטריות", "תות", "שרי", "נבטים", "חסה", "כרוב", "כרובית", "אבטיח", "מלון", "אננס", "ארוז", "מארז", "סלסלה"];
 // משקל ממוצע ליחידה, כדי להמיר "6 עגבניות" (במתכון) לק"ג
 const UNIT_WEIGHT = [["תפוחי אדמה", 0.2], ["תפו\"א", 0.2], ["בטטה", 0.3], ["חציל", 0.35], ["מנגו", 0.3], ["אבוקדו", 0.25], ["פלפל", 0.2],
   ["עגבני", 0.15], ["מלפפון", 0.12], ["בצל", 0.15], ["תפוח", 0.18], ["תפוז", 0.2], ["בננ", 0.15], ["אגס", 0.18], ["קישוא", 0.2],
@@ -351,7 +352,8 @@ function addItem(name, qty = 1, from, unit = null) {
   const key = norm(name);
   const h = S.history[key];
   const ex = live().find(i => norm(i.name) === key && !i.done);
-  const want = ex?.unit || h?.unit || (soldByWeight(name) ? "kg" : "unit");
+  // ירקות/פירות -> ק"ג; גם כל מה שנכתב במפורש בק"ג (למשל "1.5 ק"ג כרעיים עוף" ממתכון)
+  const want = ex?.unit || h?.unit || (unit === "kg" || soldByWeight(name) ? "kg" : "unit");
   // "3 עגבניות" לפריט שנמכר במשקל -> הערכה בק"ג ("עגבניות" בלי כמות = 1 ק"ג);
   // "1 ק"ג" לפריט ביחידות -> יחידה אחת לפחות
   let q = Number(qty) || 1;
@@ -443,7 +445,7 @@ function renderList() {
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   <h2>${open.length ? `ברשימה (${open.length})` : ""}</h2>
   ${open.length ? `<div class="card">${CAT_ORDER.filter(c => groups[c]).map(c => `<div class="cat-title">${c}</div>${groups[c].map(itemRow).join("")}`).join("")}</div>`
-    : `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או לתכנן ארוחות בלשונית ארוחות."}</div>`}
+    : `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או להוסיף מצרכים ממתכון בלשונית מתכונים."}</div>`}
   ${done.length ? `<h2>בעגלה (${done.length})</h2><div class="card">${done.map(itemRow).join("")}</div>
     <button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center">לחיצה על פריט מעבירה אותו לעגלה</div>` : ""}
@@ -662,59 +664,198 @@ async function bookmarkSheet() {
   $("#bm-done").onclick = () => { try { localStorage.setItem("superlist-bm", "1"); } catch {} closeSheet(); toast("מעולה! עכשיו אפשר לשלוח לסופר"); };
 }
 
-// ================= ארוחות =================
+// ================= מתכונים =================
+// מצרך במתכון: {name, qty, unit: "kg" | "unit", pantry} (pantry = בדרך כלל יש בבית, לא מסומן כברירת מחדל)
+const PANTRY_WORDS = ["מלח", "פלפל שחור", "שמן", "סוכר", "מים", "תבלין", "פפריקה", "כמון", "כורכום", "אבקת אפייה", "סודה לשתייה",
+  "תמצית וניל", "קינמון", "אורגנו", "עלי דפנה", "חומץ", "אבקת מרק", "ציפורן", "הל", "זעתר", "פלפל לבן", "פלפל חריף יבש"];
+const isPantry = name => PANTRY_WORDS.some(w => norm(name) === w || norm(name).startsWith(w + " ") || norm(name).endsWith(" " + w));
+
+const recipeList = () => S.recipes.filter(r => !r.deleted);
+
 function renderMeals() {
-  const rmap = Object.fromEntries(S.recipes.filter(r => !r.deleted).map(r => [r.id, r]));
-  const planned = Object.values(S.plan.days).flat().filter(id => rmap[id]).length;
+  const recipes = recipeList();
   return `
-  <h2>התפריט השבועי</h2>
-  <div class="card">
-    ${DAYS.map((d, di) => `<div class="day row" style="flex-wrap:wrap">
-      <b>${d}</b>
-      ${(S.plan.days[di] || []).filter(id => rmap[id]).map((id, k) => `<button class="meal-chip" data-unplan="${di}:${k}">${esc(rmap[id].name)}</button>`).join(" ")}
-      <button class="chip add" data-plan="${di}">ארוחה</button>
-    </div>`).join("")}
+  <div class="row" style="margin:4px 0 12px">
+    <button class="btn grow" data-act="recipe-library">📚 ספריית מתכונים</button>
+    <button class="btn ghost grow" data-act="recipe-import">📋 ייבוא מתכון</button>
   </div>
-  <div class="row" style="margin-bottom:12px">
-    <button class="btn grow" data-act="plan-to-list" ${planned ? "" : "disabled"}>🛒 הוסף מצרכים לרשימה</button>
-    <button class="btn ghost" data-act="clear-plan" ${planned ? "" : "disabled"}>נקה שבוע</button>
-  </div>
-  <h2>המתכונים שלי</h2>
-  <div class="card">
-    ${Object.values(rmap).map(r => `<div class="item"><div class="grow"><div>${esc(r.name)}</div>
-      <div class="muted">${r.ingredients.map(x => esc(x.name)).join(", ")}</div></div>
-      <button class="icon-btn" data-edit-recipe="${r.id}">✏️</button></div>`).join("") || `<div class="empty">אין מתכונים עדיין</div>`}
-  </div>
-  <button class="btn ghost" style="width:100%" data-edit-recipe="new">+ מתכון חדש</button>`;
+  <h2>המתכונים שלי (${recipes.length})</h2>
+  ${recipes.length ? recipes.map(r => `<div class="card">
+      <div class="row"><div class="grow"><b>${esc(r.name)}</b>
+        <div class="muted">${r.servings ? r.servings + " מנות · " : ""}${r.ingredients.length} מצרכים</div></div>
+        <button class="icon-btn" data-edit-recipe="${r.id}" title="עריכה">✏️</button></div>
+      <div class="muted" style="margin:6px 0 8px">${r.ingredients.map(x => esc(x.name)).join(" · ")}</div>
+      <button class="btn small" style="width:100%" data-recipe-add="${r.id}">🛒 הוסף לרשימה</button>
+    </div>`).join("")
+    : `<div class="card empty">עוד אין מתכונים. בחר מתכונים מוכנים מהספרייה, או ייבא מתכון שהעתקת מאתר.</div>`}
+  <button class="btn ghost" style="width:100%" data-edit-recipe="new">+ מתכון חדש (כתיבה ידנית)</button>`;
 }
 
-function planToList() {
-  const rmap = Object.fromEntries(S.recipes.filter(r => !r.deleted).map(r => [r.id, r]));
-  const sum = new Map();
-  for (const ids of Object.values(S.plan.days)) for (const id of ids) for (const ing of rmap[id]?.ingredients || []) {
-    // ירקות ופירות מצטברים בק"ג (6 עגבניות ≈ 0.9 ק"ג), כל השאר ביחידות
-    const k = norm(ing.name), cur = sum.get(k) || { name: ing.name, kg: 0, units: 0 };
-    const q = Number(ing.qty) || 1;
-    if (ing.unit === "kg") cur.kg += q;
-    else if (soldByWeight(ing.name)) cur.kg += q * unitWeight(ing.name);
-    else cur.units += q;
-    sum.set(k, cur);
-  }
-  for (const { name, kg, units } of sum.values()) {
-    if (kg) addItem(name, roundKg(kg), "meals", "kg");
-    if (units) addItem(name, Math.ceil(units), "meals", "unit");
-  }
-  commit();
-  toast(`נוספו ${sum.size} מצרכים לרשימה`);
+// ---------- ספריית מתכונים ----------
+function libraryToRecipe(l) {
+  return { id: uid(), t: now(), name: l.name, servings: l.servings, source: "library",
+    ingredients: l.ing.map(([name, qty, u, pantry]) => ({ name, qty, unit: u === "kg" ? "kg" : "unit", pantry: !!pantry })) };
 }
 
+function librarySheet(filter = "") {
+  const mine = new Set(recipeList().map(r => norm(r.name)));
+  const q = norm(filter);
+  const list = RECIPE_LIBRARY.filter(l => !q || norm(l.name + " " + l.cat + " " + l.ing.map(x => x[0]).join(" ")).includes(q));
+  const cats = [...new Set(list.map(l => l.cat))];
+  sheet(`<h2 style="margin-top:0">📚 ספריית מתכונים</h2>
+    <input type="search" id="lib-q" placeholder="חיפוש: עוף, פסטה, מרק…" value="${esc(filter)}">
+    <div class="muted" style="margin:6px 0">כל מתכון מגיע עם המצרכים והכמויות לקנייה. "ייבא" שומר אותו אצלך, ו-🛒 מוסיף את המצרכים ישר לרשימה.</div>
+    ${cats.map(c => `<div class="cat-title" style="margin-top:10px">${esc(c)}</div><div class="card">
+      ${list.filter(l => l.cat === c).map(l => { const i = RECIPE_LIBRARY.indexOf(l), have = mine.has(norm(l.name));
+        return `<div class="item"><div class="grow"><b>${esc(l.name)}</b>
+          <div class="muted">${l.servings} מנות · ${l.ing.map(x => esc(x[0])).slice(0, 6).join(", ")}${l.ing.length > 6 ? "…" : ""}</div></div>
+          <button class="btn small ghost" data-lib-add="${i}" title="הוסף מצרכים לרשימה">🛒</button>
+          <button class="btn small ${have ? "ghost" : ""}" data-lib-import="${i}" ${have ? "disabled" : ""}>${have ? "יובא ✓" : "ייבא"}</button></div>`; }).join("")}
+    </div>`).join("") || `<div class="card empty">לא נמצא מתכון</div>`}
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  const qEl = $("#lib-q");
+  let t; qEl.oninput = () => { clearTimeout(t); t = setTimeout(() => { librarySheet(qEl.value); const el = $("#lib-q"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 250); };
+  $("#sheet-root").querySelectorAll("[data-lib-import]").forEach(b => b.onclick = () => {
+    S.recipes.push(libraryToRecipe(RECIPE_LIBRARY[+b.dataset.libImport]));
+    commit(); toast("המתכון נשמר אצלך"); librarySheet(qEl.value);
+  });
+  $("#sheet-root").querySelectorAll("[data-lib-add]").forEach(b => b.onclick = () => addRecipeSheet(libraryToRecipe(RECIPE_LIBRARY[+b.dataset.libAdd]), true));
+}
+
+// ---------- ייבוא מתכון מטקסט (מכל אתר) ----------
+const HEB_NUM = { "חצי": 0.5, "רבע": 0.25, "שליש": 1 / 3, "אחד": 1, "אחת": 1, "שני": 2, "שתי": 2, "שניים": 2, "שתיים": 2, "שלוש": 3, "שלושה": 3,
+  "ארבע": 4, "ארבעה": 4, "חמש": 5, "חמישה": 5, "שש": 6, "שישה": 6, "שבע": 7, "שבעה": 7, "שמונה": 8, "תשע": 9, "עשר": 10 };
+const FRACTIONS = { "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3 };
+const MEASURE_RE = /^(כוס(?:ות)?|כפ(?:ית|יות|ות)|כף|גר(?:ם|'|ם)?|ג'|ק"ג|ק״ג|קג|קילו(?:גרם)?|מ"ל|מ״ל|מל|ליטר(?:ים)?|יח(?:ידות|ידה|')?|שי?נ(?:י|ן)|שן|חבילה|חבילות|חבילת|פחי(?:ת|ות)|קופס(?:ה|ת|את|אות)|צרור(?:ות)?|קורט|קמצוץ|חופן|חופנים|ענף|ענפי|ענפים|שקית|שקיות|בקבוק|גבע(?:ול|ולים)|פרוס(?:ה|ות)|מעט)\s+/;
+
+function parseIngredientLine(line) {
+  let s = line.replace(/^[\s\-–•*·▪◦☐✓✔\d+[.)]\s]+(?=\D)/, "").replace(/\([^)]*\)/g, "").trim();
+  s = s.replace(/^(\d+)\s*-\s*\d+/, "$1"); // "2-3 עגבניות" -> 2
+  let qty = null, m;
+  if ((m = s.match(/^(\d+)\s*\/\s*(\d+)\s*/))) { qty = +m[1] / +m[2]; s = s.slice(m[0].length); }
+  else if ((m = s.match(/^(\d+)\s+(\d)\/(\d)\s*/))) { qty = +m[1] + +m[2] / +m[3]; s = s.slice(m[0].length); }
+  else if ((m = s.match(/^(\d+(?:[.,]\d+)?)\s*([½¼¾⅓⅔])?\s*/)) && m[0].trim()) { qty = Number(m[1].replace(",", ".")) + (FRACTIONS[m[2]] || 0); s = s.slice(m[0].length); }
+  else if ((m = s.match(/^([½¼¾⅓⅔])\s*/))) { qty = FRACTIONS[m[1]]; s = s.slice(m[0].length); }
+  else if ((m = s.match(/^(\S+)\s+/)) && HEB_NUM[m[1]] !== undefined) { qty = HEB_NUM[m[1]]; s = s.slice(m[0].length); }
+  let measure = null;
+  if ((m = s.match(MEASURE_RE))) { measure = m[1]; s = s.slice(m[0].length); }
+  // "גרם/ק"ג" שנכתבו צמוד למספר: "500גרם"
+  s = s.replace(/^(?:של|מ)\s+/, "").split(/[,–:]| - /)[0].trim();
+  // מורידים תיאורים מהסוף ("3 גזרים גדולים קלופים" -> גזרים), גם כמה ברצף
+  const DESC = /\s+ו?(?:קצוץ|קצוצה|קצוצים|קצוצות|טרי|טריה|טריים|טריות|מגורד|מגורדת|פרוס|פרוסה|פרוסים|חתוך|חתוכה|חתוכים|מבושל|מבושלת|גדול|גדולה|גדולים|גדולות|בינוני|בינונית|בינוניים|בינוניות|קטן|קטנה|קטנים|קטנות|בשל|בשלה|בשלים|בשלות|קלוף|קלופה|קלופים|קלופות|מרוסק|מרוסקת|לפי הטעם|לקישוט)$/;
+  while (DESC.test(s)) s = s.replace(DESC, "").trim();
+  if (!s || s.length > 40) return null;
+  const name = s;
+  const grams = /^(גר|ג'|גרם)/.test(measure || "") ? qty : /^(ק"ג|ק״ג|קג|קילו)/.test(measure || "") ? (qty || 1) * 1000 : null;
+  let item;
+  if (soldByWeight(name)) {
+    // ירקות ופירות: משקל בק"ג (גרמים -> ק"ג; מספר יחידות -> הערכה)
+    const kg = grams ? grams / 1000 : (qty || 1) * unitWeight(name);
+    item = { name, qty: roundKg(kg), unit: "kg" };
+  } else {
+    // כל השאר: אריזה אחת, או מספר יחידות אם נכתב ("3 ביצים" -> אריזה; "2 פחיות טונה" -> 2)
+    const count = /^(פחי|קופס|חבילה|חבילות|חבילת|יח|שקי|בקבוק)/.test(measure || "") ? Math.max(1, Math.round(qty || 1)) : 1;
+    item = { name, qty: count, unit: "unit" };
+  }
+  item.pantry = isPantry(name) || /^(קורט|קמצוץ|מעט)/.test(measure || "");
+  item.line = line.trim();
+  return item;
+}
+
+function parseRecipeText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const isHead = (l, words) => new RegExp(`^(${words})\\s*[:：]?$`).test(l.replace(/[^֐-׿\s:]/g, "").trim());
+  const ingStart = lines.findIndex(l => isHead(l, "מצרכים|רכיבים|החומרים|חומרים|מרכיבים|מצרכים למתכון|לבצק|לרוטב|למילוי"));
+  const stepStart = lines.findIndex((l, i) => i > ingStart && isHead(l, "אופן ההכנה|אופן הכנה|הכנה|הוראות הכנה|הוראות|שלבי הכנה|דרך ההכנה"));
+  const title = (lines.find((l, i) => (ingStart < 0 || i < ingStart) && l.length < 50 && !/^\d/.test(l) && !isHead(l, "מצרכים|רכיבים")) || "מתכון חדש")
+    .replace(/^מתכון\s*(ל|של)?\s*/, "").trim();
+  let body = ingStart >= 0 ? lines.slice(ingStart + 1, stepStart > ingStart ? stepStart : undefined) : lines.slice(1);
+  // בלי כותרת "מצרכים": לוקחים שורות קצרות שנראות כמו מצרכים, עד שמתחילים משפטים ארוכים
+  if (ingStart < 0) body = body.filter(l => l.length <= 45 && !/[.!?]$/.test(l));
+  const subHead = l => /:\s*$/.test(l) && l.length < 25; // "לרוטב:" וכדומה
+  const ingredients = [];
+  for (const l of body) {
+    if (subHead(l)) continue;
+    const p = parseIngredientLine(l);
+    if (p && !ingredients.some(x => norm(x.name) === norm(p.name))) ingredients.push(p);
+  }
+  const servings = +((text.match(/(\d+)\s*(?:מנות|סועדים|אנשים)/) || [])[1] || 4);
+  return { name: title, servings, ingredients };
+}
+
+function importRecipeSheet() {
+  sheet(`<h2 style="margin-top:0">📋 ייבוא מתכון</h2>
+    <div class="muted" style="margin-bottom:8px">פותחים מתכון בכל אתר (פודי, 10 דקות, מאקו, בלוגים…), מסמנים את הכותרת ואת רשימת המצרכים, מעתיקים ומדביקים כאן. המצרכים יזוהו עם הכמויות, ואפשר לתקן לפני השמירה.</div>
+    <textarea id="ri-text" rows="9" placeholder="שקשוקה&#10;&#10;מצרכים:&#10;6 עגבניות&#10;4 ביצים&#10;1 בצל&#10;2 שיני שום&#10;כפית פפריקה&#10;&#10;אופן ההכנה:&#10;…"></textarea>
+    <div id="ri-prev"></div>
+    <div class="row" style="margin-top:8px"><button class="btn grow" id="ri-go" disabled>שמור מתכון</button><button class="btn ghost" data-close>ביטול</button></div>`);
+  const ta = $("#ri-text"), go = $("#ri-go");
+  let parsed = null;
+  ta.oninput = () => {
+    parsed = parseRecipeText(ta.value);
+    go.disabled = !parsed.ingredients.length;
+    $("#ri-prev").innerHTML = parsed.ingredients.length ? `<div class="card" style="margin-top:8px"><b>${esc(parsed.name)}</b>
+      <div class="muted">${parsed.servings} מנות · ${parsed.ingredients.length} מצרכים זוהו:</div>
+      ${parsed.ingredients.map(x => `<div class="muted">• ${esc(x.name)} – ${x.unit === "kg" ? fmtNum(x.qty) + " ק״ג" : "×" + x.qty}${x.pantry ? " (בדרך כלל יש בבית)" : ""}</div>`).join("")}</div>` : "";
+  };
+  go.onclick = () => {
+    const r = { id: uid(), t: now(), source: "import", ...parsed };
+    S.recipes.push(r);
+    commit();
+    toast("המתכון נשמר");
+    recipeSheet(r.id); // לבדוק ולתקן
+  };
+}
+
+// ---------- הוספת מצרכים לרשימה (עם בחירת מספר מנות) ----------
+function addRecipeSheet(recipe, fromLibrary) {
+  const base = recipe.servings || 4;
+  let servings = base;
+  const picked = recipe.ingredients.map(x => !x.pantry);
+  const scaled = x => {
+    const f = servings / base;
+    // ק"ג גדל ביחס למנות; אריזות גדלות רק כשבאמת צריך (1.5 אריזה -> 1, 1.75 -> 2)
+    return x.unit === "kg" ? roundKg(x.qty * f) : Math.max(1, Math.round((Number(x.qty) || 1) * f - 0.25));
+  };
+  const draw = () => {
+    sheet(`<h2 style="margin-top:0">🛒 ${esc(recipe.name)}</h2>
+      <div class="row" style="margin-bottom:8px"><div class="grow">מספר מנות</div>
+        <div class="qty"><button id="rs-dec">−</button><span>${servings}</span><button id="rs-inc">+</button></div></div>
+      <div class="card">${recipe.ingredients.map((x, k) => `<label class="item" style="cursor:pointer">
+        <input type="checkbox" data-k="${k}" ${picked[k] ? "checked" : ""} style="width:20px;height:20px">
+        <div class="grow">${esc(x.name)}${x.pantry ? ` <span class="who">יש בבית?</span>` : ""}</div>
+        <span class="muted">${x.unit === "kg" ? fmtNum(scaled(x)) + " ק״ג" : "×" + scaled(x)}</span></label>`).join("")}</div>
+      <div class="muted" style="margin-bottom:8px">מה שכבר ברשימה לא יוכפל: הכמות פשוט תגדל.</div>
+      <div class="row"><button class="btn grow" id="rs-go">הוסף ${picked.filter(Boolean).length} מצרכים לרשימה</button>
+      ${fromLibrary ? `<button class="btn ghost" id="rs-save">גם שמור מתכון</button>` : ""}</div>
+      <button class="btn ghost" style="width:100%;margin-top:8px" data-close>ביטול</button>`);
+    $("#rs-dec").onclick = () => { if (servings > 1) { servings--; draw(); } };
+    $("#rs-inc").onclick = () => { servings++; draw(); };
+    $("#sheet-root").querySelectorAll("[data-k]").forEach(c => c.onchange = () => { picked[+c.dataset.k] = c.checked; draw(); });
+    $("#rs-go").onclick = () => {
+      const chosen = recipe.ingredients.filter((x, k) => picked[k]);
+      chosen.forEach(x => addItem(x.name, scaled(x), "recipe", x.unit === "kg" ? "kg" : "unit"));
+      commit(); closeSheet();
+      toast(`נוספו ${chosen.length} מצרכים מ"${recipe.name}" לרשימה`);
+      document.querySelector('nav button[data-tab="list"]')?.click();
+    };
+    if ($("#rs-save")) $("#rs-save").onclick = () => {
+      if (!recipeList().some(r => norm(r.name) === norm(recipe.name))) { S.recipes.push({ ...recipe, id: uid(), t: now() }); commit(); toast("המתכון נשמר אצלך"); }
+      $("#rs-save").remove();
+    };
+  };
+  draw();
+}
+
+// ---------- עריכת מתכון ----------
 function recipeSheet(id) {
-  const r = id === "new" ? { id: uid(), name: "", ingredients: [] } : S.recipes.find(x => x.id === id);
-  const text = r.ingredients.map(x => (x.unit === "kg" ? `${fmtNum(x.qty)} ק״ג ` : Number(x.qty) > 1 ? x.qty + " " : "") + x.name).join("\n");
+  const r = id === "new" ? { id: uid(), name: "", servings: 4, ingredients: [] } : S.recipes.find(x => x.id === id);
+  const text = r.ingredients.map(x => (x.unit === "kg" ? `${fmtNum(x.qty)} ק״ג ` : Number(x.qty) > 1 ? x.qty + " " : "") + x.name + (x.pantry ? " *" : "")).join("\n");
   sheet(`<h2 style="margin-top:0">${id === "new" ? "מתכון חדש" : "עריכת מתכון"}</h2>
-    <input type="text" id="r-name" placeholder="שם המתכון" value="${esc(r.name)}"><br><br>
-    <div class="muted">מצרכים – אחד בכל שורה. לירקות ופירות אפשר לכתוב משקל ("1 ק״ג תפוחי אדמה") או מספר יחידות ("6 עגבניות", ונחשב משקל משוער). לשאר: כמות ("2 פסטה").</div>
-    <textarea id="r-ing" rows="8" placeholder="6 עגבניות&#10;1 ק״ג תפוחי אדמה&#10;ביצים&#10;2 פסטה">${esc(text)}</textarea><br><br>
+    <div class="row"><input type="text" id="r-name" placeholder="שם המתכון" value="${esc(r.name)}" class="grow">
+      <input type="text" id="r-serv" value="${r.servings || 4}" style="width:70px;text-align:center" inputmode="numeric" title="מנות"></div>
+    <div class="muted" style="margin:8px 0">מצרך בכל שורה: "1 ק״ג תפוחי אדמה", "6 עגבניות", "2 פסטה". כוכבית בסוף (*) = בדרך כלל יש בבית.</div>
+    <textarea id="r-ing" rows="10">${esc(text)}</textarea><br><br>
     <div class="row"><button class="btn grow" id="r-save">שמור</button>
     ${id === "new" ? "" : `<button class="btn ghost" id="r-del">מחק</button>`}
     <button class="btn ghost" data-close>ביטול</button></div>`);
@@ -722,24 +863,17 @@ function recipeSheet(id) {
     const name = $("#r-name").value.trim();
     if (!name) return toast("צריך שם למתכון");
     const ingredients = $("#r-ing").value.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
-      const p = parseQty(l);
-      return p.unit === "kg" ? { name: p.name, qty: p.qty, unit: "kg" } : { name: p.name, qty: p.qty || 1 };
+      const pantry = /\*\s*$/.test(l);
+      const p = parseQty(l.replace(/\*\s*$/, ""));
+      const unit = p.unit === "kg" ? "kg" : soldByWeight(p.name) && p.unit !== "unit" ? "kg" : "unit";
+      const qty = p.unit === "kg" ? p.qty : unit === "kg" ? roundKg((p.qty || 1) * (p.unit === "unit" ? unitWeight(p.name) : 1)) : p.qty || 1;
+      return { name: p.name, qty, unit, pantry: pantry || isPantry(p.name) };
     });
-    Object.assign(r, { name, ingredients, t: now() });
+    Object.assign(r, { name, servings: Math.max(1, +$("#r-serv").value || 4), ingredients, t: now() });
     if (id === "new") S.recipes.push(r);
     closeSheet(); commit();
   };
-  if ($("#r-del")) $("#r-del").onclick = () => { Object.assign(r, { deleted: true, t: now() }); closeSheet(); commit(); };
-}
-
-function planSheet(day) {
-  const recipes = S.recipes.filter(r => !r.deleted);
-  sheet(`<h2 style="margin-top:0">מה אוכלים ביום ${DAYS[day]}?</h2>
-    <div class="card">${recipes.map(r => `<div class="result" data-pick="${r.id}">${esc(r.name)}</div>`).join("")}</div>
-    <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
-  $("#sheet-root").querySelectorAll("[data-pick]").forEach(el => el.onclick = () => {
-    (S.plan.days[day] ||= []).push(el.dataset.pick); S.plan.t = now(); closeSheet(); commit();
-  });
+  if ($("#r-del")) $("#r-del").onclick = () => { if (confirm("למחוק את המתכון?")) { Object.assign(r, { deleted: true, t: now() }); closeSheet(); commit(); } };
 }
 
 // ================= מחירים =================
@@ -1049,9 +1183,8 @@ $("#view").addEventListener("click", e => {
   const t = e.target;
   const add = t.closest("[data-add]");
   if (add) { addItem(add.dataset.add); commit(); return; }
-  if (t.closest("[data-plan]")) return planSheet(Number(t.closest("[data-plan]").dataset.plan));
-  const up = t.closest("[data-unplan]");
-  if (up) { const [d, k] = up.dataset.unplan.split(":").map(Number); S.plan.days[d].splice(k, 1); S.plan.t = now(); commit(); return; }
+  const ra = t.closest("[data-recipe-add]");
+  if (ra) return addRecipeSheet(S.recipes.find(r => r.id === ra.dataset.recipeAdd));
   const er = t.closest("[data-edit-recipe]");
   if (er) return recipeSheet(er.dataset.editRecipe);
   const fc = t.closest("[data-fill]");
@@ -1086,8 +1219,8 @@ $("#view").addEventListener("click", e => {
     case "del": item.deleted = true; item.delBy = me || null; return touch();
     case "link": return linkSheet(item);
     case "finish": return finishShopping();
-    case "plan-to-list": return planToList();
-    case "clear-plan": S.plan = { t: now(), days: {} }; return commit();
+    case "recipe-library": return librarySheet();
+    case "recipe-import": return importRecipeSheet();
     case "autolink": return autoLink();
     case "import": return importSheet();
     case "send": return sendSheet();
