@@ -56,7 +56,7 @@ def main():
     # רשימות סניפים לכל הרשתות (לבחירת סניף באפליקציה)
     for chain, cfg in prices.CHAINS.items():
         try:
-            stores = prices.shufersal_stores() if cfg["kind"] == "shufersal" else prices.cerberus_stores(cfg["user"])
+            stores = prices.chain_stores(chain)
             write_json(OUT / "stores" / f"{chain}.json", stores)
             print(f"{cfg['name']}: {len(stores)} סניפים")
         except Exception as e:
@@ -66,7 +66,7 @@ def main():
     for chain, store in selected_stores().items():
         cfg = prices.CHAINS[chain]
         try:
-            raw = prices.shufersal_pricefull(store) if cfg["kind"] == "shufersal" else prices.cerberus_pricefull(cfg["user"], store)
+            raw = prices.chain_pricefull(chain, store)
             items = [[i["code"], i["name"], i["price"], 1 if i["weighted"] else 0]
                      for i in prices._items_from_xml(prices._parse_xml(raw))]
             write_json(OUT / "prices" / f"{chain}-{store}.json", {"chain": chain, "store": store, "updated": time.time(), "items": items})
