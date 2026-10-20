@@ -462,15 +462,38 @@ function sendSheet() {
   const totals = Object.fromEntries((compareCache?.chains || []).filter(c => c.found).map(c => [c.chain, c]));
   const order = [...CART_CHAINS].sort((a, b) => (totals[a]?.total ?? 1e9) - (totals[b]?.total ?? 1e9));
   const best = order.find(c => totals[c]);
+  const fast = fastestChain(CART_CHAINS);
   const others = [...new Set(live().filter(i => !i.done && i.by && i.by !== me).map(i => i.by))];
   sheet(`<h2 style="margin-top:0">לאיזה סופר לשלוח?</h2>
     ${others.length ? `<div class="muted" style="margin-bottom:8px">ברשימה יש גם פריטים ש${esc(others.join(" ו"))} הוסיפו. העגלה תכלול את כולם.</div>` : ""}
-    <div class="card">${order.map(c => `<div class="result row" data-fill="${c}">
-      <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""}
-      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירי אונליין)" : "בלי השוואה (לא נכלל בהגדרות)"}</div></div>
+    <div class="row" style="margin-bottom:8px"><button class="btn small ${sendSort === "price" ? "" : "ghost"} grow" data-sort="price">💰 לפי מחיר</button>
+      <button class="btn small ${sendSort === "fast" ? "" : "ghost"} grow" data-sort="fast" ${hasExt() ? "" : "disabled"}>⚡ לפי משלוח קרוב</button></div>
+    ${!hasExt() ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
+    <div class="card">${(sendSort === "fast" && slots ? [...order].sort((a, b) => (slots[a]?.from || "9") .localeCompare(slots[b]?.from || "9")) : order).map(c => `<div class="result row" data-fill="${c}">
+      <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
+      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירי אונליין)" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
+      ${slotLine(c)}</div>
       <span>←</span></div>`).join("")}</div>
     <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
   $("#sheet-root").querySelectorAll("[data-fill]").forEach(el => el.onclick = () => fillCart(el.dataset.fill));
+  $("#sheet-root").querySelectorAll("[data-sort]").forEach(el => el.onclick = () => { sendSort = el.dataset.sort; sendSheet(); });
+  $("#sheet-root").querySelector("[data-act=ext-help]")?.addEventListener("click", e => { e.preventDefault(); extSheet(); });
+  if (hasExt() && !slots) requestSlots().then(() => { if ($("#sheet-root [data-sort]")) sendSheet(); });
+}
+let sendSort = "price";
+
+// הסבר התקנת התוסף
+function extSheet() {
+  sheet(`<h2 style="margin-top:0">⚡ תוסף "מועדי משלוח" לכרום</h2>
+    <div class="muted" style="margin-bottom:8px">אתרי הרשתות לא מאפשרים לאפליקציה לקרוא את מועדי המשלוח ישירות. התוסף קורא אותם בדפדפן שלך (כמו כשאתה נכנס לאתר) ומציג אותם כאן. הוא לא קונה ולא משנה כלום בחשבונות.</div>
+    <div class="card">
+      <div><b>1.</b> בכרום, פתח את הכתובת <b dir="ltr">chrome://extensions</b></div>
+      <div><b>2.</b> למעלה בצד: הפעל את <b>מצב מפתח</b> (Developer mode).</div>
+      <div><b>3.</b> לחץ <b>טעינת תוסף לא ארוז</b> (Load unpacked) ובחר את התיקייה <b dir="ltr">C:\\Users\\Dell\\SuperList-Cloud\\extension</b></div>
+      <div><b>4.</b> רענן את האפליקציה. בהגדרות יופיע "התוסף מותקן ✓".</div>
+    </div>
+    <div class="muted">שופרסל וחצי חינם מציגים מועדי משלוח רק למשתמש מחובר: כדי לראות אותם, התחבר לאתרים שלהם בכרום (פעם אחת).</div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
 }
 
 // ================= שיתוף =================
@@ -896,6 +919,47 @@ async function refreshCompare() {
   } catch (e) { console.warn(e); compareCache = null; }
 }
 
+// ================= מועדי משלוח (דרך תוסף הכרום "הסל החכם – מועדי משלוח") =================
+// האתרים של הרשתות לא מאפשרים לאפליקציה לקרוא מועדי משלוח ישירות, אז התוסף קורא אותם בדפדפן שלך.
+let slots = null, slotsAt = 0, slotsLoading = false;
+const hasExt = () => !!document.documentElement.dataset.superlistExt;
+const DAYS_SHORT = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+function fmtSlot(r) {
+  if (!r?.ok) return null;
+  if (r.eta) return r.eta;
+  const d = new Date(r.from), t = new Date(); t.setHours(0, 0, 0, 0);
+  const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - t) / 864e5);
+  const day = diff === 0 ? "היום" : diff === 1 ? "מחר" : `יום ${DAYS_SHORT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
+  return `${day} ${r.from.slice(11, 16)}${r.to ? "–" + r.to.slice(11, 16) : ""}`;
+}
+// הרשת עם המשלוח הקרוב ביותר (Wolt Market נחשבת רק אם נבחרה חנות שלה)
+function fastestChain(chainsList) {
+  if (!slots) return null;
+  const cands = chainsList.filter(c => slots[c]?.ok && (c !== "wolt" || selected().wolt));
+  if (cands.includes("wolt")) return "wolt";
+  return cands.filter(c => slots[c].from).sort((a, b) => slots[a].from.localeCompare(slots[b].from))[0] || null;
+}
+function requestSlots(force = false) {
+  if (!hasExt() || slotsLoading || (!force && slots && Date.now() - slotsAt < 10 * 60 * 1000)) return Promise.resolve(slots);
+  slotsLoading = true;
+  const id = uid();
+  const chainsList = [...new Set([...CART_CHAINS, ...Object.keys(selected())])];
+  return new Promise(resolve => {
+    const done = (res) => { window.removeEventListener("message", onMsg); slotsLoading = false; if (res) { slots = res; slotsAt = Date.now(); } resolve(slots); render(); };
+    const onMsg = ev => { if (ev.source === window && ev.data?.type === "superlist-slots" && ev.data.id === id) done(ev.data.results); };
+    window.addEventListener("message", onMsg);
+    window.postMessage({ type: "superlist-slots-request", id, address: S.settings.address || {}, chains: chainsList, force }, "*");
+    setTimeout(() => done(null), 45000);
+  });
+}
+const slotLine = c => {
+  if (!hasExt()) return "";
+  const r = slots?.[c];
+  if (!r) return slotsLoading ? `<div class="muted" style="font-size:12px">⏳ בודק מועד משלוח…</div>` : "";
+  return r.ok ? `<div style="font-size:12px;color:var(--accent)">⚡ משלוח קרוב: ${esc(fmtSlot(r))}${r.price ? ` · ${money(r.price)}` : ""}</div>`
+    : `<div class="muted" style="font-size:12px">⚡ ${esc(r.reason || "אין מידע")}</div>`;
+};
+
 // כרטיס "מחיר הסל" מתחת לרשימה: כמה עולה כל הרשימה בכל רשת
 function basketCard() {
   const c = compareCache;
@@ -907,10 +971,20 @@ function basketCard() {
   const ranked = c.chains.slice().sort((a, b) => (b.found === total) - (a.found === total) || a.total - b.total);
   const best = ranked[0];
   const unlinked = open.filter(i => !i.code).length;
-  return `<h2>💰 מחיר הסל</h2><div class="card">
+  const fast = fastestChain(ranked.map(x => x.chain));
+  // המשלוח הקרוב בכל הרשתות שאפשר להזמין בהן (גם בלי השוואת מחירים)
+  const fastAll = fastestChain([...new Set([...CART_CHAINS, ...ranked.map(x => x.chain)])]);
+  const summary = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">
+      ${best?.found ? `<span class="chip">💰 הכי זול: <b>${esc(best.name)}</b> ${money(best.total)}</span>` : ""}
+      ${fastAll ? `<span class="chip">⚡ הכי מהיר: <b>${esc(CART_NAMES[fastAll] || chains[fastAll])}</b> · ${esc(fmtSlot(slots[fastAll]))}</span>`
+        : !hasExt() ? `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`
+        : !S.settings.address?.city ? `<button class="chip" data-tab-go="settings">⚡ הוסף כתובת בהגדרות כדי לראות מועדי משלוח</button>` : ""}
+    </div>`;
+  return `<h2>💰 מחיר הסל</h2><div class="card">${summary}
     ${ranked.map(x => `<div class="chain-card">
-      <div class="grow"><div class="row"><b>${esc(x.name)}</b>${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}</div>
-        <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}</div></div>
+      <div class="grow"><div class="row"><b>${esc(x.name)}</b>${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
+        <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}</div>
+        ${slotLine(x.chain)}</div>
       <div style="text-align:center"><div class="total">${money(x.total)}</div>
         ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button>` : `<div class="muted" style="font-size:11px">הזמנה באפליקציית Wolt</div>`}</div></div>`).join("")}
     ${ranked.length > 1 && best.found === total && ranked[ranked.length - 1].found === total ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה: <b>${money(ranked[ranked.length - 1].total - best.total)}</b></div>` : ""}
@@ -1081,6 +1155,19 @@ function renderSettings() {
     ${Object.entries(NO_ONLINE_PRICES).map(([c, why]) => `<div class="item"><div class="grow"><b>${esc(CART_NAMES[c])}</b><div class="muted">${esc(why)}</div></div></div>`).join("")}
   </div>
   <div class="muted" style="margin-top:4px">המחירים מתעדכנים אוטומטית כל שעה. המקור: קבצי שקיפות המחירים שהרשתות מפרסמות לפי חוק; ייתכנו הבדלים קטנים מהאתר (מבצעי מועדון, דמי משלוח).</div>
+  <h2>⚡ כתובת למשלוח (למועדי משלוח)</h2>
+  <div class="card">
+    <div class="muted" style="margin-bottom:8px">לפי הכתובת התוסף בודק אצל כל רשת מתי המשלוח הקרוב. נשמרת רק ברשימה המשותפת שלכם.</div>
+    <form id="addr-form" autocomplete="off">
+      <input type="text" id="addr-city" placeholder="עיר (למשל: רמת גן)" value="${esc(S.settings.address?.city || "")}" style="margin-bottom:6px">
+      <div class="row"><input type="text" id="addr-street" class="grow" placeholder="רחוב" value="${esc(S.settings.address?.street || "")}">
+        <input type="text" id="addr-num" placeholder="מס'" inputmode="numeric" style="width:70px" value="${esc(S.settings.address?.num || "")}"></div>
+      <button class="btn" style="width:100%;margin-top:8px">שמור כתובת</button>
+    </form>
+    <div class="row" style="margin-top:8px"><div class="grow muted">${hasExt() ? "✓ תוסף מועדי המשלוח מותקן" : "התוסף לכרום לא מותקן"}</div>
+      <button class="btn small ghost" data-act="${hasExt() ? "slots-refresh" : "ext-help"}">${hasExt() ? "בדוק עכשיו" : "איך מתקינים"}</button></div>
+    ${hasExt() && slots ? `<div style="margin-top:6px">${[...new Set([...CART_CHAINS, ...Object.keys(selected())])].map(c => `<div class="row" style="font-size:13px"><b style="min-width:80px">${esc(CART_NAMES[c] || chains[c] || c)}</b><div class="grow">${slots[c]?.ok ? esc(fmtSlot(slots[c])) : `<span class="muted">${esc(slots[c]?.reason || "—")}</span>`}</div></div>`).join("")}</div>` : ""}
+  </div>
   <h2>כפתור מילוי העגלה</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">סימנייה שממלאת את העגלה באתר הסופר מתוך הרשימה. מוסיפים אותה פעם אחת.</div>
     <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>
@@ -1169,6 +1256,14 @@ document.querySelector("nav").onclick = async e => {
 };
 
 $("#view").addEventListener("submit", e => {
+  if (e.target.id === "addr-form") {
+    e.preventDefault();
+    S.settings.address = { city: $("#addr-city").value.trim(), street: $("#addr-street").value.trim(), num: $("#addr-num").value.trim() };
+    S.settings.t = now();
+    commit(); toast("הכתובת נשמרה");
+    slots = null; requestSlots(true);
+    return;
+  }
   if (e.target.id !== "add-form") return;
   e.preventDefault();
   const inp = $("#add-input");
@@ -1226,6 +1321,8 @@ $("#view").addEventListener("click", e => {
     case "send": return sendSheet();
     case "share": return shareSheet();
     case "bookmark": return bookmarkSheet();
+    case "ext-help": e.preventDefault(); return extSheet();
+    case "slots-refresh": slots = null; return requestSlots(true);
     case "login": return Cloud.signIn().catch(e => toast("ההתחברות נכשלה: " + (e.code || e.message)));
     case "logout": return Cloud.signOut();
   }
@@ -1272,7 +1369,7 @@ function startCloud() {
     // בלי Firebase (למשל בבדיקה): הכל נשמר רק בדפדפן הזה
     gate = "ok"; setOnline(false); render();
     onlineChecked = true; ensureOnlineStores();
-    loadChains().then(refreshCompare).then(render);
+    loadChains().then(refreshCompare).then(render).then(() => requestSlots());
     return;
   }
   Cloud.onUser(user => {
@@ -1280,7 +1377,7 @@ function startCloud() {
     if (!me && user.displayName) { me = user.displayName.split(" ")[0]; try { localStorage.setItem(ME_KEY, me); } catch {} }
     gate = "loading"; render();
     listen();
-    loadChains().then(refreshCompare).then(render);
+    loadChains().then(refreshCompare).then(render).then(() => requestSlots());
   });
 }
 
