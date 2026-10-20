@@ -134,8 +134,8 @@ const CATS = [
   ["טיפוח ותינוקות", "שמפו מרכך שיער משחת שיניים מברשת שיניים דאודורנט סבון גוף ג'ל רחצה טיטולים חיתולים מגבונים לחים קרם תחבושות צמר גפן"],
 ];
 // רשתות שאפשר למלא בהן עגלה אוטומטית (לויקטורי אין קובצי מחירים, רק מילוי עגלה)
-const CART_CHAINS = ["shufersal", "ramilevy", "yochananof", "tivtaam", "victory"];
-const CART_NAMES = { shufersal: "שופרסל", ramilevy: "רמי לוי", yochananof: "יוחננוף", tivtaam: "טיב טעם", victory: "ויקטורי" };
+const CART_CHAINS = ["shufersal", "ramilevy", "carrefour", "hazihinam", "yochananof", "tivtaam", "victory"];
+const CART_NAMES = { shufersal: "שופרסל", ramilevy: "רמי לוי", carrefour: "קרפור", hazihinam: "חצי חינם", yochananof: "יוחננוף", tivtaam: "טיב טעם", victory: "ויקטורי", wolt: "וולט מרקט" };
 const ME_KEY = "superlist-me";
 let me = (() => { try { return localStorage.getItem(ME_KEY) || ""; } catch { return ""; } })();
 const CAT_ORDER =[...CATS.map(c => c[0]), "אחר"];
@@ -579,6 +579,8 @@ const CART_URLS = {
   yochananof: "https://yochananof.co.il/",
   tivtaam: "https://www.tivtaam.co.il/",
   victory: "https://www.victoryonline.co.il/",
+  carrefour: "https://www.carrefour.co.il/",
+  hazihinam: "https://shop.hazi-hinam.co.il/",
 };
 
 // מה בדיוק לשים בעגלה: לכל פריט הקוד של אותה רשת (מההשוואה), כמות יחידות וק"ג
@@ -776,7 +778,7 @@ function basketCard() {
       <div class="grow"><div class="row"><b>${esc(x.name)}</b>${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}</div>
         <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}</div></div>
       <div style="text-align:center"><div class="total">${money(x.total)}</div>
-        <button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button></div></div>`).join("")}
+        ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button>` : `<div class="muted" style="font-size:11px">הזמנה באפליקציית Wolt</div>`}</div></div>`).join("")}
     ${ranked.length > 1 && best.found === total && ranked[ranked.length - 1].found === total ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה: <b>${money(ranked[ranked.length - 1].total - best.total)}</b></div>` : ""}
     ${unlinked ? `<div class="muted" style="margin-top:6px">${unlinked} פריטים לא נמצאו במחירונים ולא נספרו.</div>` : ""}
     <button class="btn ghost small" style="width:100%;margin-top:8px" data-tab-go="prices">פירוט לפי מוצר</button></div>`;
@@ -891,11 +893,16 @@ let chainUpdates = {};
 // משווים רק סניפי אונליין (המחירים של האתר), לא סניפים רגילים.
 // שופרסל ורמי לוי: סניף אונליין אחד ארצי. טיב טעם: מרכז ליקוט לפי אזור.
 // אושר עד לא מוכרת אונליין. יוחננוף וויקטורי לא מפרסמות קובצי מחירים לאתר (רק מילוי עגלה).
+// v = באיזו גרסה הרשת נוספה (כדי לכלול אוטומטית פעם אחת רשתות חדשות אצל משתמשים קיימים)
 const ONLINE = {
-  shufersal: { fixed: "413", label: "שופרסל ONLINE" },
-  ramilevy: { fixed: "39", label: "רמי לוי אונליין (מרלוג אינטרנט)" },
+  shufersal: { fixed: "413", label: "שופרסל ONLINE", v: 1 },
+  ramilevy: { fixed: "39", label: "רמי לוי אונליין (מרלוג אינטרנט)", v: 1 },
+  carrefour: { fixed: "471", label: "קרפור אונליין", v: 2 },
+  hazihinam: { fixed: "103", label: "חצי חינם משלוחים", v: 2 },
   tivtaam: { match: /^ליקוט/, hint: "מרכז הליקוט של האתר שמשרת את האזור שלך" },
+  wolt: { match: /וולט מרקט/, hint: "חנות וולט מרקט באזור שלך (הזמנה דרך אפליקציית Wolt)" },
 };
+const ONLINE_VERSION = 2;
 const NO_ONLINE_PRICES = {
   yochananof: "יוחננוף לא מפרסמת קובץ מחירים לאתר האונליין (רק לסניפים רגילים), לכן אין לה השוואה. מילוי עגלה עובד.",
   victory: "ויקטורי לא מפרסמת כרגע קובצי מחירים, לכן אין לה השוואה. מילוי עגלה עובד.",
@@ -908,11 +915,13 @@ function ensureOnlineStores() {
   for (const c of Object.keys(st)) {
     const o = ONLINE[c];
     const ok = o && (o.fixed ? st[c] === o.fixed : st[c] && o.match.test(names[c] || ""));
-    if (st[c] && !ok) { st[c] = o?.fixed && S.settings.onlineV ? o.fixed : null; changed = true; }
+    if (st[c] && !ok) { st[c] = o?.fixed ? o.fixed : null; changed = true; }
   }
-  if (!S.settings.onlineV) {
-    for (const [c, o] of Object.entries(ONLINE)) if (o.fixed && !st[c]) { st[c] = o.fixed; names[c] = o.label; }
-    S.settings.onlineV = 1;
+  const v = S.settings.onlineV || 0;
+  if (v < ONLINE_VERSION) {
+    // רשתות אונליין שנוספו מאז הפעם האחרונה נכללות אוטומטית (אפשר להסיר בהגדרות)
+    for (const [c, o] of Object.entries(ONLINE)) if (o.fixed && o.v > v && !st[c]) { st[c] = o.fixed; names[c] = o.label; }
+    S.settings.onlineV = ONLINE_VERSION;
     changed = true;
   }
   if (!changed) return;
@@ -976,7 +985,7 @@ async function storeSheet(chain) {
 function setStore(chain, id, name) {
   S.settings.stores[chain] = id;
   (S.settings.storeNames ||= {})[chain] = name;
-  S.settings.onlineV = 1;
+  S.settings.onlineV = Math.max(S.settings.onlineV || 0, ONLINE_VERSION);
   S.settings.t = now();
   closeSheet(); commit();
   // העדכון האוטומטי ב-GitHub קורא את הסניפים מכאן (רק מספרי סניפים, בלי מידע אישי)

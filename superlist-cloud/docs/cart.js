@@ -107,8 +107,8 @@
         location.href = "/he/dashboard/checkout";
       },
     },
-    sp: {  // טיב טעם, ויקטורי (אותה פלטפורמה)
-      match: /(tivtaam\.co\.il|victoryonline\.co\.il)$/,
+    sp: {  // טיב טעם, ויקטורי, קרפור (אותה פלטפורמה)
+      match: /(tivtaam\.co\.il|victoryonline\.co\.il|carrefour\.co\.il)$/,
       ready: () => { try { return !!angular.element(document.body).injector().get("Config").branch; } catch { return false; } },
       logged: async () => { const U = angular.element(document.body).injector().get("User"); return !!((U.session && U.session.token) || (U.data && U.data.id)); },
       async add({ name, code, kg, weighted, product }) {
@@ -131,6 +131,31 @@
         return { ok: true, product: found.localName, note: found.isWeighable ? quantity + " ק\"ג" : "×" + quantity };
       },
       done: async () => { await sleep(2500); },
+    },
+    hazihinam: {  // חצי חינם: ה-API של האתר עצמו (proxy/api), Type 1 = יחידות, Type 2 = ק"ג
+      match: /hazi-hinam\.co\.il$/,
+      ready: () => document.readyState !== "loading",
+      logged: async () => !!(await (await fetch("/proxy/api/user/info", { credentials: "include" })).json())?.Results?.UserInfo,
+      async add({ name, code, kg, product }) {
+        const call = async (u, b) => (await fetch("/proxy/api/" + u, { method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })).json();
+        const find = async q => (await call("item/getItemsBySearch",
+          { Paging: { Page: 1, PageSize: 20 }, Object: { SearchPhrase: q, SearchPhrases: [], ItemGroupping: 0 } }))?.Results?.Items || [];
+        let found = null;
+        if (code) found = (await find(code)).find(p => String(p.BarKod) === code);
+        for (const q of found ? [] : [...new Set([product, name].filter(Boolean))]) {
+          const r = (await find(q)).filter(p => p.IsInStock !== false);
+          found = r.find(p => p.Name === q) || r[0] || null;
+          if (found) break;
+        }
+        if (!found) return { ok: false, reason: "לא נמצא באתר" };
+        const byKg = !!found.IsShakil;
+        const quantity = byKg ? round05(kg) : units(this.it);
+        const res = await call("item/addItemToCart", { Object: { ItemId: found.Id, Quantity: quantity, Type: byKg ? 2 : 1, IsCalculateCart: true } });
+        if (!res?.IsOK) return { ok: false, reason: res?.ErrorResponse?.ErrorDescription?.slice(0, 80) || "האתר דחה" };
+        return { ok: true, product: found.Name, note: byKg ? quantity + " ק\"ג" : "×" + quantity };
+      },
+      done: () => { location.href = "/checkout/cart"; },
     },
     yochananof: {
       match: /yochananof\.co\.il$/,
@@ -164,7 +189,7 @@
   };
 
   const site = Object.values(SITES).find(s => s.match.test(host));
-  if (!site) { head("הכפתור עובד באתרים של שופרסל, רמי לוי, יוחננוף, טיב טעם וויקטורי. פתח את אחד מהם ולחץ שוב."); window.__slRunning = false; return; }
+  if (!site) { head("הכפתור עובד באתרים של שופרסל, רמי לוי, קרפור, חצי חינם, יוחננוף, טיב טעם וויקטורי. פתח את אחד מהם ולחץ שוב."); window.__slRunning = false; return; }
 
   head("מחכה שהאתר ייטען…");
   for (let i = 0; i < 60 && !site.ready(); i++) await sleep(500);

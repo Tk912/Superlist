@@ -2,7 +2,8 @@
 // ומחפש ומשווה סלים בלי שרת. (אותו היגיון כמו scripts/prices.py)
 "use strict";
 const PriceDB = (() => {
-  const CHAIN_NAMES = { shufersal: "שופרסל", ramilevy: "רמי לוי", yochananof: "יוחננוף", osherad: "אושר עד", tivtaam: "טיב טעם" };
+  const CHAIN_NAMES = { shufersal: "שופרסל", ramilevy: "רמי לוי", carrefour: "קרפור", hazihinam: "חצי חינם",
+                        tivtaam: "טיב טעם", wolt: "וולט מרקט", yochananof: "יוחננוף", osherad: "אושר עד" };
   const data = {};   // chain -> {store, updated, items: [[code, name, price, weighted, stems]], byCode: Map}
   let status = null;
 
