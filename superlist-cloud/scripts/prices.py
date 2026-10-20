@@ -33,6 +33,9 @@ CHAINS = {
     "yochananof": {"name": "יוחננוף", "kind": "cerberus", "user": "yohananof"},
     "osherad": {"name": "אושר עד", "kind": "cerberus", "user": "osherad"},
     "tivtaam": {"name": "טיב טעם", "kind": "cerberus", "user": "TivTaam"},
+    "carrefour": {"name": "קרפור", "kind": "carrefour"},
+    "hazihinam": {"name": "חצי חינם", "kind": "hazi"},
+    "wolt": {"name": "וולט מרקט", "kind": "wolt"},
 }
 
 # PriceFull<chain>-<subchain>-<store>-<yyyymmdd>-<hhmmss>
@@ -169,6 +172,106 @@ def cerberus_pricefull(user, store_id):
     if not name:
         raise RuntimeError(f"לא נמצא קובץ מחירים לסניף {store_id}")
     return c.download(name)
+
+
+# ---------- קרפור (prices.carrefour.co.il: רשימת הקבצים של היום מוטמעת בדף) ----------
+
+CARREFOUR = "https://prices.carrefour.co.il"
+
+
+def _carrefour_files():
+    page = _get(_opener(), CARREFOUR + "/").decode("utf-8", "replace")
+    path = re.search(r"const path = '(\d+)'", page).group(1)
+    files = json.loads(re.search(r"const files = (\[.*?\]);", page, re.S).group(1))
+    return path, [f["name"] for f in files]
+
+
+def carrefour_stores():
+    path, names = _carrefour_files()
+    name = _latest([n for n in names if n.lower().startswith("stores")])
+    return _stores_from_xml(_parse_xml(_unpack(_get(_opener(), f"{CARREFOUR}/{path}/{name}"))))
+
+
+def carrefour_pricefull(store_id):
+    path, names = _carrefour_files()
+    sid = f"{int(store_id):03d}"
+    name = _latest([n for n in names if (m := FILE_RE.search(n)) and m.group(2) == sid])
+    if not name:
+        raise RuntimeError(f"לא נמצא קובץ מחירים לסניף {store_id}")
+    return _unpack(_get(_opener(), f"{CARREFOUR}/{path}/{name}", timeout=300))
+
+
+# ---------- חצי חינם (shop.hazi-hinam.co.il/Prices, t=1 מחירים, t=3 חנויות) ----------
+
+HAZI = "https://shop.hazi-hinam.co.il/Prices"
+
+
+def _hazi_links(ftype, pages=8):
+    links = []
+    for p in range(1, pages + 1):
+        page = _get(_opener(), f"{HAZI}?p={p}&s=&f=&t={ftype}&d=").decode("utf-8", "replace")
+        found = re.findall(r'href="(https://hazihinamprod01[^"]+)"', page)
+        if not found:
+            break
+        links += found
+        if ftype == 3:
+            break
+    return links
+
+
+def hazi_stores():
+    url = _latest([l for l in _hazi_links(3) if "Stores" in l])
+    return _stores_from_xml(_parse_xml(_unpack(_get(_opener(), url))))
+
+
+def hazi_pricefull(store_id):
+    sid = f"{int(store_id):03d}"
+    url = _latest([l for l in _hazi_links(1) if (m := FILE_RE.search(l)) and m.group(2) == sid])
+    if not url:
+        raise RuntimeError(f"לא נמצא קובץ מחירים לסניף {store_id}")
+    return _unpack(_get(_opener(), url, timeout=300))
+
+
+# ---------- Wolt Market (wm-gateway.wolt.com: דף לכל יום, ובו קבצים לכל חנות) ----------
+
+WOLT = "https://wm-gateway.wolt.com/isr-prices/public/v1/"
+
+
+def _wolt_files():
+    op = _opener()
+    days = re.findall(r'href="([^"]+\.html)"', _get(op, WOLT + "index.html").decode("utf-8", "replace"))
+    for day in sorted(days, reverse=True)[:3]:  # היום, ואם עוד לא פורסם - אתמול
+        files = re.findall(r'href="([^"]+)"', _get(op, WOLT + day).decode("utf-8", "replace"))
+        if any("PriceFull" in f for f in files):
+            return files
+    return []
+
+
+def wolt_stores():
+    url = _latest([f for f in _wolt_files() if "/Stores" in f])
+    stores = _stores_from_xml(_parse_xml(_unpack(_get(_opener(), WOLT + url))))
+    return [s for s in stores if not re.search(r"closed|test", s["name"], re.I)]
+
+
+def wolt_pricefull(store_id):
+    sid = f"{int(store_id):03d}"
+    url = _latest([f for f in _wolt_files() if (m := FILE_RE.search(f)) and m.group(2) == sid])
+    if not url:
+        raise RuntimeError(f"לא נמצא קובץ מחירים לחנות {store_id}")
+    return _unpack(_get(_opener(), WOLT + url, timeout=300))
+
+
+def chain_stores(chain):
+    cfg = CHAINS[chain]
+    return {"shufersal": shufersal_stores, "carrefour": carrefour_stores, "hazi": hazi_stores, "wolt": wolt_stores,
+            }.get(cfg["kind"], lambda: cerberus_stores(cfg["user"]))()
+
+
+def chain_pricefull(chain, store_id):
+    cfg = CHAINS[chain]
+    fn = {"shufersal": shufersal_pricefull, "carrefour": carrefour_pricefull, "hazi": hazi_pricefull,
+          "wolt": wolt_pricefull}.get(cfg["kind"])
+    return fn(store_id) if fn else cerberus_pricefull(cfg["user"], store_id)
 
 
 # ---------- פענוח ----------
