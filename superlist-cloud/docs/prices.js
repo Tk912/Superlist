@@ -31,8 +31,10 @@ const PriceDB = (() => {
     return r.json();
   }
 
+  let statusAt = 0;
   async function load(selected) {
-    status = await getJSON("data/status.json").catch(() => null);
+    // קובץ הסטטוס מתעדכן פעם בכמה שעות, אז לא צריך לבקש אותו בכל שינוי ברשימה
+    if (Date.now() - statusAt > 5 * 60 * 1000) { status = await getJSON("data/status.json").catch(() => null); statusAt = Date.now(); }
     for (const c of Object.keys(data)) if (selected[c] !== data[c].store) delete data[c];
     await Promise.all(Object.entries(selected).map(async ([chain, store]) => {
       if (data[chain]?.store === store) return;
