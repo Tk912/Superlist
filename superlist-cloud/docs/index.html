@@ -7,7 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="הסל החכם">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="mobile-web-app-capable" content="yes">
 <title>הסל החכם</title>
 <style>
 :root {
@@ -454,6 +457,7 @@ function renderList() {
     <button class="btn">הוסף</button>
     <div class="ac hidden" id="ac" role="listbox"></div>
   </form>
+  ${installBanner()}
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   <h2>${open.length ? `ברשימה (${open.length})` : ""}</h2>
@@ -1255,10 +1259,54 @@ function ensureOnlineStores() {
   loadChains().then(refreshCompare).then(render);
 }
 
+// ================= התקנה כאפליקציה בטלפון =================
+// אנדרואיד/כרום: הדפדפן נותן אירוע התקנה ואנחנו מציגים כפתור. אייפון: אין אירוע, מסבירים איך מוסיפים למסך הבית.
+let installPrompt = null;
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isPhone = () => matchMedia("(pointer: coarse)").matches;
+const INSTALL_HIDE = "superlist-install-hidden";
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installPrompt = e; render(); });
+window.addEventListener("appinstalled", () => { installPrompt = null; toast("האפליקציה הותקנה 🎉 אפשר לפתוח אותה ממסך הבית"); render(); });
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+
+function installCard() {
+  if (isStandalone()) return "";
+  const how = installPrompt ? `<button class="btn" style="width:100%" data-act="install">📲 התקן את האפליקציה</button>`
+    : isIOS() ? `<ol style="margin:0;padding-inline-start:20px;line-height:1.8">
+        <li>פותחים את האתר ב-<b>Safari</b></li>
+        <li>לוחצים על כפתור השיתוף <b>⬆️</b> (בתחתית המסך)</li>
+        <li>בוחרים <b>"הוספה למסך הבית"</b> ואז <b>"הוסף"</b></li></ol>`
+    : `<ol style="margin:0;padding-inline-start:20px;line-height:1.8">
+        <li>פותחים את האתר ב-<b>Chrome</b></li>
+        <li>לוחצים על התפריט <b>⋮</b> למעלה</li>
+        <li>בוחרים <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b></li></ol>`;
+  return `<h2>📱 אפליקציה לטלפון</h2>
+  <div class="card"><div class="muted" style="margin-bottom:8px">מתקינים פעם אחת ומקבלים אייקון במסך הבית. האפליקציה נפתחת במסך מלא, עובדת גם בלי קליטה (למשל בסופר), והרשימה מסונכרנת עם המחשב ועם השותף.</div>
+    ${how}</div>`;
+}
+// באנר חד-פעמי ברשימה, רק בטלפון שעוד לא התקין
+function installBanner() {
+  let hidden = false; try { hidden = !!localStorage.getItem(INSTALL_HIDE); } catch {}
+  if (hidden || isStandalone() || !isPhone()) return "";
+  return `<div class="card row" style="align-items:center"><div class="grow">📱 <b>להתקין כאפליקציה?</b><div class="muted">אייקון במסך הבית, מסך מלא, עובד גם בלי קליטה</div></div>
+    <button class="btn small" data-act="${installPrompt ? "install" : "install-help"}">${installPrompt ? "התקן" : "איך?"}</button>
+    <button class="icon-btn" data-act="install-hide" aria-label="לא עכשיו">✕</button></div>`;
+}
+async function doInstall() {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice.catch(() => ({}));
+  installPrompt = null;
+  if (outcome !== "accepted") toast("אפשר להתקין בכל זמן מההגדרות");
+  render();
+}
+
 function renderSettings() {
   const sel = S.settings.stores;
   const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
-  return `<h2>השוואת מחירים: סניפי אונליין</h2>
+  return `${installCard()}
+  <h2>השוואת מחירים: סניפי אונליין</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא רק בין המחירים של אתרי הקנייה (סניפי האונליין), לא של סניפים רגילים.</div>
     ${Object.entries(ONLINE).map(([c, o]) => {
       const on = !!sel[c], u = chainUpdates[`${c}:${sel[c]}`];
@@ -1409,6 +1457,9 @@ $("#view").addEventListener("click", e => {
   if (ps) return storeSheet(ps.dataset.pickStore);
   const act = t.closest("[data-act]")?.dataset.act;
   if (!act) return;
+  if (act === "install") return doInstall();
+  if (act === "install-help") return sheet(`${installCard()}<button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  if (act === "install-hide") { try { localStorage.setItem(INSTALL_HIDE, "1"); } catch {} toast("אפשר להתקין בכל זמן מההגדרות"); return render(); }
   const item = S.items.find(i => i.id === t.closest("[data-id]")?.dataset.id);
   const touch = () => { item.t = now(); commit(); };
   switch (act) {
@@ -1501,6 +1552,8 @@ function startCloud() {
 
 S = fill(S);
 setOnline(false);
+// קיצורי הדרך מהאייקון (לחיצה ארוכה): ./#list, ./#meals
+{ const h = location.hash.slice(1); if (["list", "meals", "prices", "settings"].includes(h)) { tab = h; document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x.dataset.tab === h)); } }
 render();
 if (window.Cloud) startCloud();
 else {
