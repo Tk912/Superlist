@@ -97,6 +97,20 @@ td.best { color: var(--accent); font-weight: 700; }
 .result { padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
 .result:hover { background: var(--chip); }
 .result .prices { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-top: 2px; }
+.result.with-img { display: flex; gap: 10px; align-items: center; }
+.thumb { width: 44px; height: 44px; object-fit: contain; border-radius: 8px; background: #fff; flex: none; }
+.thumb.sm { width: 34px; height: 34px; cursor: zoom-in; }
+.thumb-ph { width: 44px; height: 44px; border-radius: 8px; background: var(--chip); flex: none; display: grid; place-items: center; font-size: 22px; }
+#add-form { position: relative; }
+.ac { position: absolute; top: calc(100% + 4px); inset-inline: 0; z-index: 15; background: var(--card, var(--bg)); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 60vh; overflow: auto; padding: 4px 10px; }
+.ac-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px; border-bottom: 1px solid var(--line); cursor: pointer; border-radius: 8px; }
+.ac-row:last-child { border-bottom: 0; }
+.ac-row.sel, .ac-row:hover { background: var(--chip); }
+.ac-row .nm { font-size: 15px; }
+.ac-row .sub { font-size: 12px; color: var(--muted); }
+.ac-fix { padding: 8px 4px; font-size: 14px; cursor: pointer; color: var(--accent); }
+.big-img { width: 100%; max-height: 50vh; object-fit: contain; background: #fff; border-radius: 12px; }
 .hidden { display: none !important; }
 .toast { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom)); inset-inline: 16px; margin: auto; max-width: 420px;
   background: #1b2620; color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 30; text-align: center; font-size: 14px; }
@@ -416,15 +430,14 @@ function renderList() {
   const sug = suggestions();
   const groups = {};
   for (const i of open) (groups[i.cat || "אחר"] ||= []).push(i);
-  const names = [...new Set([...Object.values(S.history).map(h => h.name), ...QUICK, ...S.recipes.flatMap(r => r.ingredients.map(x => x.name))])];
-
   const itemRow = i => {
     const p = priceFor(i);
     const ptag = !i.code ? "" : p?.none ? `<div class="price-tag none">לא נמצא בסניפים שנבחרו</div>`
-      : p ? `<div class="price-tag">${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${i.product ? " · " + esc(i.product) : ""}</div>` : "";
+      : p ? `<div class="price-tag">${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${i.product && i.product !== i.name ? " · " + esc(i.product) : ""}</div>` : "";
     const who = i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "";
     return `<div class="item ${i.done ? "done" : ""}" data-id="${i.id}">
       <button class="check" data-act="toggle" aria-label="סמן"></button>
+      ${thumb(i.code, "thumb sm", `data-act="img" title="הצג תמונה"`)}
       <div class="grow"><div class="name" data-act="toggle">${esc(i.name)} ${who}</div>${ptag}</div>
       ${i.done ? `<span class="muted">${i.unit === "kg" ? fmtQty(i) : i.qty > 1 ? "×" + i.qty : ""}</span>`
         : `<div class="qty ${i.unit === "kg" ? "kg" : ""}"><button data-act="dec" aria-label="פחות">−</button>
@@ -437,9 +450,9 @@ function renderList() {
 
   return `
   <form class="card row" id="add-form" autocomplete="off">
-    <input type="text" id="add-input" list="names" placeholder="למשל: 2 חלב, או 1.5 ק״ג עגבניות" enterkeyhint="done">
+    <input type="text" id="add-input" placeholder="למשל: 2 חלב, או 1.5 ק״ג עגבניות" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
     <button class="btn">הוסף</button>
-    <datalist id="names">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+    <div class="ac hidden" id="ac" role="listbox"></div>
   </form>
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
@@ -1036,14 +1049,117 @@ function renderPrices() {
 async function searchProducts(q) {
   if (!q.trim()) return [];
   await PriceDB.load(selected());
-  return PriceDB.search(q);
+  const r = PriceDB.search(q);
+  // לא נמצא כלום? אולי שגיאת כתיב
+  return r.length ? r : PriceDB.suggest(q, 30).results;
 }
 function resultRow(p) {
   const e = Object.entries(p.prices).sort((a, b) => a[1] - b[1]);
-  return `<div class="result" data-code="${esc(p.code)}" data-pname="${esc(p.name)}" data-weighted="${p.weighted ? 1 : ""}">
+  return `<div class="result with-img" data-code="${esc(p.code)}" data-pname="${esc(p.name)}" data-weighted="${p.weighted ? 1 : ""}">
+    ${thumb(p.code) || `<div class="thumb-ph">${p.weighted ? "⚖️" : "🛒"}</div>`}<div class="grow">
     <div>${esc(p.name)} <span class="muted">${p.manufacturer ? esc(p.manufacturer) : ""}</span></div>
-    <div class="prices">${e.map(([c, v], k) => `<span class="${k === 0 && e.length > 1 ? "price-tag" : ""}">${esc(chains[c] || c)}: ${money(v)}</span>`).join("")}</div></div>`;
+    <div class="prices">${e.map(([c, v], k) => `<span class="${k === 0 && e.length > 1 ? "price-tag" : ""}">${esc(chains[c] || c)}: ${money(v)}${p.weighted ? " לק״ג" : ""}</span>`).join("")}</div></div></div>`;
 }
+
+// תמונת מוצר; אם אין במקור הראשון מנסים את השני, ואם אין בכלל התמונה נעלמת
+function thumb(code, cls = "thumb", attrs = "") {
+  const [a, b] = PriceDB.images(code);
+  if (!a) return "";
+  return `<img class="${cls}" ${attrs} src="${a}" data-alt="${b}" data-code="${esc(code)}" alt="" loading="lazy" referrerpolicy="no-referrer"
+    onerror="imgFail(this)">`;
+}
+// אין תמונה: ברשימה פשוט לא מציגים, ברשימת חיפוש משאירים ריבוע כדי שהשורות יישארו מיושרות
+function imgFail(el) {
+  if (el.dataset.alt) { el.src = el.dataset.alt; el.dataset.alt = ""; return; }
+  if (el.classList.contains("sm") || el.classList.contains("big-img")) return el.remove();
+  el.outerHTML = `<div class="thumb-ph">🛒</div>`;
+}
+function imageSheet(item) {
+  sheet(`<h2 style="margin-top:0">${esc(item.product || item.name)}</h2>
+    ${thumb(item.code, "big-img")}
+    <div class="muted" style="margin:8px 0">ברקוד ${esc(item.code)}. אם זה לא המוצר הנכון, אפשר להחליף.</div>
+    <div class="row"><button class="btn grow" id="img-change">🔗 החלף מוצר</button><button class="btn ghost grow" data-close>סגור</button></div>`);
+  $("#img-change").onclick = () => linkSheet(item);
+}
+
+// ================= השלמה אוטומטית בהוספת פריט =================
+// בזמן הקלדה: פריטים שכבר קנית, ומוצרים כמו שהם כתובים ברשתות (עם תמונה ומחיר). שגיאת כתיב -> "האם התכוונת ל..."
+let acRows = [], acSel = -1, acSeq = 0;
+function acNames() {
+  return [...new Set([...Object.values(S.history).map(h => h.name), ...QUICK, ...S.recipes.flatMap(r => r.ingredients.map(x => x.name))])];
+}
+function acHide() {
+  const box = $("#ac");
+  if (box) { box.classList.add("hidden"); box.innerHTML = ""; }
+  $("#add-input")?.setAttribute("aria-expanded", "false");
+  acRows = []; acSel = -1;
+}
+async function acShow() {
+  const inp = $("#add-input"), box = $("#ac");
+  if (!inp || !box) return;
+  const p = parseQty(inp.value), q = p.name.trim();
+  if (q.length < 2) return acHide();
+  const seq = ++acSeq;
+  const nq = norm(q);
+  const mine = acNames().filter(n => norm(n).includes(nq) && norm(n) !== nq).slice(0, 3);
+  let sug = { results: [], fixed: null };
+  if (Object.keys(selected()).length) {
+    try { await PriceDB.load(selected()); sug = PriceDB.suggest(q, 8); } catch {}
+  }
+  if (seq !== acSeq || document.activeElement !== inp) return;
+  acRows = [...mine.map(n => ({ kind: "name", name: n })), ...sug.results.map(r => ({ kind: "product", r }))];
+  if (!acRows.length && !sug.fixed) return acHide();
+  acSel = -1;
+  box.innerHTML = (sug.fixed ? `<div class="ac-fix" data-fix="${esc(sug.fixed)}">🔎 האם התכוונת ל: <b>${esc(sug.fixed)}</b>?</div>` : "")
+    + acRows.map((x, k) => {
+      if (x.kind === "name") return `<div class="ac-row" data-k="${k}" role="option"><div class="thumb-ph">📝</div><div class="grow"><div class="nm">${esc(x.name)}</div><div class="sub">מהרשימות שלך</div></div></div>`;
+      const r = x.r, e = Object.entries(r.prices).sort((a, b) => a[1] - b[1]);
+      return `<div class="ac-row" data-k="${k}" role="option">${thumb(r.code) || `<div class="thumb-ph">${r.weighted ? "⚖️" : "🛒"}</div>`}
+        <div class="grow"><div class="nm">${esc(r.name)}</div>
+        <div class="sub">${money(e[0][1])}${r.weighted ? " לק״ג" : ""} ב${esc(chains[e[0][0]] || e[0][0])}${e.length > 1 ? ` · ב-${e.length} רשתות` : ""}</div></div></div>`;
+    }).join("");
+  box.classList.remove("hidden");
+  inp.setAttribute("aria-expanded", "true");
+}
+function acPick(k) {
+  const x = acRows[k], inp = $("#add-input");
+  if (!x || !inp) return;
+  const p = parseQty(inp.value);
+  inp.value = "";
+  acHide();
+  if (x.kind === "name") { addItem(x.name, p.qty, null, p.unit); commit(); refreshCompare().then(render); return; }
+  const r = x.r;
+  addItem(r.name, p.qty, null, p.unit ?? (r.weighted ? "kg" : "unit"));
+  const it = live().find(i => norm(i.name) === norm(r.name) && !i.done);
+  if (it) setLink(it, r.code, r.name, r.weighted); else { commit(); refreshCompare().then(render); }
+  toast("נוסף: " + r.name);
+}
+function acMark() {
+  document.querySelectorAll("#ac .ac-row").forEach(el => el.classList.toggle("sel", Number(el.dataset.k) === acSel));
+  document.querySelector("#ac .ac-row.sel")?.scrollIntoView({ block: "nearest" });
+}
+let acTimer;
+document.addEventListener("input", e => { if (e.target.id === "add-input") { clearTimeout(acTimer); acTimer = setTimeout(acShow, 150); } });
+document.addEventListener("keydown", e => {
+  if (e.target.id !== "add-input" || !acRows.length || $("#ac")?.classList.contains("hidden")) return;
+  if (e.key === "ArrowDown") { acSel = (acSel + 1) % acRows.length; acMark(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { acSel = acSel <= 0 ? acRows.length - 1 : acSel - 1; acMark(); e.preventDefault(); }
+  else if (e.key === "Enter" && acSel >= 0) { e.preventDefault(); acPick(acSel); }
+  else if (e.key === "Escape") acHide();
+});
+// mousedown ולא click: כדי שהשדה לא יאבד פוקוס לפני הבחירה
+document.addEventListener("mousedown", e => {
+  const fix = e.target.closest?.("#ac [data-fix]");
+  if (fix) {
+    e.preventDefault();
+    const inp = $("#add-input"), p = parseQty(inp.value);
+    inp.value = (p.unit === "kg" ? p.qty + " ק״ג " : p.qty > 1 ? p.qty + " " : "") + fix.dataset.fix;
+    return acShow();
+  }
+  const row = e.target.closest?.("#ac .ac-row");
+  if (row) { e.preventDefault(); return acPick(Number(row.dataset.k)); }
+  if (!e.target.closest?.("#add-form")) acHide();
+});
 
 function linkSheet(item) {
   sheet(`<h2 style="margin-top:0">איזה "${esc(item.name)}"?</h2>
@@ -1221,6 +1337,7 @@ function render() {
   const focus = document.activeElement?.id, val = focus && $("#" + focus)?.value;
   view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings }[tab]();
   if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
+  if (focus === "add-input" && val) acShow();
   const fs = $("#free-search");
   if (fs) { let t; fs.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
     const res = await searchProducts(fs.value).catch(() => []);
@@ -1313,6 +1430,7 @@ $("#view").addEventListener("click", e => {
     }
     case "del": item.deleted = true; item.delBy = me || null; return touch();
     case "link": return linkSheet(item);
+    case "img": return imageSheet(item);
     case "finish": return finishShopping();
     case "recipe-library": return librarySheet();
     case "recipe-import": return importRecipeSheet();

@@ -13,14 +13,20 @@ const PriceDB = (() => {
     const w = word.replace(/["'׳״.,()\/\-]/g, "").replace(/[ךםןףץ]/g, c => FIN[c]);
     if (w.length > 4 && (w.endsWith("ימ") || w.endsWith("ות"))) return w.slice(0, -2);
     if (w.length > 3 && w.endsWith("ה")) return w.slice(0, -1);
+    if (w.length > 5 && w.endsWith("ית")) return w.slice(0, -1);   // עגבנית = עגבניה, טבעית = טבעי
     return w;
   }
   const stems = t => String(t || "").trim().split(/\s+/).map(stem).filter(Boolean);
   // שום != שומר, חלב != חלבה: במילים קצרות דורשים התאמה מלאה
   const wm = (q, n) => n === q || (q.length >= 4 && n.startsWith(q));
-  function nameScore(qs, ns) {
-    if (!ns.length || !qs.length || !qs.every(q => ns.some(n => wm(q, n)))) return null;
-    return [ns[0] === qs[0] ? 0 : wm(qs[0], ns[0]) ? 1 : 2, ns.length - qs.length];
+  // typing: המילה האחרונה עוד נכתבת, אז היא מתאימה גם לתחילת מילה ("עגב" -> עגבניות)
+  function nameScore(qs, ns, typing) {
+    if (!ns.length || !qs.length) return null;
+    const last = qs.length - 1;
+    const ok = (q, i) => ns.some(n => wm(q, n) || (typing && i === last && q.length >= 2 && n.startsWith(q)));
+    if (!qs.every(ok)) return null;
+    const exact = qs.filter(q => ns.includes(q)).length;
+    return [ns[0] === qs[0] ? 0 : wm(qs[0], ns[0]) ? 1 : 2, qs.length - exact, ns.length - qs.length];
   }
   const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1; return 0; };
 
@@ -35,9 +41,10 @@ const PriceDB = (() => {
   async function load(selected) {
     // קובץ הסטטוס מתעדכן פעם בכמה שעות, אז לא צריך לבקש אותו בכל שינוי ברשימה
     if (Date.now() - statusAt > 5 * 60 * 1000) { status = await getJSON("data/status.json").catch(() => null); statusAt = Date.now(); }
-    for (const c of Object.keys(data)) if (selected[c] !== data[c].store) delete data[c];
+    for (const c of Object.keys(data)) if (selected[c] !== data[c].store) { delete data[c]; vocab = null; }
     await Promise.all(Object.entries(selected).map(async ([chain, store]) => {
       if (data[chain]?.store === store) return;
+      vocab = null;
       try {
         const j = await getJSON(`data/prices/${chain}-${store}.json`);
         const byCode = new Map();
@@ -50,7 +57,7 @@ const PriceDB = (() => {
   }
 
   // ---------- חיפוש ----------
-  function search(query, limit = 30) {
+  function search(query, limit = 30, typing = false) {
     const q = String(query || "").trim();
     if (!q) return [];
     const digits = /^\d+$/.test(q) ? q.replace(/^0+/, "") : null;
@@ -59,7 +66,7 @@ const PriceDB = (() => {
     for (const [chain, d] of Object.entries(data)) {
       for (const it of d.items) {
         const [code, name, price, w, ns] = it;
-        const score = digits ? (code === digits ? [0, 0] : null) : nameScore(qs, ns);
+        const score = digits ? (code === digits ? [0, 0, 0] : null) : nameScore(qs, ns, typing);
         if (!score) continue;
         // מוצרים במשקל (ירקות, פירות) מקבלים קוד אחר בכל רשת, אז מקבצים אותם לפי שם
         const key = w ? "w:" + ns.join(" ") : code;
@@ -70,9 +77,104 @@ const PriceDB = (() => {
       }
     }
     return [...groups.values()]
-      .sort((a, b) => cmp([a.score[0], -Object.keys(a.prices).length, a.score[1], a.name.length],
-                          [b.score[0], -Object.keys(b.prices).length, b.score[1], b.name.length]))
+      .sort((a, b) => cmp([a.score[0], a.score[1], -Object.keys(a.prices).length, a.score[2], a.name.length],
+                          [b.score[0], b.score[1], -Object.keys(b.prices).length, b.score[2], b.name.length]))
       .slice(0, limit);
+  }
+
+  // ---------- תיקון איות ----------
+  // אוצר המילים מכל שמות המוצרים בסניפים שנבחרו: שורש -> [כמה מוצרים, איך המילה כתובה]
+  let vocab = null, byStem = null;   // byStem: שורש -> המוצרים שיש בהם את המילה (לבדיקה מהירה של תיקון)
+  function getVocab() {
+    if (vocab) return vocab;
+    vocab = new Map(); byStem = new Map();
+    for (const d of Object.values(data)) for (const it of d.items) for (const raw of String(it[1]).split(/\s+/)) {
+      const word = raw.replace(/["'׳״.,()\/\-]/g, "");
+      if (word.length < 2 || /[\d%]/.test(word)) continue;
+      const s = stem(word), v = vocab.get(s);
+      if (v) { v[0]++; v[2].set(word, (v[2].get(word) || 0) + 1); byStem.get(s).push(it); }
+      else { vocab.set(s, [1, word, new Map([[word, 1]])]); byStem.set(s, [it]); }
+    }
+    // הצורה הנפוצה של כל מילה (צהובה ולא צהוב)
+    for (const v of vocab.values()) { let best = 0; for (const [f, n] of v[2]) if (n > best) { best = n; v[1] = f; } v[2] = null; }
+    return vocab;
+  }
+  // כמה מוצרים (עד 3) מתאימים לחיפוש, כשידוע שמילה אחת בו היא keyStem
+  function quickCount(words, keyStem) {
+    const qs = stems(words.join(" "));
+    let n = 0;
+    for (const it of byStem.get(keyStem) || []) if (nameScore(qs, it[4], true) && ++n >= 3) break;
+    return n;
+  }
+  // אותיות שנשמעות דומה (ט/ת, כ/ק, ס/ש, א/ע, ב/ו, ח/כ) עולות חצי; גם הוספה/השמטה של ו/י (כתיב מלא/חסר)
+  const SOUND = new Set(["טת", "תט", "כק", "קכ", "סש", "שס", "אע", "עא", "בו", "וב", "חכ", "כח"]);
+  const sub = (a, b) => a === b ? 0 : SOUND.has(a + b) ? 0.5 : 1;
+  const indel = c => c === "ו" || c === "י" ? 0.5 : 1;
+  function dist(a, b, max) {
+    let prev2 = null, prev = [0];
+    for (let j = 1; j <= b.length; j++) prev[j] = prev[j - 1] + indel(b[j - 1]);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [prev[0] + indel(a[i - 1])];
+      let rowMin = cur[0];
+      for (let j = 1; j <= b.length; j++) {
+        let v = Math.min(prev[j] + indel(a[i - 1]), cur[j - 1] + indel(b[j - 1]), prev[j - 1] + sub(a[i - 1], b[j - 1]));
+        if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+        cur[j] = v; if (v < rowMin) rowMin = v;
+      }
+      if (rowMin > max) return Infinity;
+      prev2 = prev; prev = cur;
+    }
+    return prev[b.length];
+  }
+  // המילים הכי קרובות שקיימות במוצרים (partial: המילה עוד נכתבת, משווים גם לתחילת מילים)
+  function candidates(s, partial, n = 4) {
+    const max = s.length <= 2 ? 0 : s.length <= 5 ? 1 : 2;
+    if (!max) return [];
+    const out = [];
+    for (const [w, [count, surface]] of getVocab()) {
+      if (Math.abs(w.length - s.length) > max && !(partial && w.length > s.length)) continue;
+      let d = dist(s, w, max);
+      if (partial && w.length > s.length) d = Math.min(d, dist(s, w.slice(0, s.length), max) + 0.25);
+      if (d > max || d === 0) continue;
+      out.push({ d, count, surface, stem: w });
+    }
+    return out.sort((a, b) => a.d - b.d || b.count - a.count).slice(0, n);
+  }
+  // בכמה מוצרים המילה מופיעה (כולל כמילה שמתחילה בה)
+  function frequency(s, partial) {
+    const v = getVocab();
+    let n = v.get(s)?.[0] || 0;
+    if ((partial && s.length >= 2) || s.length >= 4) for (const [w, [c]] of v) if (w !== s && w.startsWith(s)) n += c;
+    return n;
+  }
+  // השלמה בזמן הקלדה: מוצרים כמו שהם כתובים ברשתות, ואם יש שגיאת כתיב גם "האם התכוונת ל..."
+  // מחליפים מילה רק אם התיקון באמת מוצא יותר מוצרים (שוקולד פרע -> פרה ולא פרא)
+  function suggest(query, limit = 8) {
+    const words = String(query || "").trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return { results: [], fixed: null };
+    let results = search(query, limit, true);
+    if (results.length >= 3 || /^\d+$/.test(query.trim())) return { results, fixed: null };
+    const fw = [...words];
+    let found = results.length, changed = false;
+    words.forEach((w, i) => {
+      if (/[\d%]/.test(w)) return;
+      const s = stem(w), last = i === words.length - 1;
+      const own = frequency(s, last);
+      // כשכבר נמצאו מוצרים, מילה שקיימת מוחלפת רק במילה נפוצה בהרבה
+      const cands = candidates(s, last, 30).filter(c => !own || !found || c.count >= 5 * own);
+      let best = null;
+      for (const c of cands) {
+        const t = [...fw]; t[i] = c.surface;
+        const n = quickCount(t, c.stem);
+        if (n > found && (!best || n > best.n)) best = { n, surface: c.surface };
+      }
+      if (best) { fw[i] = best.surface; found = best.n; changed = true; }
+    });
+    if (!changed) return { results, fixed: null };
+    const fixed = fw.join(" ");
+    const fr = search(fixed, limit, true), seen = new Set(fr.map(r => r.code));
+    results = fr.concat(results.filter(r => !seen.has(r.code))).slice(0, limit);
+    return { results, fixed };
   }
 
   // מוצר דומה ברשת שאין בה את אותו ברקוד (בעיקר ירקות ופירות, שלכל רשת קוד משלה)
@@ -124,5 +226,11 @@ const PriceDB = (() => {
 
   const stores = chain => getJSON(`data/stores/${chain}.json`);
 
-  return { CHAIN_NAMES, load, search, compare, stores, info: () => ({ status, data }) };
+  // תמונת מוצר לפי ברקוד (אין תמונות בקובצי המחירים). ירקות ופירות במשקל הם בלי ברקוד אמיתי.
+  function images(code) {
+    const c = String(code || "").replace(/^0+/, "");
+    return /^\d{8,14}$/.test(c) ? [`https://m.pricez.co.il/ProductPictures/${c}.jpg`, `https://img.rami-levy.co.il/product/${c}/small.jpg`] : [];
+  }
+
+  return { CHAIN_NAMES, load, search, suggest, images, compare, stores, info: () => ({ status, data }) };
 })();
