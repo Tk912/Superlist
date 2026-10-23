@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f7a4a">
+<title>מילוי עגלה לאנדרואיד</title>
+<link rel="icon" href="icon.svg">
+<style>
+  :root { --bg: #f4f6f3; --card: #fff; --text: #1b2620; --muted: #6b7a71; --accent: #0f7a4a; --line: #e3e8e4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111613; --card: #1a211d; --text: #e6ece8; --muted: #93a39a; --line: #2a332e; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, "Segoe UI", Arial, sans-serif; }
+  main { max-width: 560px; margin: auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 8px 0; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .btn { display: block; text-align: center; background: var(--accent); color: #fff; border-radius: 12px; padding: 13px; font-weight: 700; text-decoration: none; }
+  .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 600; }
+  ol { margin: 0; padding-inline-start: 22px; }
+  li { margin: 6px 0; }
+  .muted { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🛒 "מילוי עגלה" לאנדרואיד</h1>
+  <div class="muted">אפליקציה קטנה שעובדת עם הסל החכם: כשלוחצים "שלח לסופר" היא פותחת את אתר הסופר וממלאת את העגלה לבד. התשלום תמיד אצלך.</div>
+
+  <div class="card">
+    <a class="btn" href="https://github.com/Tk912/Superlist/releases/latest/download/superlist-cart.apk">📥 הורדת האפליקציה</a>
+    <ol style="margin-top:12px">
+      <li>לוחצים על הכפתור. הקובץ <b>superlist-cart.apk</b> יורד.</li>
+      <li>פותחים את הקובץ (מההתראה או מ"הורדות").</li>
+      <li>אם מופיע "לא ניתן להתקין ממקור זה": <b>הגדרות</b> ← מאשרים <b>"התר ממקור זה"</b> לכרום, וחוזרים.</li>
+      <li>אם Play Protect מזהיר על אפליקציה לא מוכרת: <b>פרטים נוספים</b> ← <b>"התקן בכל זאת"</b>. (היא לא מהחנות, כי בנינו אותה בעצמנו.)</li>
+      <li>פותחים פעם אחת את "מילוי עגלה" ומתחברים לחשבון ברשתות שקונים בהן. ההתחברות נשמרת.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <b>איך משתמשים</b>
+    <div class="muted">בסל החכם: "🛒 שלח לסופר" ← בוחרים רשת. "מילוי עגלה" נפתחת, ממלאת את העגלה ועוברת לעגלה. בודקים ומשלמים.</div>
+    <div class="muted" style="margin-top:6px">עדכון: מורידים ומתקינים שוב מהכפתור למעלה, מעל הגרסה הקיימת.</div>
+  </div>
+
+  <a class="btn ghost" href="./">← חזרה לסל החכם</a>
+</main>
+</body>
+</html>
