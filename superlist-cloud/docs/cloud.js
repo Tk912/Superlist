@@ -3,6 +3,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
+  signInWithCredential,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, runTransaction, setDoc, updateDoc,
@@ -34,6 +35,12 @@ window.Cloud = {
   },
 
   async signIn() {
+    // באפליקציית האנדרואיד: Google לא מאפשרת התחברות מתוך דף שבתוך אפליקציה, אז האפליקציה מתחברת
+    // עם החשבון שבטלפון ומחזירה ID token, ואיתו נכנסים ל-Firebase
+    if (window.SuperlistNative) {
+      const token = await new Promise((res, rej) => { window.__nativeSignIn = { res, rej }; window.SuperlistNative.signIn(); });
+      return signInWithCredential(auth, GoogleAuthProvider.credential(token));
+    }
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
     try {
@@ -45,7 +52,7 @@ window.Cloud = {
     }
   },
 
-  signOut() { return signOut(auth); },
+  signOut() { try { window.SuperlistNative?.signOut(); } catch {} return signOut(auth); },
 
   email() { return (this.user?.email || "").toLowerCase(); },
 

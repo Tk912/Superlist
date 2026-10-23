@@ -485,7 +485,7 @@ function sendSheet() {
     ${others.length ? `<div class="muted" style="margin-bottom:8px">ברשימה יש גם פריטים ש${esc(others.join(" ו"))} הוסיפו. העגלה תכלול את כולם.</div>` : ""}
     <div class="row" style="margin-bottom:8px"><button class="btn small ${sendSort === "price" ? "" : "ghost"} grow" data-sort="price">💰 לפי מחיר</button>
       <button class="btn small ${sendSort === "fast" ? "" : "ghost"} grow" data-sort="fast" ${hasExt() ? "" : "disabled"}>⚡ לפי משלוח קרוב</button></div>
-    ${!hasExt() ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
+    ${!hasExt() && !inApp ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
     <div class="card">${(sendSort === "fast" && slots ? [...order].sort((a, b) => (slots[a]?.from || "9") .localeCompare(slots[b]?.from || "9")) : order).map(c => `<div class="result row" data-fill="${c}">
       <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
       <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירי אונליין)" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
@@ -651,16 +651,18 @@ function cartJob(chain) {
 
 const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-// אנדרואיד: אפליקציית "מילוי עגלה" (superlist-cloud/android) פותחת את אתר הסופר בתוכה וממלאת לבד – בלי סימנייה
+// אנדרואיד: אפליקציית "הסל החכם" (superlist-cloud/android) פותחת את אתר הסופר בתוכה וממלאת לבד – בלי סימנייה.
+// inApp: הדף רץ בתוך האפליקציה (היא מוסיפה את window.SuperlistNative)
 const isAndroid = () => /android/i.test(navigator.userAgent);
+const inApp = !!window.SuperlistNative;
 let useBookmarkOnAndroid = false;
 function fillWithApp(chain, job) {
   const back = new URL("app.html", location.href).href;
   // אם האפליקציה לא מותקנת, כרום עובר לדף ההתקנה (app.html)
   location.href = `intent://fill?c=${chain}&j=${b64url(job)}#Intent;scheme=superlist;package=il.superlist.cart;S.browser_fallback_url=${encodeURIComponent(back)};end`;
-  sheet(`<h2 style="margin-top:0">🛒 פותח את "מילוי עגלה"…</h2>
+  sheet(`<h2 style="margin-top:0">🛒 פותח את אפליקציית הסל החכם…</h2>
     <div class="card">
-      <div><b>1.</b> ${esc(CART_NAMES[chain])} נפתח בתוך האפליקציה "מילוי עגלה".</div>
+      <div><b>1.</b> ${esc(CART_NAMES[chain])} נפתח בתוך האפליקציה.</div>
       <div><b>2.</b> אם צריך, התחבר לחשבון שלך שם (פעם ראשונה בלבד) ולחץ <b>"🛒 מלא עגלה"</b> למעלה.</div>
       <div><b>3.</b> הפריטים נוספים לעגלה, ובסוף עוברים לעגלה. בודקים ומשלמים בעצמכם.</div>
     </div>
@@ -673,6 +675,7 @@ function fillWithApp(chain, job) {
 async function fillCart(chain) {
   if (!live().some(i => !i.done)) return toast("אין פריטים ברשימה");
   const job = JSON.stringify(cartJob(chain));
+  if (inApp) { closeSheet(); return window.SuperlistNative.fill(chain, job); }
   if (isAndroid() && !useBookmarkOnAndroid) return fillWithApp(chain, job);
   let copied = false;
   try { await navigator.clipboard.writeText(job); copied = true; } catch {}
@@ -1014,7 +1017,7 @@ function basketCard() {
   const summary = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">
       ${best?.found ? `<span class="chip">💰 הכי זול: <b>${esc(best.name)}</b> ${money(best.total)}</span>` : ""}
       ${fastAll ? `<span class="chip">⚡ הכי מהיר: <b>${esc(CART_NAMES[fastAll] || chains[fastAll])}</b> · ${esc(fmtSlot(slots[fastAll]))}</span>`
-        : !hasExt() ? `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`
+        : !hasExt() ? (inApp ? "" : `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`)
         : !S.settings.address?.city ? `<button class="chip" data-tab-go="settings">⚡ הוסף כתובת בהגדרות כדי לראות מועדי משלוח</button>` : ""}
     </div>`;
   return `<h2>💰 מחיר הסל</h2><div class="card">${summary}
@@ -1291,7 +1294,11 @@ window.addEventListener("appinstalled", () => { installPrompt = null; toast("ה�
 if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
 
 function installCard() {
-  if (isStandalone()) return "";
+  if (isStandalone() || inApp) return "";
+  // אנדרואיד: אפליקציה אחת שכוללת הכל (גם מילוי עגלה אוטומטי)
+  if (isAndroid()) return `<h2>📱 אפליקציה לטלפון</h2>
+  <div class="card"><div class="muted" style="margin-bottom:8px">אפליקציית "הסל החכם" לאנדרואיד: הרשימה, המחירים והמתכונים, ומילוי עגלה אוטומטי באתר הסופר. מתקינים פעם אחת.</div>
+    <a class="btn" style="display:block;text-align:center;text-decoration:none" href="app.html">📲 התקנת האפליקציה</a></div>`;
   const how = installPrompt ? `<button class="btn" style="width:100%" data-act="install">📲 התקן את האפליקציה</button>`
     : isIOS() ? `<ol style="margin:0;padding-inline-start:20px;line-height:1.8">
         <li>פותחים את האתר ב-<b>Safari</b></li>
@@ -1308,7 +1315,10 @@ function installCard() {
 // באנר חד-פעמי ברשימה, רק בטלפון שעוד לא התקין
 function installBanner() {
   let hidden = false; try { hidden = !!localStorage.getItem(INSTALL_HIDE); } catch {}
-  if (hidden || isStandalone() || !isPhone()) return "";
+  if (hidden || isStandalone() || inApp || !isPhone()) return "";
+  if (isAndroid()) return `<div class="card row" style="align-items:center"><div class="grow">📱 <b>להתקין את האפליקציה?</b><div class="muted">הכל במקום אחד, כולל מילוי עגלה אוטומטי</div></div>
+    <a class="btn small" style="text-decoration:none" href="app.html">התקן</a>
+    <button class="icon-btn" data-act="install-hide" aria-label="לא עכשיו">✕</button></div>`;
   return `<div class="card row" style="align-items:center"><div class="grow">📱 <b>להתקין כאפליקציה?</b><div class="muted">אייקון במסך הבית, מסך מלא, עובד גם בלי קליטה</div></div>
     <button class="btn small" data-act="${installPrompt ? "install" : "install-help"}">${installPrompt ? "התקן" : "איך?"}</button>
     <button class="icon-btn" data-act="install-hide" aria-label="לא עכשיו">✕</button></div>`;
@@ -1326,9 +1336,7 @@ function renderSettings() {
   const sel = S.settings.stores;
   const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
   return `${installCard()}
-  ${isAndroid() ? `<h2>🛒 מילוי עגלה בטלפון</h2>
-  <div class="card"><div class="muted" style="margin-bottom:8px">האפליקציה "מילוי עגלה" פותחת את אתר הסופר וממלאת את העגלה לבד כשלוחצים "שלח לסופר". מתקינים פעם אחת.</div>
-    <a class="btn" style="display:block;text-align:center;text-decoration:none" href="app.html">📲 התקנה / עדכון של "מילוי עגלה"</a></div>` : ""}
+  ${inApp ? `<div class="muted" style="margin:8px 0">📱 אפליקציית אנדרואיד · <a href="app.html">עדכון גרסה</a></div>` : ""}
   <h2>השוואת מחירים: סניפי אונליין</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא רק בין המחירים של אתרי הקנייה (סניפי האונליין), לא של סניפים רגילים.</div>
     ${Object.entries(ONLINE).map(([c, o]) => {
@@ -1351,13 +1359,14 @@ function renderSettings() {
         <input type="text" id="addr-num" placeholder="מס'" inputmode="numeric" style="width:70px" value="${esc(S.settings.address?.num || "")}"></div>
       <button class="btn" style="width:100%;margin-top:8px">שמור כתובת</button>
     </form>
-    <div class="row" style="margin-top:8px"><div class="grow muted">${hasExt() ? "✓ תוסף מועדי המשלוח מותקן" : "התוסף לכרום לא מותקן"}</div>
-      <button class="btn small ghost" data-act="${hasExt() ? "slots-refresh" : "ext-help"}">${hasExt() ? "בדוק עכשיו" : "איך מתקינים"}</button></div>
+    ${inApp && !hasExt() ? `<div class="muted" style="margin-top:8px">מועדי המשלוח מוצגים כרגע רק במחשב, עם התוסף לכרום.</div>`
+      : `<div class="row" style="margin-top:8px"><div class="grow muted">${hasExt() ? "✓ תוסף מועדי המשלוח מותקן" : "התוסף לכרום לא מותקן"}</div>
+      <button class="btn small ghost" data-act="${hasExt() ? "slots-refresh" : "ext-help"}">${hasExt() ? "בדוק עכשיו" : "איך מתקינים"}</button></div>`}
     ${hasExt() && slots ? `<div style="margin-top:6px">${[...new Set([...CART_CHAINS, ...Object.keys(selected())])].map(c => `<div class="row" style="font-size:13px"><b style="min-width:80px">${esc(CART_NAMES[c] || chains[c] || c)}</b><div class="grow">${slots[c]?.ok ? esc(fmtSlot(slots[c])) : `<span class="muted">${esc(slots[c]?.reason || "—")}</span>`}</div></div>`).join("")}</div>` : ""}
   </div>
-  <h2>כפתור מילוי העגלה</h2>
+  ${inApp ? "" : `<h2>כפתור מילוי העגלה</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">סימנייה שממלאת את העגלה באתר הסופר מתוך הרשימה. מוסיפים אותה פעם אחת.</div>
-    <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>
+    <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>`}
   <h2>החשבון</h2>
   <div class="card row"><div class="grow">${window.Cloud?.user ? esc(Cloud.user.email) : "מצב מקומי (בלי Firebase)"}</div>
     <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>`;
@@ -1515,7 +1524,7 @@ $("#view").addEventListener("click", e => {
     case "bookmark": return bookmarkSheet();
     case "ext-help": e.preventDefault(); return extSheet();
     case "slots-refresh": slots = null; return requestSlots(true);
-    case "login": return Cloud.signIn().catch(e => toast("ההתחברות נכשלה: " + (e.code || e.message)));
+    case "login": return Cloud.signIn().catch(e => { if (e.code !== "native/cancelled") toast("ההתחברות נכשלה: " + (e.code || e.message)); });
     case "logout": return Cloud.signOut();
   }
 });
