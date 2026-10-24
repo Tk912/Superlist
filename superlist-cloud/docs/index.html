@@ -135,6 +135,7 @@ td.best { color: var(--accent); font-weight: 700; }
 
 <script src="prices.js"></script>
 <script src="recipes.js"></script>
+<script src="slots.js"></script>
 <script>
 "use strict";
 // ================= נתונים בסיסיים =================
@@ -469,7 +470,7 @@ function renderList() {
   ${basketCard()}
   ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>` : ""}
   <div class="row" style="margin-top:8px">
-    <button class="btn ghost grow" data-act="import">📥 ייבוא מ-AddIt</button>
+    <button class="btn ghost grow" data-act="import">📥 ייבוא רשימת קניות</button>
     <button class="btn ghost grow" data-act="share">👥 שיתוף הרשימה</button>
   </div>`;
 }
@@ -568,19 +569,27 @@ function shareSheet() {
   $("#sh-out").onclick = async () => { if (confirm("להתנתק מהחשבון במכשיר הזה?")) { closeSheet(); await Cloud.signOut(); } };
 }
 
-// ================= ייבוא מ-AddIt (או כל רשימה כטקסט) =================
+// ================= ייבוא רשימת קניות (מכל מקום: וואטסאפ, פתקים, AddIt, Keep…) =================
 function parseListText(text) {
   const out = [];
-  for (let line of text.split(/\r?\n/)) {
+  const seen = new Set();
+  // הודעת וואטסאפ מועתקת: "[12:30, 1.1.2026] דנה: חלב" / "1.1.2026, 12:30 - דנה: חלב"
+  const WA = /^(?:\[[^\]]{4,30}\]\s*[^:]{1,30}:\s*|\d{1,2}[./]\d{1,2}[./]\d{2,4},?\s+\d{1,2}:\d{2}\s*-\s*[^:]{1,30}:\s*)/;
+  const lines = text.split(/\r?\n/).flatMap(l => {
+    l = l.replace(WA, "").trim();
+    // שורה אחת עם פסיקים ("חלב, לחם, 2 קוטג'") -> כמה פריטים
+    return l.length < 200 && /[,،]/.test(l) && !/\d,\d/.test(l) ? l.split(/\s*[,،]\s*/) : [l];
+  });
+  for (let line of lines) {
     line = line.trim();
-    if (!line || /https?:\/\//.test(line) || /addit/i.test(line) || /:$/.test(line)) continue;
-    if (/^[✓✔✅☑]/.test(line) || /^\[[xX✓]\]/.test(line)) continue; // כבר נקנה
-    // תבליטים, תיבות סימון ומספור ("1." / "1)")
-    line = line.replace(/^(?:\[\s?\]\s*|[-–•*·▪◦☐⬜🔲]\s*|\d+[.)]\s+)+/u, "").trim();
+    if (!line || /https?:\/\//.test(line) || /addit|רשימת קניות|^רשימה/i.test(line) || /:$/.test(line)) continue;
+    if (/^[✓✔✅☑]/.test(line) || /^\[[xX✓]\]/.test(line) || /^~.*~$/.test(line)) continue; // כבר נקנה / מחוק
+    // תבליטים, תיבות סימון, אימוג'י ומספור ("1." / "1)")
+    line = line.replace(/^(?:\[\s?\]\s*|[-–•*·▪◦☐⬜🔲▫️🔸🔹]\s*|\d+[.)]\s+|\p{Extended_Pictographic}\s*)+/u, "").replace(/\p{Extended_Pictographic}/gu, "").trim();
     const p = parseQty(line);
     const name = p.name.trim();
     const qty = p.unit === "kg" ? Math.min(Math.max(p.qty || KG_STEP, 0.1), 50) : Math.min(Math.max(p.qty || 1, 1), 50);
-    if (name && name.length <= 60) out.push({ name, qty, unit: p.unit });
+    if (name && name.length <= 60 && !seen.has(norm(name))) { seen.add(norm(name)); out.push({ name, qty, unit: p.unit }); }
   }
   return out;
 }
@@ -593,13 +602,18 @@ function previewQty(x) {
   return x.qty > 1 ? `${x.name} ×${x.qty}` : x.name;
 }
 
-function importSheet() {
-  sheet(`<h2 style="margin-top:0">ייבוא מ-AddIt</h2>
-    <div class="muted" style="margin-bottom:8px">ב-AddIt: פותחים את הרשימה ← <b>שיתוף</b> ← <b>העתקה</b> (או שליחה לעצמך בוואטסאפ ולהעתיק משם). אחר כך מדביקים כאן. פריטים שכבר סומנו כנקנו (✓) לא ייובאו.</div>
-    <textarea id="imp-text" rows="9" placeholder="חלב&#10;לחם x2&#10;1.5 ק״ג עגבניות"></textarea>
+function importSheet(prefill = "") {
+  sheet(`<h2 style="margin-top:0">📥 ייבוא רשימת קניות</h2>
+    <div class="muted" style="margin-bottom:8px">מעתיקים רשימה מכל מקום – וואטסאפ, פתקים, Google Keep, AddIt, מייל – ומדביקים כאן. פריט בכל שורה, או מופרדים בפסיקים; כמויות כמו "2 חלב" או "1.5 ק״ג עגבניות" מזוהות. פריטים שסומנו כנקנו (✓) לא ייובאו.
+      ${inApp ? `<br>אפשר גם לשתף רשימה מכל אפליקציה ישר לכאן: <b>שיתוף ← הסל החכם</b>.` : ""}</div>
+    <textarea id="imp-text" rows="9" placeholder="חלב&#10;לחם x2&#10;1.5 ק״ג עגבניות&#10;ביצים, קוטג', במבה">${esc(prefill)}</textarea>
+    <div class="row" style="margin-top:6px">${navigator.clipboard?.readText ? `<button class="btn small ghost" id="imp-paste">📋 הדבק מהלוח</button>` : ""}
+      <label class="btn small ghost" style="cursor:pointer">📄 מקובץ טקסט<input type="file" id="imp-file" accept=".txt,text/plain" hidden></label></div>
     <div id="imp-prev" class="muted" style="padding:8px 0"></div>
     <div class="row"><button class="btn grow" id="imp-go" disabled>הוסף לרשימה</button><button class="btn ghost" data-close>ביטול</button></div>`);
   const ta = $("#imp-text"), go = $("#imp-go");
+  if ($("#imp-paste")) $("#imp-paste").onclick = async () => { try { ta.value = await navigator.clipboard.readText(); ta.oninput(); } catch { toast("אין הרשאה ללוח – הדבק ידנית (לחיצה ארוכה ← הדבק)"); } };
+  $("#imp-file").onchange = async e => { const f = e.target.files[0]; if (f) { ta.value = await f.text(); ta.oninput(); } };
   ta.oninput = () => {
     const p = parseListText(ta.value);
     go.disabled = !p.length;
@@ -608,10 +622,11 @@ function importSheet() {
   };
   go.onclick = () => {
     const p = parseListText(ta.value);
-    p.forEach(x => addItem(x.name, x.qty, "addit", x.unit));
+    p.forEach(x => addItem(x.name, x.qty, "import", x.unit));
     closeSheet(); commit(); refreshCompare().then(render);
     toast(`יובאו ${p.length} פריטים`);
   };
+  if (prefill) ta.oninput();
 }
 
 // ================= שליחה לסופר (כפתור הסימנייה, cart.js) =================
@@ -744,13 +759,14 @@ function renderMeals() {
   </div>
   <h2>המתכונים שלי (${recipes.length})</h2>
   ${recipes.length ? recipes.map(r => `<div class="card">
-      <div class="row"><div class="grow"><b>${esc(r.name)}</b>
-        <div class="muted">${r.servings ? r.servings + " מנות · " : ""}${r.ingredients.length} מצרכים</div></div>
+      <div class="row" data-view-recipe="${r.id}" style="cursor:pointer">${r.image ? `<img src="${esc(r.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:52px;height:52px;object-fit:cover;border-radius:10px;flex:none" onerror="this.remove()">` : ""}
+        <div class="grow"><b>${esc(r.name)}</b>
+        <div class="muted">${r.servings ? r.servings + " מנות · " : ""}${r.ingredients.length} מצרכים${r.steps?.length ? " · 📖 כולל אופן הכנה" : ""}</div></div>
         <button class="icon-btn" data-edit-recipe="${r.id}" title="עריכה">✏️</button></div>
       <div class="muted" style="margin:6px 0 8px">${r.ingredients.map(x => esc(x.name)).join(" · ")}</div>
       <button class="btn small" style="width:100%" data-recipe-add="${r.id}">🛒 הוסף לרשימה</button>
     </div>`).join("")
-    : `<div class="card empty">עוד אין מתכונים. בחר מתכונים מוכנים מהספרייה, או ייבא מתכון שהעתקת מאתר.</div>`}
+    : `<div class="card empty">עוד אין מתכונים. בחר מתכונים מוכנים מהספרייה, או ייבא מתכון מקישור לכל אתר.</div>`}
   <button class="btn ghost" style="width:100%" data-edit-recipe="new">+ מתכון חדש (כתיבה ידנית)</button>`;
 }
 
@@ -802,10 +818,16 @@ function parseIngredientLine(line) {
   else if ((m = s.match(/^(\S+)\s+/)) && HEB_NUM[m[1]] !== undefined) { qty = HEB_NUM[m[1]]; s = s.slice(m[0].length); }
   let measure = null;
   if ((m = s.match(MEASURE_RE))) { measure = m[1]; s = s.slice(m[0].length); }
+  // "כוס ושליש ועוד כף סוכר" / "2 וחצי כוסות קמח": שברים ותוספות אחרי הכמות
+  for (let k = 0; k < 3; k++) {
+    s = s.replace(/^ו?(חצי|שליש|רבע|שלושת רבעי|שני שליש)\s+/, "").replace(/^ועוד\s+(\S+\s+)?(כף|כפית|כפות|כפיות|כוס|קורט)\s+/, "");
+    if ((m = s.match(MEASURE_RE))) { measure = measure || m[1]; s = s.slice(m[0].length); }
+  }
   // "גרם/ק"ג" שנכתבו צמוד למספר: "500גרם"
   s = s.replace(/^(?:של|מ)\s+/, "").split(/[,–:]| - /)[0].trim();
   // מורידים תיאורים מהסוף ("3 גזרים גדולים קלופים" -> גזרים), גם כמה ברצף
   const DESC = /\s+ו?(?:קצוץ|קצוצה|קצוצים|קצוצות|טרי|טריה|טריים|טריות|מגורד|מגורדת|פרוס|פרוסה|פרוסים|חתוך|חתוכה|חתוכים|מבושל|מבושלת|גדול|גדולה|גדולים|גדולות|בינוני|בינונית|בינוניים|בינוניות|קטן|קטנה|קטנים|קטנות|בשל|בשלה|בשלים|בשלות|קלוף|קלופה|קלופים|קלופות|מרוסק|מרוסקת|לפי הטעם|לקישוט)$/;
+  s = s.replace(/[.,;!]+$/, "").trim();
   while (DESC.test(s)) s = s.replace(DESC, "").trim();
   if (!s || s.length > 40) return null;
   const name = s;
@@ -825,17 +847,26 @@ function parseIngredientLine(line) {
   return item;
 }
 
-function parseRecipeText(text) {
+// כותרות במתכונים: "מצרכים:", "החומרים: ל-4 מנות", "מה צריך?", "מצרכים לעוגיות:" / "אופן ההכנה:", "מה עושים?"
+const ING_HEAD = /^(ה)?(מצרכים|רכיבים|חומרים|מרכיבים)(?![֐-׿])|^מה צריך/;
+const STEP_HEAD = /^(אופן|דרך|הוראות|שלבי)\s*(ה)?הכנה|^(ה)?הכנה\s*:?$|^מה עושים/;
+// strict: טקסט של דף אינטרנט – לוקחים מצרכים רק מתחת לכותרת, כדי לא לאסוף תפריטים ופרסומות
+function parseRecipeText(text, strict = false) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const isHead = (l, words) => new RegExp(`^(${words})\\s*[:：]?$`).test(l.replace(/[^֐-׿\s:]/g, "").trim());
-  const ingStart = lines.findIndex(l => isHead(l, "מצרכים|רכיבים|החומרים|חומרים|מרכיבים|מצרכים למתכון|לבצק|לרוטב|למילוי"));
-  const stepStart = lines.findIndex((l, i) => i > ingStart && isHead(l, "אופן ההכנה|אופן הכנה|הכנה|הוראות הכנה|הוראות|שלבי הכנה|דרך ההכנה"));
-  const title = (lines.find((l, i) => (ingStart < 0 || i < ingStart) && l.length < 50 && !/^\d/.test(l) && !isHead(l, "מצרכים|רכיבים")) || "מתכון חדש")
+  const isHead = (l, re) => l.length < 60 && re.test(l.replace(/[^֐-׿\s:?]/g, "").trim());
+  const ingStart = lines.findIndex(l => isHead(l, ING_HEAD));
+  const stepStart = lines.findIndex((l, i) => i > ingStart && isHead(l, STEP_HEAD));
+  const title = (lines.find((l, i) => (ingStart < 0 || i < ingStart) && l.length < 50 && !/^\d/.test(l) && !isHead(l, ING_HEAD)) || "מתכון חדש")
     .replace(/^מתכון\s*(ל|של)?\s*/, "").trim();
-  let body = ingStart >= 0 ? lines.slice(ingStart + 1, stepStart > ingStart ? stepStart : undefined) : lines.slice(1);
-  // בלי כותרת "מצרכים": לוקחים שורות קצרות שנראות כמו מצרכים, עד שמתחילים משפטים ארוכים
-  if (ingStart < 0) body = body.filter(l => l.length <= 45 && !/[.!?]$/.test(l));
-  const subHead = l => /:\s*$/.test(l) && l.length < 25; // "לרוטב:" וכדומה
+  let body;
+  if (ingStart >= 0) {
+    body = [];
+    for (const l of lines.slice(ingStart + 1, stepStart > ingStart ? stepStart : undefined)) {
+      if (l.length > 90 || (l.length > 50 && /[.!?]$/.test(l))) break; // התחילו משפטים – נגמרו המצרכים
+      body.push(l);
+    }
+  } else body = strict ? [] : lines.slice(1).filter(l => l.length <= 45 && !/[.!?]$/.test(l)); // בלי כותרת: שורות קצרות
+  const subHead = l => (/:\s*$/.test(l) && l.length < 30) || isHead(l, ING_HEAD); // "לרוטב:", "חומרים לציפוי:"
   const ingredients = [];
   for (const l of body) {
     if (subHead(l)) continue;
@@ -843,31 +874,162 @@ function parseRecipeText(text) {
     if (p && !ingredients.some(x => norm(x.name) === norm(p.name))) ingredients.push(p);
   }
   const servings = +((text.match(/(\d+)\s*(?:מנות|סועדים|אנשים)/) || [])[1] || 4);
-  return { name: title, servings, ingredients };
+  // אופן ההכנה: מה שאחרי הכותרת, עד המתכון הבא / "רוצים לגוון" / סוף הכתבה
+  const steps = [];
+  if (stepStart > 0) for (const [k, l] of lines.slice(stepStart + 1).entries()) {
+    const next = lines[stepStart + 2 + k] || "";
+    if (isHead(l, ING_HEAD) || isHead(next, ING_HEAD) // המתכון הבא (הכותרת שלו באה לפני "מצרכים")
+      || /^(רוצים|טיפ|לכתבות|כתבות|תגובות|פרסומת|עוד מתכונים|מתכונים נוספים|שתפו|הצטרפו)/.test(l)
+      || (!/\s/.test(l) && l.length > 8) || (/^(מתכון|תגיות)/.test(l) && l.length < 40) || steps.length >= 30) break; // תגיות בסוף הכתבה
+    const s = l.replace(/^\d+[.)]\s*/, "").trim();
+    if (s.length > 2) steps.push(s);
+  }
+  return { name: title, servings, ingredients, steps };
 }
 
-function importRecipeSheet() {
+// ---------- ייבוא מתכון מקישור (במלואו: מצרכים, אופן הכנה, תמונה) ----------
+// רוב אתרי המתכונים שמים בדף נתונים מסודרים (schema.org/Recipe) – משם לוקחים הכל. אם אין, מנתחים את טקסט הדף.
+async function fetchPage(url) {
+  // באפליקציה: דרך האפליקציה (בלי מגבלות הדפדפן)
+  if (Slots.available()) {
+    const r = await Slots.fetch(url, { headers: { Accept: "text/html,application/xhtml+xml" } });
+    if (!r.ok) throw new Error("האתר החזיר שגיאה " + r.status);
+    return r.text();
+  }
+  // במחשב: דרך תוסף הכרום (גרסה 1.1 ומעלה)
+  const ext = document.documentElement.dataset.superlistExt || "";
+  if (/^(1\.[1-9]|[2-9])/.test(ext)) {
+    const res = await new Promise(resolve => {
+      const id = uid();
+      const onMsg = ev => { if (ev.source === window && ev.data?.type === "superlist-page" && ev.data.id === id) { window.removeEventListener("message", onMsg); resolve(ev.data); } };
+      window.addEventListener("message", onMsg);
+      window.postMessage({ type: "superlist-page-request", id, url }, "*");
+      setTimeout(() => resolve({ ok: false, status: 0, text: "timeout" }), 25000);
+    });
+    if (res.ok) return res.text;
+    throw new Error(res.status ? "האתר החזיר שגיאה " + res.status : "לא הצלחתי לפתוח את הדף");
+  }
+  // בלי תוסף: ישירות (רוב האתרים חוסמים), ואז שירותי מתווך ציבוריים (רק כתובת המתכון עוברת דרכם)
+  const tryGet = async (u, ms = 12000) => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+    try { const r = await fetch(u, { signal: ctl.signal }); return r.ok ? await r.text() : null; } catch { return null; } finally { clearTimeout(t); }
+  };
+  const html = await tryGet(url, 8000)
+    || await tryGet("https://api.allorigins.win/raw?url=" + encodeURIComponent(url))
+    || await tryGet("https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url));
+  if (html) return html;
+  throw new Error(ext ? "עדכן את תוסף הכרום (גרסה 1.1) כדי לייבא מקישור" : "האתר חוסם ייבוא ישיר מהדפדפן");
+}
+const decodeHtml = s => new DOMParser().parseFromString(String(s ?? ""), "text/html").body.textContent.replace(/\s+/g, " ").trim();
+function recipeFromHtml(html, url) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  let rec = null;
+  const visit = o => {
+    if (!o || rec || typeof o !== "object") return;
+    if (Array.isArray(o)) return o.forEach(visit);
+    if ([].concat(o["@type"] || []).some(t => /Recipe$/i.test(t))) { rec = o; return; }
+    visit(o["@graph"]); visit(o.mainEntity); visit(o.itemListElement);
+  };
+  doc.querySelectorAll('script[type="application/ld+json"]').forEach(s => { try { visit(JSON.parse(s.textContent)); } catch {} });
+  const meta = p => doc.querySelector(`meta[property="${p}"],meta[name="${p}"]`)?.content || "";
+  const cleanTitle = t => decodeHtml(t).split(/\s+[|\-–]\s+/)[0].replace(/^[\s:–\-|]+/, "").replace(/^מתכון\s*(ל|של)?\s*/, "").replace(/^[\s:–\-|]+/, "").trim();
+  let name, lines = [], steps = [], servings = 4, image = "";
+  if (rec) {
+    name = cleanTitle(rec.name || meta("og:title") || doc.title);
+    lines = [].concat(rec.recipeIngredient || rec.ingredients || []).map(decodeHtml).filter(Boolean);
+    const flat = x => {
+      if (!x) return [];
+      if (typeof x === "string") return decodeHtml(x.replace(/<br\s*\/?>|<\/p>|<\/li>/gi, "\n")).split(/\n+|(?<=\.)\s+(?=\d+[.)]\s)/);
+      if (Array.isArray(x)) return x.flatMap(flat);
+      if (x.itemListElement) return [...(x.name ? ["▸ " + decodeHtml(x.name)] : []), ...flat(x.itemListElement)];
+      return [decodeHtml(x.text || x.name || "")];
+    };
+    steps = flat(rec.recipeInstructions).map(s => s.replace(/^\d+[.)]\s*/, "").trim()).filter(s => s.length > 1);
+    servings = +String([].concat(rec.recipeYield || "")[0]).match(/\d+/)?.[0] || 4;
+    const img = [].concat(rec.image || [])[0];
+    image = typeof img === "string" ? img : img?.url || meta("og:image");
+  } else {
+    // בלי נתונים מסודרים: טקסט הכתבה עצמה (בלי תפריטים), שורה לכל פסקה/פריט
+    doc.querySelectorAll("script,style,noscript,nav,header,footer,aside,form,iframe").forEach(e => e.remove());
+    const root = doc.querySelector("[itemprop=recipeInstructions]")?.closest("article") || doc.querySelector("article") || doc.querySelector("main") || doc.body;
+    root.querySelectorAll("br").forEach(e => e.replaceWith("\n"));
+    root.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,div,tr,dt,dd").forEach(e => e.append("\n"));
+    const text = root.textContent;
+    const p = parseRecipeText(text.split("\n").map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n"), true);
+    name = cleanTitle(meta("og:title") || doc.title) || p.name;
+    lines = p.ingredients.map(x => x.line);
+    steps = p.steps;
+    servings = p.servings;
+    image = meta("og:image");
+  }
+  const ingredients = [];
+  for (const l of lines) {
+    if (/:\s*$/.test(l) && l.length < 25) continue;
+    const p = parseIngredientLine(l);
+    if (p && !ingredients.some(x => norm(x.name) === norm(p.name))) ingredients.push(p);
+  }
+  if (image && !/^https?:/.test(image)) try { image = new URL(image, url).href; } catch { image = ""; }
+  return { name: name || "מתכון", servings: Math.min(Math.max(servings, 1), 30), ingredients, steps: steps.slice(0, 60), image: image || "", url };
+}
+
+function importRecipeSheet(prefillUrl = "") {
   sheet(`<h2 style="margin-top:0">📋 ייבוא מתכון</h2>
-    <div class="muted" style="margin-bottom:8px">פותחים מתכון בכל אתר (פודי, 10 דקות, מאקו, בלוגים…), מסמנים את הכותרת ואת רשימת המצרכים, מעתיקים ומדביקים כאן. המצרכים יזוהו עם הכמויות, ואפשר לתקן לפני השמירה.</div>
-    <textarea id="ri-text" rows="9" placeholder="שקשוקה&#10;&#10;מצרכים:&#10;6 עגבניות&#10;4 ביצים&#10;1 בצל&#10;2 שיני שום&#10;כפית פפריקה&#10;&#10;אופן ההכנה:&#10;…"></textarea>
+    <div class="muted" style="margin-bottom:6px">מדביקים קישור למתכון מכל אתר (פודי, 10 דקות, מאקו, בלוגים…) – והמתכון ייובא במלואו: מצרכים עם כמויות, אופן ההכנה ותמונה.
+      ${inApp ? `<br>בטלפון אפשר גם לשתף מתכון מהדפדפן ישר לכאן: <b>שיתוף ← הסל החכם</b>.` : ""}</div>
+    <div class="row"><input type="url" id="ri-url" class="grow" placeholder="https://…" value="${esc(prefillUrl)}" dir="ltr"><button class="btn" id="ri-fetch">ייבא</button></div>
+    <div id="ri-status" class="muted" style="padding:6px 0"></div>
+    <details style="margin:4px 0"><summary class="muted" style="cursor:pointer">או: הדבקת טקסט של מתכון</summary>
+      <textarea id="ri-text" rows="8" style="margin-top:6px" placeholder="שקשוקה&#10;&#10;מצרכים:&#10;6 עגבניות&#10;4 ביצים&#10;1 בצל&#10;&#10;אופן ההכנה:&#10;1. מטגנים את הבצל…"></textarea></details>
     <div id="ri-prev"></div>
     <div class="row" style="margin-top:8px"><button class="btn grow" id="ri-go" disabled>שמור מתכון</button><button class="btn ghost" data-close>ביטול</button></div>`);
-  const ta = $("#ri-text"), go = $("#ri-go");
+  const ta = $("#ri-text"), go = $("#ri-go"), urlEl = $("#ri-url"), st = $("#ri-status");
   let parsed = null;
-  ta.oninput = () => {
-    parsed = parseRecipeText(ta.value);
-    go.disabled = !parsed.ingredients.length;
-    $("#ri-prev").innerHTML = parsed.ingredients.length ? `<div class="card" style="margin-top:8px"><b>${esc(parsed.name)}</b>
-      <div class="muted">${parsed.servings} מנות · ${parsed.ingredients.length} מצרכים זוהו:</div>
-      ${parsed.ingredients.map(x => `<div class="muted">• ${esc(x.name)} – ${x.unit === "kg" ? fmtNum(x.qty) + " ק״ג" : "×" + x.qty}${x.pantry ? " (בדרך כלל יש בבית)" : ""}</div>`).join("")}</div>` : "";
+  const preview = () => {
+    go.disabled = !parsed || !parsed.ingredients.length;
+    $("#ri-prev").innerHTML = parsed && parsed.ingredients.length ? `<div class="card" style="margin-top:8px">
+      <div class="row" style="align-items:flex-start">${parsed.image ? `<img src="${esc(parsed.image)}" alt="" referrerpolicy="no-referrer" style="width:72px;height:72px;object-fit:cover;border-radius:10px" onerror="this.remove()">` : ""}
+      <div class="grow"><b>${esc(parsed.name)}</b><div class="muted">${parsed.servings} מנות · ${parsed.ingredients.length} מצרכים${parsed.steps?.length ? ` · ${parsed.steps.length} שלבי הכנה` : ""}</div></div></div>
+      ${parsed.ingredients.map(x => `<div class="muted">• ${esc(x.name)} – ${x.unit === "kg" ? fmtNum(x.qty) + " ק״ג" : "×" + x.qty}${x.pantry ? " (בדרך כלל יש בבית)" : ""}</div>`).join("")}</div>`
+      : parsed ? `<div class="warn" style="margin-top:8px">לא מצאתי מצרכים. נסה להדביק את טקסט המתכון במקום הקישור.</div>` : "";
   };
+  const fromUrl = async () => {
+    const url = urlEl.value.trim();
+    if (!/^https?:\/\/\S+\.\S+/.test(url)) return toast("צריך קישור מלא שמתחיל ב-https://");
+    st.textContent = "⏳ טוען את המתכון…"; parsed = null; preview();
+    try { parsed = recipeFromHtml(await fetchPage(url), url); st.textContent = ""; }
+    catch (e) { st.textContent = "לא הצלחתי לטעון: " + e.message + ". אפשר להדביק את הטקסט למטה."; document.querySelector("#sheet-root details").open = true; }
+    preview();
+  };
+  $("#ri-fetch").onclick = fromUrl;
+  urlEl.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); fromUrl(); } };
+  ta.oninput = () => { parsed = parseRecipeText(ta.value); preview(); };
   go.onclick = () => {
-    const r = { id: uid(), t: now(), source: "import", ...parsed };
+    const r = { id: uid(), t: now(), source: parsed.url ? "url" : "import", ...parsed };
     S.recipes.push(r);
     commit();
     toast("המתכון נשמר");
-    recipeSheet(r.id); // לבדוק ולתקן
+    recipeView(r.id);
   };
+  if (prefillUrl) fromUrl();
+}
+
+// ---------- צפייה במתכון (מצרכים, אופן הכנה, תמונה) ----------
+function recipeView(id) {
+  const r = S.recipes.find(x => x.id === id);
+  if (!r) return;
+  const qtyText = x => x.unit === "kg" ? fmtNum(x.qty) + " ק״ג" : Number(x.qty) > 1 ? "×" + x.qty : "";
+  sheet(`${r.image ? `<img src="${esc(r.image)}" alt="" referrerpolicy="no-referrer" style="width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-bottom:8px" onerror="this.remove()">` : ""}
+    <h2 style="margin:0">${esc(r.name)}</h2>
+    <div class="muted" style="margin-bottom:8px">${r.servings || 4} מנות${r.url ? ` · <a href="${esc(r.url)}" target="_blank" rel="noopener">למתכון המקורי ↗</a>` : ""}</div>
+    <button class="btn" style="width:100%" id="rv-add">🛒 הוסף מצרכים לרשימה</button>
+    <h2>מצרכים</h2>
+    <div class="card">${r.ingredients.map(x => `<div style="padding:3px 0">• ${esc(x.line || x.name)}${!x.line && qtyText(x) ? ` <span class="muted">${qtyText(x)}</span>` : ""}</div>`).join("")}</div>
+    ${r.steps?.length ? `<h2>אופן ההכנה</h2><div class="card">${(() => { let n = 0; return r.steps.map(s => s.startsWith("▸ ")
+      ? `<div style="font-weight:700;margin-top:8px">${esc(s.slice(2))}</div>`
+      : `<div style="display:flex;gap:8px;padding:5px 0"><b style="color:var(--accent);min-width:18px">${++n}.</b><div>${esc(s)}</div></div>`).join(""); })()}</div>` : ""}
+    <div class="row" style="margin-top:8px"><button class="btn ghost grow" id="rv-edit">✏️ עריכה</button><button class="btn ghost grow" data-close>סגור</button></div>`);
+  $("#rv-add").onclick = () => addRecipeSheet(r);
+  $("#rv-edit").onclick = () => recipeSheet(r.id);
 }
 
 // ---------- הוספת מצרכים לרשימה (עם בחירת מספר מנות) ----------
@@ -918,7 +1080,9 @@ function recipeSheet(id) {
     <div class="row"><input type="text" id="r-name" placeholder="שם המתכון" value="${esc(r.name)}" class="grow">
       <input type="text" id="r-serv" value="${r.servings || 4}" style="width:70px;text-align:center" inputmode="numeric" title="מנות"></div>
     <div class="muted" style="margin:8px 0">מצרך בכל שורה: "1 ק״ג תפוחי אדמה", "6 עגבניות", "2 פסטה". כוכבית בסוף (*) = בדרך כלל יש בבית.</div>
-    <textarea id="r-ing" rows="10">${esc(text)}</textarea><br><br>
+    <textarea id="r-ing" rows="10">${esc(text)}</textarea>
+    <div class="muted" style="margin:8px 0 4px">אופן ההכנה (שלב בכל שורה, לא חובה):</div>
+    <textarea id="r-steps" rows="6">${esc((r.steps || []).join("\n"))}</textarea><br><br>
     <div class="row"><button class="btn grow" id="r-save">שמור</button>
     ${id === "new" ? "" : `<button class="btn ghost" id="r-del">מחק</button>`}
     <button class="btn ghost" data-close>ביטול</button></div>`);
@@ -932,7 +1096,8 @@ function recipeSheet(id) {
       const qty = p.unit === "kg" ? p.qty : unit === "kg" ? roundKg((p.qty || 1) * (p.unit === "unit" ? unitWeight(p.name) : 1)) : p.qty || 1;
       return { name: p.name, qty, unit, pantry: pantry || isPantry(p.name) };
     });
-    Object.assign(r, { name, servings: Math.max(1, +$("#r-serv").value || 4), ingredients, t: now() });
+    const steps = $("#r-steps").value.split("\n").map(l => l.replace(/^\d+[.)]\s*/, "").trim()).filter(Boolean);
+    Object.assign(r, { name, servings: Math.max(1, +$("#r-serv").value || 4), ingredients, steps, t: now() });
     if (id === "new") S.recipes.push(r);
     closeSheet(); commit();
   };
@@ -959,10 +1124,11 @@ async function refreshCompare() {
   } catch (e) { console.warn(e); compareCache = null; }
 }
 
-// ================= מועדי משלוח (דרך תוסף הכרום "הסל החכם – מועדי משלוח") =================
-// האתרים של הרשתות לא מאפשרים לאפליקציה לקרוא מועדי משלוח ישירות, אז התוסף קורא אותם בדפדפן שלך.
+// ================= מועדי משלוח =================
+// האתרים של הרשתות לא מאפשרים לדף אינטרנט לקרוא מועדי משלוח ישירות. במחשב קורא אותם תוסף הכרום
+// ("הסל החכם – מועדי משלוח"), ובאפליקציית האנדרואיד – האפליקציה עצמה (slots.js).
 let slots = null, slotsAt = 0, slotsLoading = false;
-const hasExt = () => !!document.documentElement.dataset.superlistExt;
+const hasExt = () => !!document.documentElement.dataset.superlistExt || Slots.available();
 const DAYS_SHORT = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
 function fmtSlot(r) {
   if (!r?.ok) return null;
@@ -984,6 +1150,12 @@ function requestSlots(force = false) {
   slotsLoading = true;
   const id = uid();
   const chainsList = [...new Set([...CART_CHAINS, ...Object.keys(selected())])];
+  if (Slots.available()) {
+    render();
+    return Slots.get(S.settings.address || {}, chainsList)
+      .then(res => { slots = res; slotsAt = Date.now(); }, () => {})
+      .then(() => { slotsLoading = false; render(); return slots; });
+  }
   return new Promise(resolve => {
     const done = (res) => { window.removeEventListener("message", onMsg); slotsLoading = false; if (res) { slots = res; slotsAt = Date.now(); } resolve(slots); render(); };
     const onMsg = ev => { if (ev.source === window && ev.data?.type === "superlist-slots" && ev.data.id === id) done(ev.data.results); };
@@ -1359,8 +1531,8 @@ function renderSettings() {
         <input type="text" id="addr-num" placeholder="מס'" inputmode="numeric" style="width:70px" value="${esc(S.settings.address?.num || "")}"></div>
       <button class="btn" style="width:100%;margin-top:8px">שמור כתובת</button>
     </form>
-    ${inApp && !hasExt() ? `<div class="muted" style="margin-top:8px">מועדי המשלוח מוצגים כרגע רק במחשב, עם התוסף לכרום.</div>`
-      : `<div class="row" style="margin-top:8px"><div class="grow muted">${hasExt() ? "✓ תוסף מועדי המשלוח מותקן" : "התוסף לכרום לא מותקן"}</div>
+    ${inApp && !hasExt() ? `<div class="muted" style="margin-top:8px">כדי לראות מועדי משלוח צריך לעדכן את האפליקציה: <a href="app.html">עדכון גרסה</a>.</div>`
+      : `<div class="row" style="margin-top:8px"><div class="grow muted">${inApp ? "⚡ האפליקציה בודקת מועדי משלוח. לשופרסל ולחצי חינם צריך להתחבר פעם אחת (במילוי עגלה)." : hasExt() ? "✓ תוסף מועדי המשלוח מותקן" : "התוסף לכרום לא מותקן"}</div>
       <button class="btn small ghost" data-act="${hasExt() ? "slots-refresh" : "ext-help"}">${hasExt() ? "בדוק עכשיו" : "איך מתקינים"}</button></div>`}
     ${hasExt() && slots ? `<div style="margin-top:6px">${[...new Set([...CART_CHAINS, ...Object.keys(selected())])].map(c => `<div class="row" style="font-size:13px"><b style="min-width:80px">${esc(CART_NAMES[c] || chains[c] || c)}</b><div class="grow">${slots[c]?.ok ? esc(fmtSlot(slots[c])) : `<span class="muted">${esc(slots[c]?.reason || "—")}</span>`}</div></div>`).join("")}</div>` : ""}
   </div>
@@ -1479,6 +1651,8 @@ $("#view").addEventListener("click", e => {
   if (ra) return addRecipeSheet(S.recipes.find(r => r.id === ra.dataset.recipeAdd));
   const er = t.closest("[data-edit-recipe]");
   if (er) return recipeSheet(er.dataset.editRecipe);
+  const vr = t.closest("[data-view-recipe]");
+  if (vr) return recipeView(vr.dataset.viewRecipe);
   const fc = t.closest("[data-fill]");
   if (fc) return fillCart(fc.dataset.fill);
   const go = t.closest("[data-tab-go]");
@@ -1581,6 +1755,17 @@ function startCloud() {
     loadChains().then(refreshCompare).then(render).then(() => requestSlots());
   });
 }
+
+// מהאפליקציה: "שיתוף" של קישור (מתכון) או טקסט (רשימת קניות) מאפליקציה אחרת. מחזיר true כשהתקבל.
+window.onSharedText = text => {
+  if (gate !== "ok") return false; // עוד לא מחוברים – האפליקציה תנסה שוב
+  const url = (String(text).match(/https?:\/\/\S+/) || [])[0];
+  if (url) { document.querySelector('nav button[data-tab="meals"]')?.click(); importRecipeSheet(url); }
+  else { document.querySelector('nav button[data-tab="list"]')?.click(); importSheet(String(text)); }
+  return true;
+};
+// חזרה לאפליקציה (למשל אחרי התחברות לרשת במילוי עגלה): רענון מועדי משלוח אם עברו 2 דקות
+window.onAppResume = () => { if (Slots.available() && Date.now() - slotsAt > 2 * 60 * 1000) requestSlots(true); };
 
 S = fill(S);
 setOnline(false);

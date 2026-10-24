@@ -37,8 +37,18 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     static final String APP_URL = "https://tk912.github.io/Superlist/";
@@ -48,6 +58,11 @@ public class MainActivity extends Activity {
     WebView web;
     final Handler ui = new Handler(Looper.getMainLooper());
     final Executor onUi = ui::post;
+    final ExecutorService net = Executors.newFixedThreadPool(4);
+    String sharedText;   // טקסט ששותף לאפליקציה (קישור למתכון / רשימת קניות), נמסר לדף כשהוא מוכן
+    int shareTries;
+    boolean pageReady;
+    String userAgent;    // לבקשות הרשת (WebView אפשר לשאול רק מה-UI thread)
 
     @Override
     protected void onCreate(Bundle saved) {
@@ -60,7 +75,8 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         // הדף מזהה שהוא בתוך האפליקציה גם לפי זה
-        s.setUserAgentString(s.getUserAgentString() + " SuperlistApp/1");
+        userAgent = s.getUserAgentString();
+        s.setUserAgentString(userAgent + " SuperlistApp/1");
         CookieManager.getInstance().setAcceptCookie(true);
         web.addJavascriptInterface(new Bridge(), "SuperlistNative");
         web.setWebChromeClient(new WebChromeClient());
@@ -72,6 +88,12 @@ public class MainActivity extends Activity {
                 if ("tk912.github.io".equals(u.getHost()) && u.getPath() != null && u.getPath().startsWith("/Superlist")) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ignored) { }
                 return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                pageReady = true;
+                deliverShared();
             }
         });
         setContentView(web);
@@ -93,8 +115,33 @@ public class MainActivity extends Activity {
         handle(intent);
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // חזרה מהמילוי (אולי התחברת לרשת) – הדף יכול לרענן מועדי משלוח
+        if (pageReady) js("window.onAppResume&&onAppResume()");
+    }
+
+    // "שיתוף" מאפליקציה אחרת: קישור למתכון מהדפדפן, או רשימת קניות מוואטסאפ/פתקים/AddIt
+    void deliverShared() {
+        if (sharedText == null || !pageReady) return;
+        String t = sharedText;
+        sharedText = null;
+        // הדף מחזיר true כשקיבל; אם עוד לא נטען (או מחכה להתחברות) מנסים שוב, עד דקה
+        ui.postDelayed(() -> web.evaluateJavascript("window.onSharedText?onSharedText(" + JSONObject.quote(t) + "):false", r -> {
+            if (!"true".equals(r) && ++shareTries < 60) { sharedText = t; ui.postDelayed(this::deliverShared, 1000); }
+            else shareTries = 0;
+        }), 300);
+    }
+
     // קישור ישן מהאתר בכרום: superlist://fill?c=רשת&j=רשימה – פותח מילוי עגלה
     void handle(Intent intent) {
+        if (intent != null && Intent.ACTION_SEND.equals(intent.getAction())) {
+            String t = intent.getStringExtra(Intent.EXTRA_TEXT);
+            String subj = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+            if (t != null) { sharedText = (subj != null && !t.contains(subj) ? subj + "\n" : "") + t; deliverShared(); }
+            return;
+        }
         Uri d = intent == null ? null : intent.getData();
         if (d == null || !"superlist".equals(d.getScheme())) return;
         String c = d.getQueryParameter("c"), j = d.getQueryParameter("j");
@@ -149,9 +196,56 @@ public class MainActivity extends Activity {
             });
     }
 
+    // בקשת רשת מהאפליקציה (בלי מגבלות הדפדפן), עם ההתחברות שנשמרה באפליקציה לאתרי הרשתות.
+    // משמשת למועדי משלוח (slots.js) ולייבוא מתכון מקישור. התשובה חוזרת ל-window.__nativeHttp(id, status, text).
+    void http(String id, String url, String method, String headersJson, String body) {
+        net.execute(() -> {
+            int status = 0;
+            String text;
+            try {
+                if (!url.startsWith("https://")) throw new Exception("https only");
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(12000);
+                c.setReadTimeout(15000);
+                c.setInstanceFollowRedirects(true);
+                c.setRequestMethod(method == null || method.isEmpty() ? "GET" : method);
+                c.setRequestProperty("User-Agent", userAgent);
+                c.setRequestProperty("Accept-Language", "he-IL,he;q=0.9");
+                String cookies = CookieManager.getInstance().getCookie(url);
+                if (cookies != null) c.setRequestProperty("Cookie", cookies);
+                if (headersJson != null && !headersJson.isEmpty()) {
+                    JSONObject h = new JSONObject(headersJson);
+                    for (Iterator<String> it = h.keys(); it.hasNext(); ) { String k = it.next(); c.setRequestProperty(k, h.getString(k)); }
+                }
+                if (body != null && !body.isEmpty()) {
+                    c.setDoOutput(true);
+                    try (OutputStream o = c.getOutputStream()) { o.write(body.getBytes(StandardCharsets.UTF_8)); }
+                }
+                status = c.getResponseCode();
+                for (Map.Entry<String, List<String>> e : c.getHeaderFields().entrySet())
+                    if ("Set-Cookie".equalsIgnoreCase(e.getKey())) for (String v : e.getValue()) CookieManager.getInstance().setCookie(url, v);
+                InputStream in = status >= 400 ? c.getErrorStream() : c.getInputStream();
+                text = in == null ? "" : read(in);
+            } catch (Exception e) {
+                text = String.valueOf(e.getMessage());
+            }
+            js("window.__nativeHttp&&__nativeHttp(" + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(text) + ")");
+        });
+    }
+
+    static String read(InputStream in) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] b = new byte[8192];
+        int n;
+        while ((n = in.read(b)) > 0) out.write(b, 0, n);
+        in.close();
+        return out.toString("UTF-8");
+    }
+
     // מה שהדף יכול לבקש מהאפליקציה
     class Bridge {
-        @JavascriptInterface public String version() { return "2"; }
+        @JavascriptInterface public String version() { return "3"; }
+        @JavascriptInterface public void http(String id, String url, String method, String headers, String body) { MainActivity.this.http(id, url, method, headers, body); }
         @JavascriptInterface public void signIn() { ui.post(MainActivity.this::googleSignIn); }
         @JavascriptInterface public void signOut() { ui.post(MainActivity.this::googleSignOut); }
         @JavascriptInterface public void fill(String chain, String job) { ui.post(() -> openCart(chain, job)); }

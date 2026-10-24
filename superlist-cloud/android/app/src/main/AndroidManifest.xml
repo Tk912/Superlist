@@ -26,6 +26,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="superlist" android:host="fill" />
             </intent-filter>
+            <!-- "שיתוף" לאפליקציה: קישור למתכון, או רשימת קניות כטקסט -->
+            <intent-filter android:label="הוסף לסל החכם">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <!-- מילוי עגלה באתר הסופר -->
         <activity
