@@ -470,6 +470,7 @@ function renderList() {
     <button class="btn">הוסף</button>
     <div class="ac hidden" id="ac" role="listbox"></div>
   </form>
+  ${updateBanner()}
   ${installBanner()}
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
@@ -1657,7 +1658,8 @@ function renderSettings() {
   const sel = S.settings.stores;
   const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
   return `${installCard()}
-  ${inApp ? `<div class="muted" style="margin:8px 0">📱 אפליקציית אנדרואיד · <a href="app.html">עדכון גרסה</a></div>` : ""}
+  ${inApp ? `<div class="muted" style="margin:8px 0">📱 אפליקציית אנדרואיד${installedVersion() ? ` · גרסה 1.${installedVersion()}` : ""} ·
+    ${appUpdate ? `<b style="color:var(--accent)">יש עדכון (1.${appUpdate.latest})</b> · <a href="${APK_URL}">עדכן עכשיו</a>` : `<a href="app.html">עדכון גרסה</a>`}</div>` : ""}
   <h2>השוואת מחירים: סניפי אונליין</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא רק בין המחירים של אתרי הקנייה (סניפי האונליין), לא של סניפים רגילים.</div>
     ${Object.entries(ONLINE).map(([c, o]) => {
@@ -1883,6 +1885,8 @@ $("#view").addEventListener("click", e => {
   if (ps) return storeSheet(ps.dataset.pickStore);
   const act = t.closest("[data-act]")?.dataset.act;
   if (!act) return;
+  if (act === "update-hide") { try { localStorage.setItem(UPDATE_HIDE, String(appUpdate?.latest || "")); } catch {} toast("אפשר לעדכן בכל זמן מההגדרות"); return render(); }
+  if (act === "update-go") { toast("📥 ההורדה מתחילה. פותחים את הקובץ שירד ומתקינים"); return; } // הקישור עצמו פותח את ההורדה
   if (act === "voice") return voiceAdd();
   if (act === "scan") return scanAdd();
   if (act === "install") return doInstall();
@@ -1987,7 +1991,38 @@ window.onSharedText = text => {
   return true;
 };
 // חזרה לאפליקציה (למשל אחרי התחברות לרשת במילוי עגלה): רענון מועדי משלוח אם עברו 2 דקות
-window.onAppResume = () => { if (Slots.available() && Date.now() - slotsAt > 2 * 60 * 1000) requestSlots(true); };
+window.onAppResume = () => {
+  if (Slots.available() && Date.now() - slotsAt > 2 * 60 * 1000) requestSlots(true);
+  if (Date.now() - updateCheckedAt > 6 * 36e5) checkAppUpdate();
+};
+
+// ================= "יש עדכון זמין" לאפליקציית האנדרואיד =================
+// הגרסה האחרונה: מספר הבנייה שכתוב בפרסום ב-GitHub ("גרסה 1.N"). הגרסה המותקנת: מהאפליקציה עצמה.
+const APK_URL = "https://github.com/Tk912/Superlist/releases/latest/download/superlist.apk";
+const UPDATE_HIDE = "superlist-update-hidden";
+let appUpdate = null, updateCheckedAt = 0;
+const installedVersion = () => { try { return +window.SuperlistNative.appVersion() || 0; } catch { return 0; } }; // גרסה ישנה בלי appVersion = 0
+async function checkAppUpdate() {
+  if (!inApp) return;
+  updateCheckedAt = Date.now();
+  try {
+    const j = await (await fetch("https://api.github.com/repos/Tk912/Superlist/releases/tags/android", { cache: "no-store" })).json();
+    const latest = +((String(j.body || "") + " " + String(j.name || "")).match(/1\.(\d+)/) || [])[1] || 0;
+    const cur = installedVersion();
+    appUpdate = latest > cur ? { latest, cur, notes: String(j.body || "") } : null;
+    render();
+  } catch {}
+}
+function updateBanner() {
+  if (!appUpdate) return "";
+  let hidden = ""; try { hidden = localStorage.getItem(UPDATE_HIDE) || ""; } catch {}
+  if (hidden === String(appUpdate.latest)) return "";
+  return `<div class="card row" style="align-items:center;border:2px solid var(--accent)">
+    <div class="grow">🆕 <b>יש עדכון זמין לאפליקציה</b><div class="muted">גרסה 1.${appUpdate.latest}. מורידים ומתקינים מעל הגרסה הקיימת – הרשימה נשמרת.</div></div>
+    <a class="btn small" style="text-decoration:none" href="${APK_URL}" data-act="update-go">עדכן</a>
+    <button class="icon-btn" data-act="update-hide" aria-label="לא עכשיו">✕</button></div>`;
+}
+if (inApp) setTimeout(checkAppUpdate, 4000);
 
 S = fill(S);
 setOnline(false);

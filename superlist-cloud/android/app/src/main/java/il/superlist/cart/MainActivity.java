@@ -282,7 +282,12 @@ public class MainActivity extends Activity {
 
     // מה שהדף יכול לבקש מהאפליקציה
     class Bridge {
-        @JavascriptInterface public String version() { return "4"; }
+        @JavascriptInterface public String version() { return "5"; }
+        // מספר הגרסה המותקנת (מספר הבנייה ב-GitHub) – הדף משווה לגרסה האחרונה ומציג "יש עדכון זמין"
+        @SuppressWarnings("deprecation")
+        @JavascriptInterface public int appVersion() {
+            try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; } catch (Exception e) { return 0; }
+        }
         @JavascriptInterface public void scan() { ui.post(MainActivity.this::scanBarcode); }
         @JavascriptInterface public void voice() { ui.post(MainActivity.this::voice); }
         @JavascriptInterface public void http(String id, String url, String method, String headers, String body) { MainActivity.this.http(id, url, method, headers, body); }
