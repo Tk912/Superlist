@@ -105,6 +105,15 @@ td.best { color: var(--accent); font-weight: 700; }
 .thumb.sm { width: 34px; height: 34px; cursor: zoom-in; }
 .thumb-ph { width: 44px; height: 44px; border-radius: 8px; background: var(--chip); flex: none; display: grid; place-items: center; font-size: 22px; }
 #add-form { position: relative; }
+.add-tool { font-size: 22px; padding: 4px; flex: none; }
+.add-tool.on { animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+#sc-box video, #sc-v { width: 100%; border-radius: 12px; background: #000; max-height: 46vh; object-fit: cover; }
+.help h3 { margin: 14px 0 4px; font-size: 16px; }
+.help details { background: var(--card); border-radius: 12px; padding: 10px 14px; margin: 0 0 8px; box-shadow: var(--shadow); }
+.help summary { cursor: pointer; font-weight: 600; }
+.help ul, .help ol { margin: 6px 0; padding-inline-start: 22px; }
+.help li { margin: 4px 0; }
 .ac { position: absolute; top: calc(100% + 4px); inset-inline: 0; z-index: 15; background: var(--card, var(--bg)); border: 1px solid var(--line);
   border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 60vh; overflow: auto; padding: 4px 10px; }
 .ac-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px; border-bottom: 1px solid var(--line); cursor: pointer; border-radius: 8px; }
@@ -130,6 +139,7 @@ td.best { color: var(--accent); font-weight: 700; }
   <button data-tab="meals"><span class="i">📖</span>מתכונים</button>
   <button data-tab="prices"><span class="i">💰</span>מחירים</button>
   <button data-tab="settings"><span class="i">⚙️</span>הגדרות</button>
+  <button data-tab="help"><span class="i">❓</span>הוראות</button>
 </nav>
 <div id="sheet-root"></div>
 
@@ -454,7 +464,9 @@ function renderList() {
 
   return `
   <form class="card row" id="add-form" autocomplete="off">
-    <input type="text" id="add-input" placeholder="למשל: 2 חלב, או 1.5 ק״ג עגבניות" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
+    <input type="text" id="add-input" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
+    <button type="button" class="icon-btn add-tool" data-act="voice" title="הוספה קולית" aria-label="הוספה קולית">🎤</button>
+    <button type="button" class="icon-btn add-tool" data-act="scan" title="סריקת ברקוד" aria-label="סריקת ברקוד">📷</button>
     <button class="btn">הוסף</button>
     <div class="ac hidden" id="ac" role="listbox"></div>
   </form>
@@ -602,8 +614,8 @@ function previewQty(x) {
   return x.qty > 1 ? `${x.name} ×${x.qty}` : x.name;
 }
 
-function importSheet(prefill = "") {
-  sheet(`<h2 style="margin-top:0">📥 ייבוא רשימת קניות</h2>
+function importSheet(prefill = "", title = "📥 ייבוא רשימת קניות") {
+  sheet(`<h2 style="margin-top:0">${esc(title)}</h2>
     <div class="muted" style="margin-bottom:8px">מעתיקים רשימה מכל מקום – וואטסאפ, פתקים, Google Keep, AddIt, מייל – ומדביקים כאן. פריט בכל שורה, או מופרדים בפסיקים; כמויות כמו "2 חלב" או "1.5 ק״ג עגבניות" מזוהות. פריטים שסומנו כנקנו (✓) לא ייובאו.
       ${inApp ? `<br>אפשר גם לשתף רשימה מכל אפליקציה ישר לכאן: <b>שיתוף ← הסל החכם</b>.` : ""}</div>
     <textarea id="imp-text" rows="9" placeholder="חלב&#10;לחם x2&#10;1.5 ק״ג עגבניות&#10;ביצים, קוטג', במבה">${esc(prefill)}</textarea>
@@ -1360,6 +1372,143 @@ document.addEventListener("mousedown", e => {
   if (!e.target.closest?.("#add-form")) acHide();
 });
 
+// ================= הוספה קולית =================
+// באפליקציה: זיהוי הדיבור של הטלפון. בדפדפן: Web Speech (כרום). "חלב, לחם ושתי עגבניות" -> 3 פריטים.
+function knownWord(w) {
+  const n = norm(w);
+  if (acNames().some(x => norm(x).split(/\s+/).includes(n))) return true;
+  try { return PriceDB.isWord(w); } catch { return false; }
+}
+function speechToItems(text) {
+  let t = String(text || "").replace(/[.!?]/g, " ").replace(/\s+/g, " ").trim();
+  t = t.replace(/^(?:(?:תוסיף|תוסיפי|תוסיפו|הוסף|הוסיפי|להוסיף|צריך|צריכים|צריכה|קנה|קני|לקנות|גם|לי|לרשימה)\s+)+/, "");
+  const out = [];
+  for (const part of t.split(/\s*,\s*|\s+וגם\s+|\s+ועוד\s+/)) {
+    let cur = [];
+    for (const w of part.split(" ").filter(Boolean)) {
+      // "חלב ולחם": מפצלים לפני ו' כשהמילה בלעדיה מוכרת (ולא "וניל", "וופלים"); "ו2 קוטג'" -> פריט חדש
+      if (cur.length && (/^ו\d/.test(w) || (/^ו[^ו]/.test(w) && knownWord(w.slice(1)) && !knownWord(w)) || (/^ו/.test(w) && HEB_NUM[w.slice(1)] !== undefined))) {
+        out.push(cur.join(" ")); cur = [w.slice(1)];
+      } else cur.push(w);
+    }
+    if (cur.length) out.push(cur.join(" "));
+  }
+  // "שתי עגבניות" -> "2 עגבניות", "חצי קילו גבינה" -> "0.5 קילו גבינה", "קילו עגבניות" -> "1 קילו עגבניות"
+  return out.map(s => s.replace(/^(\S+)\s+/, (m, w) => HEB_NUM[w] !== undefined ? HEB_NUM[w] + " " : m)
+    .replace(/^(ק"ג|ק״ג|קילו)\s+/, "1 $1 ").trim()).filter(s => s.length > 1);
+}
+function onVoiceText(text) {
+  const items = speechToItems(text);
+  if (!items.length) return toast("לא שמעתי מוצר. נסה שוב");
+  if (items.length === 1) {
+    const p = parseQty(items[0]);
+    addItem(p.name, p.qty, "voice", p.unit);
+    commit(); refreshCompare().then(render);
+    return toast("🎤 נוסף: " + p.name);
+  }
+  importSheet(items.join("\n"), `🎤 שמעתי ${items.length} פריטים`); // לבדוק לפני ההוספה
+}
+window.onNativeVoice = (text, err) => {
+  if (text) return onVoiceText(text);
+  if (err === "no-recognizer") toast("בטלפון אין זיהוי דיבור. אפשר להתקין את אפליקציית Google");
+};
+function voiceAdd() {
+  if (inApp && window.SuperlistNative.voice) return window.SuperlistNative.voice();
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return toast(inApp ? "עדכן את האפליקציה כדי להוסיף בקול (הגדרות ← עדכון גרסה)" : "הדפדפן הזה לא תומך בהוספה קולית. נסה בכרום");
+  const rec = new SR();
+  rec.lang = "he-IL"; rec.interimResults = false; rec.maxAlternatives = 1;
+  document.querySelector("[data-act=voice]")?.classList.add("on");
+  toast("🎤 מקשיב… אמור מה להוסיף");
+  rec.onresult = e => onVoiceText(e.results[0][0].transcript);
+  rec.onerror = e => { if (!["no-speech", "aborted"].includes(e.error)) toast(e.error === "not-allowed" ? "צריך לאשר גישה למיקרופון" : "זיהוי הדיבור נכשל: " + e.error); };
+  rec.onend = () => document.querySelector("[data-act=voice]")?.classList.remove("on");
+  rec.start();
+}
+
+// ================= סריקת ברקוד =================
+// באפליקציה: הסורק של Google. בדפדפן: המצלמה (BarcodeDetector, או ספריית html5-qrcode). תמיד אפשר גם להקליד את המספר.
+window.onNativeBarcode = (code, err) => {
+  if (code) return addByBarcode(code);
+  if (err && err !== "cancelled") toast("הסריקה נכשלה: " + err);
+};
+function scanAdd() {
+  if (inApp && window.SuperlistNative.scan) return window.SuperlistNative.scan();
+  if (inApp) return toast("עדכן את האפליקציה כדי לסרוק ברקוד (הגדרות ← עדכון גרסה)");
+  webScanSheet();
+}
+const loadScript = src => new Promise((res, rej) => {
+  if ([...document.scripts].some(s => s.src === src)) return res();
+  const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("לא נטען")); document.head.append(s);
+});
+async function webScanSheet() {
+  sheet(`<h2 style="margin-top:0">📷 סריקת ברקוד</h2>
+    <div id="sc-box"><video id="sc-v" playsinline muted></video></div>
+    <div class="muted" id="sc-msg" style="margin:6px 0">מכוונים את המצלמה לברקוד שעל המוצר</div>
+    <div class="row"><input type="text" id="sc-code" inputmode="numeric" placeholder="או מקלידים את מספר הברקוד" class="grow"><button class="btn" id="sc-ok">הוסף</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  let done = false;
+  const finish = code => { if (done) return; done = true; closeSheet(); addByBarcode(code); };
+  $("#sc-ok").onclick = () => { const c = $("#sc-code").value.replace(/\D/g, ""); if (c) finish(c); };
+  const msg = t => { const m = $("#sc-msg"); if (m) m.textContent = t; };
+  if (!navigator.mediaDevices?.getUserMedia) return msg("אין גישה למצלמה בדפדפן הזה – אפשר להקליד את מספר הברקוד");
+  try {
+    if ("BarcodeDetector" in window) {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const v = $("#sc-v");
+      if (!v || done) return stream.getTracks().forEach(t => t.stop());
+      sheetCleanup = () => stream.getTracks().forEach(t => t.stop());
+      v.srcObject = stream; await v.play();
+      const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+      const tick = async () => {
+        if (done || !document.body.contains(v)) return;
+        try { const r = await det.detect(v); if (r[0]?.rawValue) return finish(r[0].rawValue); } catch {}
+        setTimeout(tick, 200);
+      };
+      tick();
+    } else {
+      $("#sc-box").innerHTML = '<div id="sc-reader"></div>';
+      await loadScript("https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js");
+      if (done || !$("#sc-reader")) return;
+      const F = window.Html5QrcodeSupportedFormats;
+      const q = new window.Html5Qrcode("sc-reader", { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128], verbose: false });
+      sheetCleanup = () => { q.stop().catch(() => {}); };
+      await q.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 260, height: 120 } }, text => finish(text), () => {});
+    }
+  } catch (e) { msg("לא הצלחתי לפתוח את המצלמה" + (/NotAllowed|Permission/i.test(String(e?.name || e)) ? " (צריך לאשר גישה למצלמה)" : "") + ". אפשר להקליד את מספר הברקוד."); }
+}
+// מוצר לפי ברקוד: קודם בסניפים שנבחרו (עם מחיר וקישור), ואם אין – שם מהמאגר הפתוח Open Food Facts
+async function addByBarcode(raw) {
+  const code = String(raw || "").replace(/\D/g, "");
+  if (code.length < 6) return toast("ברקוד לא תקין");
+  let p = null;
+  if (Object.keys(selected()).length) { try { await PriceDB.load(selected()); p = PriceDB.lookup(code); } catch {} }
+  if (p) {
+    addItem(p.name, 1, "scan", p.weighted ? "kg" : "unit");
+    const it = live().find(i => norm(i.name) === norm(p.name) && !i.done);
+    if (it) setLink(it, p.code, p.name, p.weighted); else { commit(); refreshCompare().then(render); }
+    return toast("📷 נוסף: " + p.name);
+  }
+  let name = "";
+  try {
+    const j = await (await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name_he,product_name,brands`)).json();
+    const pr = j.product || {}, brand = (pr.brands || "").split(",")[0].trim();
+    name = (pr.product_name_he || pr.product_name || "").trim();
+    if (name && brand && !name.includes(brand)) name += " " + brand;
+  } catch {}
+  sheet(`<h2 style="margin-top:0">📷 ברקוד ${esc(code)}</h2>
+    <div class="row" style="align-items:center">${thumb(code)}<div class="muted grow">${name ? "המוצר לא נמצא בסניפים שבחרת. זה השם שמצאתי – אפשר לתקן:" : "לא מצאתי את המוצר. איך לקרוא לו?"}</div></div>
+    <input type="text" id="bc-name" value="${esc(name)}" placeholder="שם המוצר" style="margin:8px 0">
+    <div class="row"><button class="btn grow" id="bc-add">הוסף לרשימה</button><button class="btn ghost" data-close>ביטול</button></div>`);
+  $("#bc-add").onclick = () => {
+    const n = $("#bc-name").value.trim();
+    if (!n) return toast("צריך שם למוצר");
+    addItem(n, 1, "scan");
+    closeSheet(); commit(); refreshCompare().then(render);
+    toast("נוסף: " + n);
+  };
+}
+
 function linkSheet(item) {
   sheet(`<h2 style="margin-top:0">איזה "${esc(item.name)}"?</h2>
     <input type="search" id="l-q" value="${esc(item.name)}" placeholder="חיפוש לפי שם או ברקוד">
@@ -1583,11 +1732,78 @@ function setStore(chain, id, name) {
   loadChains().then(() => { refreshCompare().then(render); });
 }
 
+// ================= הוראות הפעלה =================
+function renderHelp() {
+  const sec = (title, body, open = false) => `<details ${open ? "open" : ""}><summary>${title}</summary>${body}</details>`;
+  return `<div class="help">
+  <h2>❓ הוראות הפעלה</h2>
+  <div class="card">הסל החכם עושה בשבילך את הקניות בסופר אונליין: בונים רשימה (גם יחד עם בן/בת הזוג), רואים כמה עולה הסל בכל רשת ומתי המשלוח הכי קרוב, ובלחיצה אחת העגלה באתר הסופר מתמלאת. <b>התשלום תמיד נשאר אצלך.</b></div>
+
+  ${sec("📝 הרשימה: הוספת מוצרים", `<ul>
+    <li><b>הקלדה:</b> כותבים בשדה למעלה ולוחצים "הוסף". אפשר עם כמות: "2 חלב", "1.5 ק״ג עגבניות", "לחם x3".</li>
+    <li><b>השלמה חכמה:</b> תוך כדי הקלדה מופיעים מוצרים כמו שהם כתובים ברשתות, עם תמונה ומחיר. שגיאת כתיב? יופיע "האם התכוונת ל…".</li>
+    <li><b>🎤 בקול:</b> לוחצים על המיקרופון ואומרים, למשל "חלב, לחם ושתי עגבניות". כמה מוצרים – מופיע חלון לאישור.</li>
+    <li><b>📷 סריקת ברקוד:</b> לוחצים על המצלמה ומכוונים לברקוד שעל המוצר. המוצר המדויק נכנס לרשימה, כבר מקושר למחיר.</li>
+    <li><b>📥 ייבוא רשימת קניות:</b> מדביקים רשימה מוואטסאפ, פתקים, AddIt וכו' (כפתור מתחת לרשימה). באפליקציה אפשר גם <b>לשתף</b> רשימה מכל אפליקציה ← "הסל החכם".</li>
+    <li>ירקות ופירות נכנסים בק״ג (בקפיצות של חצי ק״ג), כל השאר ביחידות. לחיצה על הכמות מחליפה בין ק״ג ליחידות.</li>
+  </ul>`, true)}
+
+  ${sec("✅ בזמן הקנייה ואחריה", `<ul>
+    <li>לחיצה על פריט מסמנת אותו "בעגלה". ✕ מוחק.</li>
+    <li>🔗 ליד פריט = בחירת המוצר המדויק (מותג, גודל). התמונה הקטנה מראה מה נבחר – לחיצה מגדילה.</li>
+    <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
+  </ul>`)}
+
+  ${sec("👥 שיתוף הרשימה", `<ul>
+    <li>"👥 שיתוף הרשימה" ← מוסיפים את כתובת ה-Gmail של השותף. הוא מתחבר עם Google ורואה את אותה רשימה.</li>
+    <li>כל שינוי מופיע אצל שניכם מיד. פריט שהשותף הוסיף מסומן בשמו.</li>
+  </ul>`)}
+
+  ${sec("💰 השוואת מחירים", `<ul>
+    <li>ההשוואה היא רק בין <b>סניפי האונליין</b> (המחירים של אתרי הקנייה): שופרסל, רמי לוי, קרפור, טיב טעם ו-Wolt Market. בוחרים רשתות ב⚙️ הגדרות.</li>
+    <li>מתחת לרשימה: "מחיר הסל" בכל רשת, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
+    <li>לשונית 💰 מחירים: טבלה מפורטת לכל מוצר, וחיפוש מוצר לפי שם או ברקוד.</li>
+    <li>המחירים מתעדכנים אוטומטית כמה פעמים ביום, מקבצי שקיפות המחירים של הרשתות. ייתכנו הבדלים קטנים (מבצעי מועדון, דמי משלוח).</li>
+  </ul>`)}
+
+  ${sec("⚡ מועדי משלוח", `<ul>
+    <li>ב⚙️ הגדרות ממלאים כתובת (עיר, רחוב, מספר).</li>
+    <li><b>באפליקציה לאנדרואיד:</b> המועדים מופיעים לבד. לשופרסל ולחצי חינם צריך להתחבר פעם אחת לאתר שלהן (במילוי עגלה).</li>
+    <li><b>במחשב:</b> צריך את תוסף הכרום "הסל החכם – מועדי משלוח" (⚙️ הגדרות ← איך מתקינים).</li>
+  </ul>`)}
+
+  ${sec("🛒 שליחה לסופר (מילוי עגלה)", `<ul>
+    <li>"🛒 שלח לסופר" ← בוחרים רשת (ממוין לפי מחיר או לפי משלוח קרוב).</li>
+    <li><b>באפליקציה:</b> אתר הסופר נפתח בתוך האפליקציה וממלא את העגלה לבד. בפעם הראשונה מתחברים לחשבון באתר. בסוף עוברים לעגלה – בודקים ומשלמים. "✓ סיום" חוזר לרשימה.</li>
+    <li><b>במחשב:</b> אתר הסופר נפתח בלשונית חדשה, ושם לוחצים על הסימנייה "🛒 מלא עגלה" (מוסיפים אותה פעם אחת – ⚙️ הגדרות).</li>
+    <li>רשתות: שופרסל, רמי לוי, קרפור, טיב טעם, ויקטורי, יוחננוף וחצי חינם.</li>
+  </ul>`)}
+
+  ${sec("📖 מתכונים", `<ul>
+    <li><b>📚 ספריית מתכונים:</b> מתכונים מוכנים עם כל המצרכים והכמויות.</li>
+    <li><b>📋 ייבוא מתכון:</b> מדביקים קישור למתכון מכל אתר – והוא נשמר במלואו: מצרכים, אופן הכנה ותמונה. באפליקציה אפשר גם לשתף מתכון מהדפדפן ← "הסל החכם". אפשר גם להדביק טקסט.</li>
+    <li>לחיצה על מתכון פותחת אותו. "🛒 הוסף מצרכים לרשימה" – בוחרים מספר מנות ומה להוסיף (מה שבדרך כלל יש בבית לא מסומן).</li>
+  </ul>`)}
+
+  ${sec("📱 האפליקציה בטלפון", `<ul>
+    <li><b>אנדרואיד:</b> אפליקציית "הסל החכם" (⚙️ הגדרות ← התקנה/עדכון). כוללת הכל: רשימה, מחירים, מועדי משלוח, מילוי עגלה, סריקה והוספה קולית.</li>
+    <li><b>אייפון:</b> פותחים את האתר ב-Safari ← שיתוף ← "הוספה למסך הבית".</li>
+    <li>עובד גם בלי קליטה (למשל בתוך הסופר). השינויים מסתנכרנים כשהחיבור חוזר.</li>
+  </ul>`)}
+
+  ${sec("🔒 פרטיות ואבטחה", `<ul>
+    <li>הרשימה נשמרת בחשבון Firebase שלכם, ורק מי שברשימת השיתוף יכול לראות אותה.</li>
+    <li>האפליקציה לא שומרת סיסמאות ולא פרטי תשלום. ההתחברות לאתרי הסופר והתשלום – רק שלך, באתר של הרשת.</li>
+  </ul>`)}
+  <div class="muted" style="text-align:center;margin:14px 0">יש שאלה או משהו לא עובד? כתבו לי מה ראיתם על המסך.</div>
+  </div>`;
+}
+
 // ================= תשתית תצוגה =================
 function render() {
   const view = $("#view");
   const focus = document.activeElement?.id, val = focus && $("#" + focus)?.value;
-  view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings }[tab]();
+  view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings, help: renderHelp }[tab]();
   if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
   if (focus === "add-input" && val) acShow();
   const fs = $("#free-search");
@@ -1598,14 +1814,18 @@ function render() {
   }, 300); }; }
 }
 
+// פעולה לסגירת חלון (למשל כיבוי המצלמה בסריקה)
+let sheetCleanup = null;
+function runSheetCleanup() { const f = sheetCleanup; sheetCleanup = null; try { f?.(); } catch {} }
 function sheet(html) {
+  runSheetCleanup();
   $("#sheet-root").innerHTML = `<div class="sheet-bg"><div class="sheet">${html}</div></div>`;
   const bg = $(".sheet-bg");
   bg.onclick = e => { if (e.target === bg || e.target.matches("[data-close]")) closeSheet(); };
   const first = bg.querySelector("input");
   if (first && matchMedia("(pointer: fine)").matches) first.focus();
 }
-function closeSheet() { $("#sheet-root").innerHTML = ""; }
+function closeSheet() { runSheetCleanup(); $("#sheet-root").innerHTML = ""; }
 let toastTimer;
 function toast(msg) {
   document.querySelector(".toast")?.remove();
@@ -1663,6 +1883,8 @@ $("#view").addEventListener("click", e => {
   if (ps) return storeSheet(ps.dataset.pickStore);
   const act = t.closest("[data-act]")?.dataset.act;
   if (!act) return;
+  if (act === "voice") return voiceAdd();
+  if (act === "scan") return scanAdd();
   if (act === "install") return doInstall();
   if (act === "install-help") return sheet(`${installCard()}<button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
   if (act === "install-hide") { try { localStorage.setItem(INSTALL_HIDE, "1"); } catch {} toast("אפשר להתקין בכל זמן מההגדרות"); return render(); }
@@ -1770,7 +1992,7 @@ window.onAppResume = () => { if (Slots.available() && Date.now() - slotsAt > 2 *
 S = fill(S);
 setOnline(false);
 // קיצורי הדרך מהאייקון (לחיצה ארוכה): ./#list, ./#meals
-{ const h = location.hash.slice(1); if (["list", "meals", "prices", "settings"].includes(h)) { tab = h; document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x.dataset.tab === h)); } }
+{ const h = location.hash.slice(1); if (["list", "meals", "prices", "settings", "help"].includes(h)) { tab = h; document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x.dataset.tab === h)); } }
 render();
 if (window.Cloud) startCloud();
 else {

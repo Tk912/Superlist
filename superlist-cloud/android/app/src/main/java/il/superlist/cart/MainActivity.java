@@ -34,6 +34,13 @@ import androidx.credentials.exceptions.GetCredentialException;
 
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
+
+import android.content.ActivityNotFoundException;
+import android.speech.RecognizerIntent;
+import java.util.ArrayList;
 
 import org.json.JSONObject;
 
@@ -242,9 +249,42 @@ public class MainActivity extends Activity {
         return out.toString("UTF-8");
     }
 
+    // סריקת ברקוד: הסורק של Google (נפתח מעל האפליקציה). התוצאה ל-window.onNativeBarcode(code | null, error)
+    void scanBarcode() {
+        GmsBarcodeScannerOptions opts = new GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E, Barcode.FORMAT_CODE_128)
+            .build();
+        GmsBarcodeScanning.getClient(this, opts).startScan()
+            .addOnSuccessListener(b -> js("window.onNativeBarcode&&onNativeBarcode(" + JSONObject.quote(String.valueOf(b.getRawValue())) + ")"))
+            .addOnCanceledListener(() -> js("window.onNativeBarcode&&onNativeBarcode(null,'cancelled')"))
+            .addOnFailureListener(e -> js("window.onNativeBarcode&&onNativeBarcode(null," + JSONObject.quote(String.valueOf(e.getMessage())) + ")"));
+    }
+
+    // הוספה קולית: זיהוי הדיבור של הטלפון (עברית). התוצאה ל-window.onNativeVoice(text | null, error)
+    static final int REQ_VOICE = 41;
+    void voice() {
+        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "he-IL");
+        i.putExtra(RecognizerIntent.EXTRA_PROMPT, "מה להוסיף לרשימה?");
+        try { startActivityForResult(i, REQ_VOICE); }
+        catch (ActivityNotFoundException e) { js("window.onNativeVoice&&onNativeVoice(null,'no-recognizer')"); }
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_VOICE) return;
+        ArrayList<String> r = data == null ? null : data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+        String t = res == RESULT_OK && r != null && !r.isEmpty() ? r.get(0) : null;
+        js("window.onNativeVoice&&onNativeVoice(" + (t == null ? "null,'cancelled'" : JSONObject.quote(t)) + ")");
+    }
+
     // מה שהדף יכול לבקש מהאפליקציה
     class Bridge {
-        @JavascriptInterface public String version() { return "3"; }
+        @JavascriptInterface public String version() { return "4"; }
+        @JavascriptInterface public void scan() { ui.post(MainActivity.this::scanBarcode); }
+        @JavascriptInterface public void voice() { ui.post(MainActivity.this::voice); }
         @JavascriptInterface public void http(String id, String url, String method, String headers, String body) { MainActivity.this.http(id, url, method, headers, body); }
         @JavascriptInterface public void signIn() { ui.post(MainActivity.this::googleSignIn); }
         @JavascriptInterface public void signOut() { ui.post(MainActivity.this::googleSignOut); }

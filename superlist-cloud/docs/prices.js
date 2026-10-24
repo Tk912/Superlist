@@ -226,11 +226,29 @@ const PriceDB = (() => {
 
   const stores = chain => getJSON(`data/stores/${chain}.json`);
 
+  // מוצר לפי ברקוד (סריקה): השם והמחירים בכל הרשתות שנטענו
+  function lookup(barcode) {
+    const code = String(barcode || "").replace(/\D/g, "").replace(/^0+/, "");
+    if (!code) return null;
+    let found = null;
+    for (const [chain, d] of Object.entries(data)) {
+      const it = d.byCode.get(code);
+      if (!it) continue;
+      found ||= { code, name: it[1], weighted: !!it[3], prices: {} };
+      found.prices[chain] = it[2];
+      if (it[1].length < found.name.length) found.name = it[1];
+    }
+    return found;
+  }
+
   // תמונת מוצר לפי ברקוד (אין תמונות בקובצי המחירים). ירקות ופירות במשקל הם בלי ברקוד אמיתי.
   function images(code) {
     const c = String(code || "").replace(/^0+/, "");
     return /^\d{8,14}$/.test(c) ? [`https://m.pricez.co.il/ProductPictures/${c}.jpg`, `https://img.rami-levy.co.il/product/${c}/small.jpg`] : [];
   }
 
-  return { CHAIN_NAMES, load, search, suggest, images, compare, stores, info: () => ({ status, data }) };
+  // האם המילה מופיעה בשמות המוצרים (לפיצול משפט מוקלט: "חלב ולחם" -> חלב, לחם)
+  const isWord = w => getVocab().has(stem(w));
+
+  return { CHAIN_NAMES, load, search, suggest, lookup, isWord, images, compare, stores, info: () => ({ status, data }) };
 })();
