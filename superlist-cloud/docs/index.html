@@ -502,8 +502,8 @@ function sendSheet() {
     ${!hasExt() && !inApp ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
     <div class="card">${(sendSort === "fast" && slots ? [...order].sort((a, b) => (slots[a]?.from || "9") .localeCompare(slots[b]?.from || "9")) : order).map(c => `<div class="result row" data-fill="${c}">
       <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
-      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר${isEstimate(c) ? " (הערכה)" : ""}` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירי אונליין)" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
-      ${slotLine(c)}</div>
+      <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר${isEstimate(c) ? " (הערכה)" : ""}` : cartTotal(c) ? `🧾 בעגלה בפועל: ${money(cartTotal(c).total)} (${ago(cartTotal(c).at)})` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירים) – אחרי מילוי יוצג הסכום שבעגלה" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
+      ${totals[c] ? cartTotalLine(c) : ""}${slotLine(c)}</div>
       <span>←</span></div>`).join("")}</div>
     <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
   $("#sheet-root").querySelectorAll("[data-fill]").forEach(el => el.onclick = () => fillCart(el.dataset.fill));
@@ -1123,6 +1123,7 @@ function selected() { return Object.fromEntries(Object.entries(S.settings.stores
 async function refreshCompare() {
   if (!Object.keys(selected()).length) { compareCache = null; return; }
   try {
+    await loadLocalPrices();
     await PriceDB.load(selected());
     // פריט חדש מקבל מוצר אוטומטית (אפשר להחליף ב-🔗), כדי שמחיר הסל יופיע מיד
     let linked = 0;
@@ -1209,9 +1210,14 @@ function basketCard() {
     ${ranked.map(x => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(x.name)}</b>${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
         <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
-        ${slotLine(x.chain)}</div>
+        ${cartTotalLine(x.chain)}${slotLine(x.chain)}</div>
       <div style="text-align:center"><div class="total">${money(x.total)}</div>
         ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button>` : `<div class="muted" style="font-size:11px">הזמנה באפליקציית Wolt</div>`}</div></div>`).join("")}
+    ${CART_CHAINS.filter(ch => !ranked.some(x => x.chain === ch) && cartTotal(ch)).map(ch => `<div class="chain-card">
+      <div class="grow"><div class="row"><b>${esc(CART_NAMES[ch])}</b><span class="who">לפי העגלה</span></div>
+        <div class="muted">אין לרשת קובץ מחירים – זה הסכום שהאתר הציג בעגלה ${ago(cartTotal(ch).at)}</div>${slotLine(ch)}</div>
+      <div style="text-align:center"><div class="total">${money(cartTotal(ch).total)}</div>
+        <button class="btn small ghost" data-fill="${ch}">🛒 שלח</button></div></div>`).join("")}
     ${ranked.length > 1 && best.found === total && ranked[ranked.length - 1].found === total ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה: <b>${money(ranked[ranked.length - 1].total - best.total)}</b></div>` : ""}
     ${unlinked ? `<div class="muted" style="margin-top:6px">${unlinked} פריטים לא נמצאו במחירונים ולא נספרו.</div>` : ""}
     <button class="btn ghost small" style="width:100%;margin-top:8px" data-tab-go="prices">פירוט לפי מוצר</button></div>`;
@@ -1575,14 +1581,77 @@ const ONLINE = {
   tivtaam: { match: /^ליקוט/, hint: "מרכז הליקוט של האתר שמשרת את האזור שלך" },
   wolt: { match: /וולט מרקט/, hint: "חנות וולט מרקט באזור שלך (הזמנה דרך אפליקציית Wolt)" },
   yochananof: { match: /./, estimate: true, hint: "סניף יוחננוף קרוב (הערכה: מחירי הסניף, באתר עשויים להיות שונים)" },
+  // חצי חינם חוסמת את השרתים של GitHub, אז האפליקציה (או תוסף הכרום) מורידה את הקובץ הרשמי שלה מהחיבור שלך (local)
+  hazihinam: { fixed: "103", label: "חצי חינם משלוחים (הקובץ הרשמי, מהחיבור שלך)", v: 3, local: true },
 };
 const isEstimate = c => !!ONLINE[c]?.estimate;
 const ESTIMATE_NOTE = "הערכה לפי מחירי סניף";
-const ONLINE_VERSION = 2;
+const ONLINE_VERSION = 3;
 const NO_ONLINE_PRICES = {
-  hazihinam: "חצי חינם מפרסמת מחירי אונליין, אבל האתר שלה חוסם את העדכון האוטומטי (מחוץ לישראל), לכן אין לה השוואה. מילוי עגלה עובד.",
-  victory: "ויקטורי לא מפרסמת כרגע קובצי מחירים (גם לא באתר השקיפות שלה), לכן אין לה השוואה. מילוי עגלה עובד.",
+  victory: "ויקטורי לא מפרסמת כרגע קובצי מחירים (גם לא באתר השקיפות שלה), לכן אין לה השוואה. מילוי עגלה עובד, ואחריו מוצג הסכום שבעגלה.",
 };
+// ---------- "בעגלה בפועל": הסכום שהאתר הציג בעגלה אחרי מילוי באפליקציה ----------
+// נשמר ברשימה המשותפת (גם השותף רואה), תקף 3 ימים
+const CART_TOTAL_DAYS = 3;
+window.onCartTotals = all => {
+  const ct = (S.settings.cartTotals ||= {});
+  for (const [c, v] of Object.entries(all || {})) if (v && v.total > 0) ct[c] = { total: Math.round(v.total * 100) / 100, at: v.at || Date.now(), items: v.items || 0 };
+  S.settings.t = now(); commit(); render();
+  const first = Object.entries(all || {})[0];
+  if (first) toast(`🧾 נשמר: ${CART_NAMES[first[0]] || first[0]} – ${money(first[1].total)} בעגלה`);
+};
+function cartTotal(c) {
+  const v = S.settings.cartTotals?.[c];
+  return v && Date.now() - v.at < CART_TOTAL_DAYS * 864e5 ? v : null;
+}
+function ago(t) {
+  const m = Math.round((Date.now() - t) / 6e4);
+  return m < 60 ? `לפני ${Math.max(1, m)} דק׳` : m < 1440 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
+}
+const cartTotalLine = c => { const v = cartTotal(c); return v ? `<div style="font-size:12px">🧾 בעגלה בפועל: <b>${money(v.total)}</b> · ${ago(v.at)}${v.items ? ` · ${v.items} פריטים` : ""}</div>` : ""; };
+
+// הסניפים שהעדכון ב-GitHub צריך להוריד (בלי מה שהאפליקציה מורידה בעצמה)
+const publicStores = () => Object.fromEntries(Object.entries(selected()).filter(([c]) => !ONLINE[c]?.local));
+
+// ---------- חצי חינם: קובץ המחירים הרשמי (shop.hazi-hinam.co.il/Prices) ----------
+// רשימת הקבצים נקראת דרך האפליקציה/התוסף (מהחיבור שלך, כמו כניסה לדף), והקובץ עצמו יורד ישירות. נשמר לחצי יום.
+const HAZI_LIST = p => `https://shop.hazi-hinam.co.il/Prices?p=${p}&s=&f=&t=1&d=`;
+const LOCAL_CACHE = "superlist-local-prices";
+const canFetchPages = () => Slots.available() || /^(1\.[1-9]|[2-9])/.test(document.documentElement.dataset.superlistExt || "");
+const xmlText = s => String(s || "").replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
+async function haziPrices(store, force = false) {
+  const key = `/local/hazihinam-${store}.json`;
+  let cached = null;
+  try { const r = await (await caches.open(LOCAL_CACHE)).match(key); if (r) cached = await r.json(); } catch {}
+  if (cached && !force && Date.now() - cached.updated * 1000 < 12 * 36e5) return cached;
+  if (!canFetchPages()) return cached;
+  try {
+    let url = null;
+    const re = new RegExp(`https://hazihinamprod01[^"'\\s<>]*PriceFull\\d+-\\d+-${String(store).padStart(3, "0")}-[^"'\\s<>]+?\\.gz[^"'\\s<>]*`);
+    for (let p = 1; p <= 6 && !url; p++) url = ((await fetchPage(HAZI_LIST(p))).match(re) || [])[0];
+    if (!url) return cached;
+    const buf = await (await fetch(url.replace(/&amp;/g, "&"))).arrayBuffer();
+    const xml = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    const items = [];
+    for (const m of xml.matchAll(/<Item>([\s\S]*?)<\/Item>/g)) {
+      const f = t => (m[1].match(new RegExp(`<${t}\\s*>([^<]*)<`)) || [])[1];
+      const code = (f("ItemCode") || "").trim().replace(/^0+/, ""), price = parseFloat(f("ItemPrice"));
+      if (!code || isNaN(price)) continue;
+      items.push([code, xmlText(f("ItemName") || f("ManufactureItemDescription")), price, f("bIsWeighted") === "1" ? 1 : 0]);
+    }
+    if (!items.length) return cached;
+    const json = { chain: "hazihinam", store: String(store), updated: Date.now() / 1000, items, local: true };
+    try { await (await caches.open(LOCAL_CACHE)).put(key, new Response(JSON.stringify(json))); } catch {}
+    return json;
+  } catch (e) { console.warn("hazi prices", e); return cached; }
+}
+// לפני השוואה: מחירים שהאפליקציה מורידה בעצמה
+async function loadLocalPrices(force = false) {
+  const st = selected().hazihinam;
+  if (!st) return;
+  const j = await haziPrices(st, force);
+  if (j) { PriceDB.setLocal("hazihinam", j); chainUpdates[`hazihinam:${st}`] = { updated: j.updated, items: j.items.length }; }
+}
 
 // מסדר את הבחירה: רק סניפי אונליין. בפעם הראשונה בוחר לבד את שופרסל ורמי לוי.
 function ensureOnlineStores() {
@@ -1603,7 +1672,7 @@ function ensureOnlineStores() {
   if (!changed) return;
   S.settings.t = now();
   commit();
-  if (window.Cloud?.user) Cloud.setPublicStores(selected()).catch(() => {});
+  if (window.Cloud?.user) Cloud.setPublicStores(publicStores()).catch(() => {});
   loadChains().then(refreshCompare).then(render);
 }
 
@@ -1667,7 +1736,9 @@ function renderSettings() {
   <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא בין המחירים של אתרי הקנייה (סניפי האונליין). ליוחננוף אין קובץ אונליין, אז היא מושווית לפי סניף שבוחרים ומסומנת <b>הערכה</b>.</div>
     ${Object.entries(ONLINE).map(([c, o]) => {
       const on = !!sel[c], u = chainUpdates[`${c}:${sel[c]}`];
-      const status = on ? (o.fixed ? o.label : S.settings.storeNames?.[c] || "סניף " + sel[c]) + when(u) + (o.estimate ? " · " + ESTIMATE_NOTE : "") : o.fixed ? "לא נכלל בהשוואה" : "לא נבחר: " + o.hint;
+      const status = !on ? (o.fixed ? "לא נכלל בהשוואה" : "לא נבחר: " + o.hint)
+        : o.local && !u && !canFetchPages() ? o.label + " · עובד באפליקציה לאנדרואיד או עם תוסף הכרום (גרסה 1.1)"
+        : (o.fixed ? o.label : S.settings.storeNames?.[c] || "סניף " + sel[c]) + when(u) + (o.estimate ? " · " + ESTIMATE_NOTE : "");
       const btn = o.fixed
         ? `<button class="btn small ghost" data-toggle-online="${c}">${on ? "הסר" : "הוסף"}</button>`
         : `<button class="btn small ghost" data-pick-store="${c}">${on ? "שנה" : o.estimate ? "בחר סניף" : "בחר אזור"}</button>`;
@@ -1700,7 +1771,7 @@ function renderSettings() {
 
 async function loadChains() {
   chains = PriceDB.CHAIN_NAMES;
-  try { await PriceDB.load(selected()); chainUpdates = PriceDB.info().status?.stores || {}; } catch {}
+  try { await loadLocalPrices(); await PriceDB.load(selected()); chainUpdates = { ...chainUpdates, ...(PriceDB.info().status?.stores || {}) }; } catch {}
 }
 
 async function storeSheet(chain) {
@@ -1732,7 +1803,7 @@ function setStore(chain, id, name) {
   S.settings.t = now();
   closeSheet(); commit();
   // העדכון האוטומטי ב-GitHub קורא את הסניפים מכאן (רק מספרי סניפים, בלי מידע אישי)
-  if (window.Cloud?.user) Cloud.setPublicStores(selected()).catch(e => toast("לא הצלחתי לשמור את הסניף: " + (e.code || e.message)));
+  if (window.Cloud?.user) Cloud.setPublicStores(publicStores()).catch(e => toast("לא הצלחתי לשמור את הסניף: " + (e.code || e.message)));
   if (id) toast("הסניף נשמר. המחירים שלו יופיעו תוך שעה בערך");
   loadChains().then(() => { refreshCompare().then(render); });
 }
@@ -1766,7 +1837,7 @@ function renderHelp() {
 
   ${sec("💰 השוואת מחירים", `<ul>
     <li>ההשוואה היא בין <b>סניפי האונליין</b> (המחירים של אתרי הקנייה): שופרסל, רמי לוי, קרפור, טיב טעם ו-Wolt Market. בוחרים רשתות ב⚙️ הגדרות.</li>
-    <li><b>יוחננוף</b> מושווית לפי סניף רגיל שבוחרים, ומסומנת <b>הערכה</b> – באתר שלה המחיר יכול להיות קצת שונה. ויקטורי וחצי חינם לא מפרסמות מחירים שאפשר לקרוא, ולכן אין להן השוואה (מילוי עגלה עובד).</li>
+    <li><b>יוחננוף</b> מושווית לפי סניף רגיל שבוחרים, ומסומנת <b>הערכה</b> – באתר שלה המחיר יכול להיות קצת שונה. <b>חצי חינם</b> – האפליקציה (או תוסף הכרום) מורידה את קובץ המחירים הרשמי שלה מהחיבור שלך. <b>ויקטורי</b> לא מפרסמת מחירים, אז אחרי מילוי עגלה מוצג הסכום שבעגלה ("🧾 בעגלה בפועל").</li>
     <li>מתחת לרשימה: "מחיר הסל" בכל רשת, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
     <li>לשונית 💰 מחירים: טבלה מפורטת לכל מוצר, וחיפוש מוצר לפי שם או ברקוד.</li>
     <li>המחירים מתעדכנים אוטומטית כמה פעמים ביום, מקבצי שקיפות המחירים של הרשתות. ייתכנו הבדלים קטנים (מבצעי מועדון, דמי משלוח).</li>

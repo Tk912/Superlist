@@ -54,6 +54,43 @@ public class CartActivity extends Activity {
     String job, chain, cartJs;
     boolean autoPending = true, filled;
     final Handler ui = new Handler(Looper.getMainLooper());
+    TextView status;
+    double lastTotal = -1;
+
+    // הסכום שהאתר מציג בעגלה ("סה"כ ... ₪") – קורא רק את מה שמוצג לך בדף, אחרי שמילאת את העגלה.
+    // נשמר, ובחזרה לרשימה מוצג בהשוואה ("בעגלה בפועל").
+    static final String TOTAL_JS = "(function(){var t=document.body?document.body.innerText:'';"
+        + "var re=/סה[\"״']?כ[^\\n₪\\d]{0,30}(?:₪\\s*)?(\\d{1,5}(?:,\\d{3})*(?:\\.\\d{1,2})?)/g,m,v=[];"
+        + "while((m=re.exec(t)))v.push(parseFloat(m[1].replace(/,/g,'')));"
+        + "v=v.filter(function(x){return x>=5&&x<20000});return v.length?Math.max.apply(null,v):-1})()";
+    final Runnable readTotal = new Runnable() {
+        @Override public void run() {
+            if (web == null || isFinishing()) return;
+            web.evaluateJavascript(TOTAL_JS, r -> {
+                try {
+                    double v = Double.parseDouble(r);
+                    if (v > 0 && v != lastTotal) { lastTotal = v; saveTotal(v); }
+                } catch (Exception ignored) { }
+            });
+            ui.postDelayed(this, 4000);
+        }
+    };
+
+    void saveTotal(double v) {
+        try {
+            android.content.SharedPreferences p = getSharedPreferences("superlist", MODE_PRIVATE);
+            JSONObject all = new JSONObject(p.getString("cartTotals", "{}"));
+            all.put(chain, new JSONObject().put("total", v).put("at", System.currentTimeMillis()).put("items", count()));
+            p.edit().putString("cartTotals", all.toString()).apply();
+        } catch (Exception ignored) { }
+        status.setText(SITES.get(chain)[0] + ": 🧾 בעגלה " + String.format(java.util.Locale.US, "₪%.2f", v) + ". בדוק ושלם, ואז \"סיום\".");
+    }
+
+    @Override
+    protected void onDestroy() {
+        ui.removeCallbacks(readTotal);
+        super.onDestroy();
+    }
 
     @Override
     protected void onCreate(Bundle saved) {
@@ -72,7 +109,7 @@ public class CartActivity extends Activity {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setBackgroundColor(GREEN);
         bar.setPadding(dp(8), dp(8), dp(8), dp(8));
-        TextView status = new TextView(this);
+        status = new TextView(this);
         status.setTextColor(Color.WHITE);
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         status.setText(SITES.get(chain)[0] + ": " + count() + " פריטים. אם צריך – התחבר, ואז \"מלא עגלה\".");
@@ -136,6 +173,9 @@ public class CartActivity extends Activity {
         filled = true;
         web.evaluateJavascript("try{sessionStorage.setItem('__sl_job'," + JSONObject.quote(job) + ");window.__slRunning=false;}catch(e){}", null);
         web.evaluateJavascript(cartJs, null);
+        // מכאן והלאה קוראים את הסכום שבעגלה (מתעדכן תוך כדי המילוי, והסופי בדף העגלה)
+        ui.removeCallbacks(readTotal);
+        ui.postDelayed(readTotal, 5000);
     }
 
     void loadCartJs() {

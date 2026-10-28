@@ -127,6 +127,15 @@ public class MainActivity extends Activity {
         super.onResume();
         // חזרה מהמילוי (אולי התחברת לרשת) – הדף יכול לרענן מועדי משלוח
         if (pageReady) js("window.onAppResume&&onAppResume()");
+        // הסכומים שנקראו מהעגלה בזמן המילוי (CartActivity) – לדף, ואז מוחקים
+        if (pageReady) {
+            android.content.SharedPreferences p = getSharedPreferences("superlist", MODE_PRIVATE);
+            String totals = p.getString("cartTotals", null);
+            if (totals != null && !"{}".equals(totals)) {
+                js("window.onCartTotals&&onCartTotals(" + totals + ")");
+                p.edit().remove("cartTotals").apply();
+            }
+        }
     }
 
     // "שיתוף" מאפליקציה אחרת: קישור למתכון מהדפדפן, או רשימת קניות מוואטסאפ/פתקים/AddIt

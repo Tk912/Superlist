@@ -1,7 +1,7 @@
 // מאפשר לפתוח את האפליקציה גם בלי אינטרנט (למשל בתוך הסופר בלי קליטה).
 // תמיד מנסים קודם את הרשת, כדי שעדכונים יופיעו מיד; רק כשאין רשת משתמשים בעותק השמור.
 // הרשימה עצמה נשמרת ומסונכרנת ע"י Firebase, לא כאן.
-const CACHE = "superlist-v5";
+const CACHE = "superlist-v6";
 const SHELL = ["./", "index.html", "app.html", "prices.js", "recipes.js", "slots.js", "cloud.js", "firebase-config.js", "cart.js",
   "manifest.json", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 

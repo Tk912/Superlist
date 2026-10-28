@@ -37,6 +37,14 @@ const PriceDB = (() => {
     return r.json();
   }
 
+  // מחירים שהאפליקציה הורידה בעצמה (חצי חינם: הקובץ הרשמי, מהחיבור שלך) – במקום הקובץ מ-GitHub
+  const local = {};
+  function setLocal(chain, json) {
+    local[chain] = json;
+    if (data[chain]?.store === json.store) delete data[chain]; // ייטען מחדש מהמקומי
+    vocab = null;
+  }
+
   let statusAt = 0;
   async function load(selected) {
     // קובץ הסטטוס מתעדכן פעם בכמה שעות, אז לא צריך לבקש אותו בכל שינוי ברשימה
@@ -46,7 +54,7 @@ const PriceDB = (() => {
       if (data[chain]?.store === store) return;
       vocab = null;
       try {
-        const j = await getJSON(`data/prices/${chain}-${store}.json`);
+        const j = local[chain]?.store === store ? local[chain] : await getJSON(`data/prices/${chain}-${store}.json`);
         const byCode = new Map();
         for (const it of j.items) { it[4] = stems(it[1]); byCode.set(it[0], it); }
         data[chain] = { store, updated: j.updated, items: j.items, byCode };
@@ -250,5 +258,5 @@ const PriceDB = (() => {
   // האם המילה מופיעה בשמות המוצרים (לפיצול משפט מוקלט: "חלב ולחם" -> חלב, לחם)
   const isWord = w => getVocab().has(stem(w));
 
-  return { CHAIN_NAMES, load, search, suggest, lookup, isWord, images, compare, stores, info: () => ({ status, data }) };
+  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, images, compare, stores, info: () => ({ status, data, local }) };
 })();
