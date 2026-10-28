@@ -1577,7 +1577,8 @@ let chainUpdates = {};
 const ONLINE = {
   shufersal: { fixed: "413", label: "שופרסל ONLINE", v: 1 },
   ramilevy: { fixed: "39", label: "רמי לוי אונליין (מרלוג אינטרנט)", v: 1 },
-  carrefour: { fixed: "471", label: "קרפור אונליין", v: 2 },
+  // קרפור לא עונה לשרתים של GitHub, אז גם את הקובץ שלה מורידים מהחיבור שלך (local)
+  carrefour: { fixed: "471", label: "קרפור אונליין (הקובץ הרשמי, מהחיבור שלך)", v: 2, local: true },
   tivtaam: { match: /^ליקוט/, hint: "מרכז הליקוט של האתר שמשרת את האזור שלך" },
   wolt: { match: /וולט מרקט/, hint: "חנות וולט מרקט באזור שלך (הזמנה דרך אפליקציית Wolt)" },
   yochananof: { match: /./, estimate: true, hint: "סניף יוחננוף קרוב (הערכה: מחירי הסניף, באתר עשויים להיות שונים)" },
@@ -1613,44 +1614,85 @@ const cartTotalLine = c => { const v = cartTotal(c); return v ? `<div style="fon
 // הסניפים שהעדכון ב-GitHub צריך להוריד (בלי מה שהאפליקציה מורידה בעצמה)
 const publicStores = () => Object.fromEntries(Object.entries(selected()).filter(([c]) => !ONLINE[c]?.local));
 
-// ---------- חצי חינם: קובץ המחירים הרשמי (shop.hazi-hinam.co.il/Prices) ----------
-// רשימת הקבצים נקראת דרך האפליקציה/התוסף (מהחיבור שלך, כמו כניסה לדף), והקובץ עצמו יורד ישירות. נשמר לחצי יום.
-const HAZI_LIST = p => `https://shop.hazi-hinam.co.il/Prices?p=${p}&s=&f=&t=1&d=`;
+// ---------- רשתות שחוסמות את השרתים של GitHub: הקובץ הרשמי, מהחיבור שלך ----------
+// חצי חינם (shop.hazi-hinam.co.il/Prices): רשימת הקבצים דרך האפליקציה/התוסף, הקובץ עצמו יורד ישירות.
+// קרפור (prices.carrefour.co.il): גם הרשימה וגם הקובץ דרך האפליקציה/התוסף. כל קובץ נשמר לחצי יום.
 const LOCAL_CACHE = "superlist-local-prices";
-const canFetchPages = () => Slots.available() || /^(1\.[1-9]|[2-9])/.test(document.documentElement.dataset.superlistExt || "");
+const extVersion = () => document.documentElement.dataset.superlistExt || "";
+const canFetchPages = () => Slots.available() || /^(1\.[1-9]|[2-9])/.test(extVersion());
+const canFetchFiles = () => Slots.binaryAvailable() || /^(1\.([2-9]|\d\d)|[2-9])/.test(extVersion());
+const canLocal = c => c === "carrefour" ? canFetchFiles() : canFetchPages();
 const xmlText = s => String(s || "").replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
-async function haziPrices(store, force = false) {
-  const key = `/local/hazihinam-${store}.json`;
+// קובץ בינארי שהדפדפן לא יכול להוריד בעצמו (דרך האפליקציה, או תוסף הכרום 1.2)
+async function fetchFile(url) {
+  if (Slots.binaryAvailable()) return Slots.fetchBinary(url);
+  const res = await new Promise(resolve => {
+    const id = uid();
+    const onMsg = ev => { if (ev.source === window && ev.data?.type === "superlist-page" && ev.data.id === id) { window.removeEventListener("message", onMsg); resolve(ev.data); } };
+    window.addEventListener("message", onMsg);
+    window.postMessage({ type: "superlist-page-request", id, url, binary: true }, "*");
+    setTimeout(() => resolve({ ok: false, status: 0, text: "timeout" }), 90000);
+  });
+  if (!res.ok || !res.binary) throw new Error(res.status ? "HTTP " + res.status : "לא הצלחתי להוריד");
+  const bin = atob(res.text), out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+// קובץ PriceFull (gz) -> [[ברקוד, שם, מחיר, במשקל]]
+async function parsePriceFile(buf) {
+  const xml = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  const items = [];
+  for (const m of xml.matchAll(/<Item>([\s\S]*?)<\/Item>/g)) {
+    const f = t => (m[1].match(new RegExp(`<${t}\\s*>([^<]*)<`)) || [])[1];
+    const code = (f("ItemCode") || "").trim().replace(/^0+/, ""), price = parseFloat(f("ItemPrice"));
+    if (!code || isNaN(price)) continue;
+    items.push([code, xmlText(f("ItemName") || f("ManufactureItemDescription")), price, f("bIsWeighted") === "1" ? 1 : 0]);
+  }
+  return items;
+}
+// הקישור לקובץ האחרון של הסניף
+const LOCAL_SOURCES = {
+  hazihinam: async store => {
+    const re = new RegExp(`https://hazihinamprod01[^"'\\s<>]*PriceFull\\d+-\\d+-${String(store).padStart(3, "0")}-[^"'\\s<>]+?\\.gz[^"'\\s<>]*`);
+    for (let p = 1; p <= 6; p++) {
+      const url = ((await fetchPage(`https://shop.hazi-hinam.co.il/Prices?p=${p}&s=&f=&t=1&d=`)).match(re) || [])[0];
+      if (url) return { url: url.replace(/&amp;/g, "&"), direct: true };
+    }
+    return null;
+  },
+  carrefour: async store => {
+    const html = await fetchPage("https://prices.carrefour.co.il/");
+    const path = (html.match(/const path = '(\d+)'/) || [])[1];
+    const files = JSON.parse((html.match(/const files = (\[.*?\]);/s) || [])[1] || "[]").map(f => f.name);
+    const sid = String(store).padStart(3, "0");
+    const name = files.filter(n => new RegExp(`^PriceFull\\d+-\\d+-${sid}-`, "i").test(n)).sort().pop();
+    return path && name ? { url: `https://prices.carrefour.co.il/${path}/${name}`, direct: false } : null;
+  },
+};
+async function localPrices(chain, store, force = false) {
+  const key = `/local/${chain}-${store}.json`;
   let cached = null;
   try { const r = await (await caches.open(LOCAL_CACHE)).match(key); if (r) cached = await r.json(); } catch {}
   if (cached && !force && Date.now() - cached.updated * 1000 < 12 * 36e5) return cached;
-  if (!canFetchPages()) return cached;
+  if (!canLocal(chain)) return cached;
   try {
-    let url = null;
-    const re = new RegExp(`https://hazihinamprod01[^"'\\s<>]*PriceFull\\d+-\\d+-${String(store).padStart(3, "0")}-[^"'\\s<>]+?\\.gz[^"'\\s<>]*`);
-    for (let p = 1; p <= 6 && !url; p++) url = ((await fetchPage(HAZI_LIST(p))).match(re) || [])[0];
-    if (!url) return cached;
-    const buf = await (await fetch(url.replace(/&amp;/g, "&"))).arrayBuffer();
-    const xml = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-    const items = [];
-    for (const m of xml.matchAll(/<Item>([\s\S]*?)<\/Item>/g)) {
-      const f = t => (m[1].match(new RegExp(`<${t}\\s*>([^<]*)<`)) || [])[1];
-      const code = (f("ItemCode") || "").trim().replace(/^0+/, ""), price = parseFloat(f("ItemPrice"));
-      if (!code || isNaN(price)) continue;
-      items.push([code, xmlText(f("ItemName") || f("ManufactureItemDescription")), price, f("bIsWeighted") === "1" ? 1 : 0]);
-    }
+    const src = await LOCAL_SOURCES[chain](store);
+    if (!src) return cached;
+    const buf = src.direct ? await (await fetch(src.url)).arrayBuffer() : await fetchFile(src.url);
+    const items = await parsePriceFile(buf);
     if (!items.length) return cached;
-    const json = { chain: "hazihinam", store: String(store), updated: Date.now() / 1000, items, local: true };
+    const json = { chain, store: String(store), updated: Date.now() / 1000, items, local: true };
     try { await (await caches.open(LOCAL_CACHE)).put(key, new Response(JSON.stringify(json))); } catch {}
     return json;
-  } catch (e) { console.warn("hazi prices", e); return cached; }
+  } catch (e) { console.warn("local prices", chain, e); return cached; }
 }
 // לפני השוואה: מחירים שהאפליקציה מורידה בעצמה
 async function loadLocalPrices(force = false) {
-  const st = selected().hazihinam;
-  if (!st) return;
-  const j = await haziPrices(st, force);
-  if (j) { PriceDB.setLocal("hazihinam", j); chainUpdates[`hazihinam:${st}`] = { updated: j.updated, items: j.items.length }; }
+  const sel = selected();
+  await Promise.all(Object.keys(LOCAL_SOURCES).filter(c => sel[c] && ONLINE[c]?.local).map(async c => {
+    const j = await localPrices(c, sel[c], force);
+    if (j) { PriceDB.setLocal(c, j); chainUpdates[`${c}:${sel[c]}`] = { updated: j.updated, items: j.items.length }; }
+  }));
 }
 
 // מסדר את הבחירה: רק סניפי אונליין. בפעם הראשונה בוחר לבד את שופרסל ורמי לוי.
@@ -1737,7 +1779,7 @@ function renderSettings() {
     ${Object.entries(ONLINE).map(([c, o]) => {
       const on = !!sel[c], u = chainUpdates[`${c}:${sel[c]}`];
       const status = !on ? (o.fixed ? "לא נכלל בהשוואה" : "לא נבחר: " + o.hint)
-        : o.local && !u && !canFetchPages() ? o.label + " · עובד באפליקציה לאנדרואיד או עם תוסף הכרום (גרסה 1.1)"
+        : o.local && !u && !canLocal(c) ? o.label + ` · עובד באפליקציה לאנדרואיד (גרסה עדכנית) או עם תוסף הכרום (גרסה ${c === "carrefour" ? "1.2" : "1.1"})`
         : (o.fixed ? o.label : S.settings.storeNames?.[c] || "סניף " + sel[c]) + when(u) + (o.estimate ? " · " + ESTIMATE_NOTE : "");
       const btn = o.fixed
         ? `<button class="btn small ghost" data-toggle-online="${c}">${on ? "הסר" : "הוסף"}</button>`

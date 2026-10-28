@@ -22,6 +22,23 @@ const Slots = (() => {
     });
   }
 
+  // קובץ בינארי (קובץ מחירים gz) דרך האפליקציה – מחזיר ArrayBuffer. רק בגרסאות שיש בהן httpBinary.
+  const binaryAvailable = () => !!(window.SuperlistNative && window.SuperlistNative.httpBinary);
+  function fetchBinary(url) {
+    return new Promise((resolve, reject) => {
+      const id = "b" + (++seq);
+      const timer = setTimeout(() => { delete waiting[id]; reject(new Error("timeout")); }, 90000);
+      waiting[id] = ({ status, text }) => {
+        clearTimeout(timer);
+        if (status < 200 || status >= 300) return reject(new Error(status ? "HTTP " + status : text || "network"));
+        const bin = atob(text), out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        resolve(out.buffer);
+      };
+      window.SuperlistNative.httpBinary(id, url);
+    });
+  }
+
   const pad = n => String(n).padStart(2, "0");
   const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const hhmm = s => { const m = String(s || "").match(/(\d{1,2}):(\d{2})/); return m ? `${pad(m[1])}:${m[2]}` : null; };
@@ -161,5 +178,5 @@ const Slots = (() => {
     return results;
   }
 
-  return { available, get, fetch: fetchNative };
+  return { available, get, fetch: fetchNative, binaryAvailable, fetchBinary };
 })();

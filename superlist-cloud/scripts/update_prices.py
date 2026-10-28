@@ -19,6 +19,9 @@ import prices  # noqa: E402  (הורדה ופענוח של קבצי השקיפו
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "docs" / "data"
+# רשתות שלא עונות לשרתים של GitHub – האפליקציה מורידה את הקבצים שלהן מהחיבור של המשתמש.
+# מדלגים עליהן כאן, כדי לא לחכות דקות לניסיון שייכשל.
+LOCAL_ONLY = {"carrefour", "hazihinam"}
 
 
 def firebase_config():
@@ -55,6 +58,8 @@ def main():
     status = {"updated": time.time(), "stores": {}, "errors": {}}
     # רשימות סניפים לכל הרשתות (לבחירת סניף באפליקציה)
     for chain, cfg in prices.CHAINS.items():
+        if chain in LOCAL_ONLY:
+            continue
         try:
             stores = prices.chain_stores(chain)
             write_json(OUT / "stores" / f"{chain}.json", stores)
@@ -64,6 +69,8 @@ def main():
             print(f"{cfg['name']}: שגיאה ברשימת הסניפים - {e}")
     # מחירים לסניפים שנבחרו
     for chain, store in selected_stores().items():
+        if chain in LOCAL_ONLY:
+            continue
         cfg = prices.CHAINS[chain]
         try:
             raw = prices.chain_pricefull(chain, store)

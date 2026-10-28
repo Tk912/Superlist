@@ -249,6 +249,29 @@ public class MainActivity extends Activity {
         });
     }
 
+    // קובץ בינארי (למשל קובץ מחירים gz) – התשובה חוזרת כ-base64 ל-window.__nativeHttp(id, status, base64)
+    void httpBinary(String id, String url) {
+        net.execute(() -> {
+            int status = 0;
+            String text;
+            try {
+                if (!url.startsWith("https://")) throw new Exception("https only");
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(15000);
+                c.setReadTimeout(60000);
+                c.setRequestProperty("User-Agent", userAgent);
+                status = c.getResponseCode();
+                InputStream in = status >= 400 ? c.getErrorStream() : c.getInputStream();
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                if (in != null) { byte[] b = new byte[65536]; int n; while ((n = in.read(b)) > 0) out.write(b, 0, n); in.close(); }
+                text = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            } catch (Exception e) {
+                text = String.valueOf(e.getMessage());
+            }
+            js("window.__nativeHttp&&__nativeHttp(" + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(text) + ")");
+        });
+    }
+
     static String read(InputStream in) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] b = new byte[8192];
@@ -300,6 +323,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void scan() { ui.post(MainActivity.this::scanBarcode); }
         @JavascriptInterface public void voice() { ui.post(MainActivity.this::voice); }
         @JavascriptInterface public void http(String id, String url, String method, String headers, String body) { MainActivity.this.http(id, url, method, headers, body); }
+        @JavascriptInterface public void httpBinary(String id, String url) { MainActivity.this.httpBinary(id, url); }
         @JavascriptInterface public void signIn() { ui.post(MainActivity.this::googleSignIn); }
         @JavascriptInterface public void signOut() { ui.post(MainActivity.this::googleSignOut); }
         @JavascriptInterface public void fill(String chain, String job) { ui.post(() -> openCart(chain, job)); }
