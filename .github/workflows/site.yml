@@ -1,5 +1,5 @@
 # מעדכן מחירים ומפרסם את האתר ב-GitHub Pages.
-# רץ כל שעה, בכל שינוי בקוד, וגם ידנית (Actions -> "האתר והמחירים" -> Run workflow).
+# רץ כל חצי שעה (GitHub לפעמים מאחר), בכל שינוי בקוד, וגם ידנית (Actions -> "האתר והמחירים" -> Run workflow).
 # הקבצים של האפליקציה נמצאים בתיקייה superlist-cloud שבמאגר.
 name: האתר והמחירים
 
@@ -7,7 +7,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "23 * * * *"
+    # לא בדקה עגולה (אז GitHub עמוס ומדלג), פעמיים בשעה
+    - cron: "7,37 * * * *"
   workflow_dispatch:
 
 permissions:
