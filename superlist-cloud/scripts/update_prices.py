@@ -30,23 +30,49 @@ def firebase_config():
     return get("projectId"), get("apiKey")
 
 
+MAX_STORES = 40  # תקרה, כדי שהעדכון יישאר מהיר גם כשיש הרבה משתמשים
+
+
+def _stores_of(doc):
+    fields = doc.get("fields", {}).get("stores", {}).get("mapValue", {}).get("fields", {})
+    return {(c, v.get("stringValue")) for c, v in fields.items()
+            if v.get("stringValue") and c in prices.CHAINS and re.fullmatch(r"\d{1,5}", v.get("stringValue") or "")}
+
+
 def selected_stores():
+    """כל זוגות (רשת, סניף) שנבחרו בכל הרשימות של כל המשתמשים (prefs/<list>), וגם בגרסה הישנה (public/config)."""
     if os.environ.get("STORES"):
-        return dict(pair.split(":", 1) for pair in os.environ["STORES"].split(",") if ":" in pair)
+        return sorted(tuple(pair.split(":", 1)) for pair in os.environ["STORES"].split(",") if ":" in pair)
     project, key = firebase_config()
     if not project or "PASTE" in project:
         print("Firebase עוד לא הוגדר (docs/firebase-config.js) - אין סניפים להוריד")
-        return {}
-    url = (f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/public/config"
-           f"?key={key}")
+        return []
+    base = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents"
+    pairs, counts = set(), {}
     try:
-        with urllib.request.urlopen(url, timeout=30) as r:
-            doc = json.loads(r.read())
+        with urllib.request.urlopen(f"{base}/public/config?key={key}", timeout=30) as r:
+            pairs |= _stores_of(json.loads(r.read()))
     except Exception as e:
-        print("לא הצלחתי לקרוא את הסניפים מ-Firebase:", e)
-        return {}
-    fields = doc.get("fields", {}).get("stores", {}).get("mapValue", {}).get("fields", {})
-    return {c: v.get("stringValue") for c, v in fields.items() if v.get("stringValue") and c in prices.CHAINS}
+        print("הגדרה ישנה (public/config) לא נקראה:", e)
+    token = ""
+    for _ in range(20):
+        try:
+            with urllib.request.urlopen(f"{base}/prefs?pageSize=300&key={key}" + (f"&pageToken={token}" if token else ""), timeout=30) as r:
+                page = json.loads(r.read())
+        except Exception as e:
+            print("לא הצלחתי לקרוא את הסניפים מ-Firebase:", e)
+            break
+        for doc in page.get("documents", []):
+            for p in _stores_of(doc):
+                pairs.add(p)
+                counts[p] = counts.get(p, 0) + 1
+        token = page.get("nextPageToken", "")
+        if not token:
+            break
+    # הסניפים הפופולריים קודם, אם יש יותר מהתקרה
+    out = sorted(pairs, key=lambda p: (-counts.get(p, 0), p))[:MAX_STORES]
+    print(f"סניפים להורדה: {len(out)} (מתוך {len(pairs)})")
+    return out
 
 
 def write_json(path, obj):
@@ -68,7 +94,7 @@ def main():
             status["errors"][f"stores:{chain}"] = str(e)[:200]
             print(f"{cfg['name']}: שגיאה ברשימת הסניפים - {e}")
     # מחירים לסניפים שנבחרו
-    for chain, store in selected_stores().items():
+    for chain, store in selected_stores():
         if chain in LOCAL_ONLY:
             continue
         cfg = prices.CHAINS[chain]

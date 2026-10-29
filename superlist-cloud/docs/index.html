@@ -236,7 +236,9 @@ function parseQty(text) {
 }
 
 // ================= מצב וסנכרון =================
-const LS = "superlist-state-v1";
+// מטמון מקומי לכל רשימה בנפרד (superlist-state-v1:<id>); בלי חשבון – המפתח הישן
+const LS_BASE = "superlist-state-v1";
+let LS = LS_BASE;
 let S = loadLocal();
 let chains = {};        // {chain: "שם"}
 let compareCache = null;
@@ -247,8 +249,8 @@ function blank() {
   return { rev: 0, items: [], history: {}, recipes: SEED_RECIPES.map(([name, ing]) => ({ id: uid(), t: 1, name, ingredients: ing.map(([n, q]) => ({ name: n, qty: q })) })),
     plan: { t: 0, days: {} }, settings: { t: 0, stores: {} } };
 }
-function loadLocal() {
-  try { const s = JSON.parse(localStorage.getItem(LS)); if (s && s.items) return s; } catch {}
+function loadLocal(key = LS) {
+  try { const s = JSON.parse(localStorage.getItem(key)); if (s && s.items) return s; } catch {}
   return blank();
 }
 function fill(s) {
@@ -313,9 +315,10 @@ let members = [], unwatch = null, onlineChecked = false;
 async function push() {
   if (saving || !dirty || !window.Cloud?.user) return;
   saving = true;
-  const sent = JSON.stringify(S);
+  const sent = JSON.stringify(S), lid = Cloud.listId;
   try {
     const result = await Cloud.save(server => server ? merge(JSON.parse(sent), server) : JSON.parse(sent));
+    if (Cloud.listId !== lid) { saving = false; return; } // בינתיים עברו לרשימה אחרת
     members = result.members || members;
     // שינויים שנעשו בזמן השמירה לא הולכים לאיבוד
     if (JSON.stringify(S) !== sent) { S = merge(S, result); dirty = true; }
@@ -339,7 +342,10 @@ function onServerData(data) {
   const before = new Map(S.items.map(i => [i.id, i]));
   S = dirty ? merge(S, data) : fill(data);
   notifyOthers(before);
-  if (!onlineChecked) { onlineChecked = true; setTimeout(ensureOnlineStores, 0); }
+  if (!onlineChecked) {
+    onlineChecked = true;
+    setTimeout(() => { ensureOnlineStores(); if (Object.keys(publicStores()).length) Cloud.setPublicStores(publicStores()).catch(() => {}); }, 0);
+  }
   refreshCompare().then(render);
   try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
   render();
@@ -462,7 +468,11 @@ function renderList() {
     </div>`;
   };
 
+  const cl = curList();
   return `
+  ${cl ? `<div class="row" style="margin:0 0 8px;gap:6px">
+    <button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
+    ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}</div>` : ""}
   <form class="card row" id="add-form" autocomplete="off">
     <input type="text" id="add-input" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
     <button type="button" class="icon-btn add-tool" data-act="voice" title="הוספה קולית" aria-label="הוספה קולית">🎤</button>
@@ -546,15 +556,18 @@ function shareSheet() {
   if (!window.Cloud?.user) return toast("צריך להתחבר עם Google כדי לשתף");
   const link = location.origin + location.pathname;
   const mine = Cloud.email();
-  const msg = encodeURIComponent(`${me || "הוספתי אותך"} – רשימת הקניות המשותפת שלנו 🛒\n${link}\nנכנסים עם חשבון ה-Google שלך.`);
-  sheet(`<h2 style="margin-top:0">👥 שיתוף הרשימה</h2>
-    <div class="muted" style="margin-bottom:10px">מוסיפים כאן את כתובת ה-Gmail של מי שמשתף איתך (בן/בת זוג, ילדים). הוא נכנס לקישור עם חשבון ה-Google שלו, ויכול להוסיף ולהוריד פריטים. השינויים מופיעים אצל כולם מיד, ושם מי שהוסיף מופיע ליד הפריט.</div>
-    <div class="card"><b>מי משתף ברשימה</b>
-      ${members.map(m => `<div class="item"><div class="grow" style="direction:ltr;text-align:right">${esc(m)}${m === mine ? ' <span class="muted">(אתה)</span>' : ""}</div>
-        ${m !== mine ? `<button class="icon-btn" data-rm="${esc(m)}" title="הסר">✕</button>` : ""}</div>`).join("")}
-      <form class="row" id="sh-add" style="margin-top:8px" autocomplete="off">
+  const cl = curList(), owner = isOwner(cl), title = listName(cl);
+  const msg = encodeURIComponent(`${me || "הוספתי אותך"} – שיתפתי איתך את רשימת הקניות "${title}" 🛒\n${link}\nנכנסים עם חשבון ה-Google שלך, והרשימה מופיעה אצלך.`);
+  sheet(`<h2 style="margin-top:0">👥 שיתוף "${esc(title)}"</h2>
+    <div class="muted" style="margin-bottom:10px">${owner
+      ? "מוסיפים את כתובת ה-Gmail של מי שתרצה לשתף איתו (בן/בת זוג, ילדים). הוא נכנס לקישור עם חשבון ה-Google שלו, והרשימה מופיעה אצלו ב\"הרשימות שלי\". השינויים מופיעים אצל כולם מיד."
+      : `הרשימה הזו של ${esc((cl?.owner || "").split("@")[0])}. רק הבעלים מוסיף או מסיר שותפים.`}</div>
+    <div class="card"><b>מי ברשימה</b>
+      ${members.map(m => `<div class="item"><div class="grow" style="direction:ltr;text-align:right">${esc(m)}${m === mine ? ' <span class="muted">(אתה)</span>' : ""}${m === cl?.owner ? ' <span class="who">בעלים</span>' : ""}</div>
+        ${owner && m !== mine ? `<button class="icon-btn" data-rm="${esc(m)}" title="הסר">✕</button>` : ""}</div>`).join("")}
+      ${owner ? `<form class="row" id="sh-add" style="margin-top:8px" autocomplete="off">
         <input type="email" id="sh-email" placeholder="example@gmail.com" style="direction:ltr" required>
-        <button class="btn">הוסף</button></form>
+        <button class="btn">הוסף</button></form>` : `<button class="btn ghost small" style="margin-top:8px" id="sh-leave">יציאה מהרשימה</button>`}
     </div>
     <div class="card"><b>הקישור לאפליקציה</b>
       <input type="text" readonly value="${esc(link)}" style="margin:8px 0;direction:ltr;font-size:13px" onclick="this.select()">
@@ -563,7 +576,11 @@ function shareSheet() {
     <div class="row"><button class="btn ghost grow" data-act="rename">שינוי השם שלי (${esc(me)})</button>
     <button class="btn ghost grow" id="sh-out">התנתקות</button></div>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
-  $("#sh-add").onsubmit = async e => {
+  if ($("#sh-leave")) $("#sh-leave").onclick = async () => {
+    if (!confirm(`לצאת מהרשימה "${title}"? היא תישאר אצל השאר.`)) return;
+    try { await Cloud.leaveList(Cloud.listId); closeSheet(); toast("יצאת מהרשימה"); } catch (err) { toast("לא הצלחתי: " + (err.code || err.message)); }
+  };
+  if ($("#sh-add")) $("#sh-add").onsubmit = async e => {
     e.preventDefault();
     const em = $("#sh-email").value.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(em)) return toast("כתובת מייל לא תקינה");
@@ -1808,7 +1825,8 @@ function renderSettings() {
     <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>`}
   <h2>החשבון</h2>
   <div class="card row"><div class="grow">${window.Cloud?.user ? esc(Cloud.user.email) : "מצב מקומי (בלי Firebase)"}</div>
-    <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>`;
+    <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>
+  ${window.Cloud?.user ? `<button class="btn ghost" style="width:100%" data-act="lists">📋 הרשימות שלי (${myLists.length}) – יצירה, מעבר, שינוי שם ומחיקה</button>` : ""}`;
 }
 
 async function loadChains() {
@@ -1872,9 +1890,12 @@ function renderHelp() {
     <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
   </ul>`)}
 
-  ${sec("👥 שיתוף הרשימה", `<ul>
-    <li>"👥 שיתוף הרשימה" ← מוסיפים את כתובת ה-Gmail של השותף. הוא מתחבר עם Google ורואה את אותה רשימה.</li>
-    <li>כל שינוי מופיע אצל שניכם מיד. פריט שהשותף הוסיף מסומן בשמו.</li>
+  ${sec("📋 הרשימות שלי ושיתוף", `<ul>
+    <li>כל מי שנכנס עם חשבון Google מקבל מיד רשימה משלו – בלי לבקש אישור מאף אחד.</li>
+    <li>לחיצה על שם הרשימה (למעלה, "📋 … ▾") פותחת את <b>הרשימות שלי</b>: מעבר בין רשימות, רשימה חדשה (למשל "שבת", "מסיבה"), שינוי שם ומחיקה.</li>
+    <li>לכל רשימה יש פריטים, מתכונים, סניפים והיסטוריה משלה.</li>
+    <li>"👥 שיתוף הרשימה" ← הבעלים מוסיף את כתובת ה-Gmail של השותף. השותף נכנס עם Google והרשימה מופיעה אצלו. כל שינוי מופיע אצל כולם מיד, ופריט שהשותף הוסיף מסומן בשמו.</li>
+    <li>שותף יכול לצאת מרשימה בכל זמן; רק הבעלים יכול למחוק אותה.</li>
   </ul>`)}
 
   ${sec("💰 השוואת מחירים", `<ul>
@@ -2002,6 +2023,7 @@ $("#view").addEventListener("click", e => {
   if (ps) return storeSheet(ps.dataset.pickStore);
   const act = t.closest("[data-act]")?.dataset.act;
   if (!act) return;
+  if (act === "lists") return listsSheet();
   if (act === "update-hide") { try { localStorage.setItem(UPDATE_HIDE, String(appUpdate?.latest || "")); } catch {} toast("אפשר לעדכן בכל זמן מההגדרות"); return render(); }
   if (act === "update-go") { toast("📥 ההורדה מתחילה. פותחים את הקובץ שירד ומתקינים"); return; } // הקישור עצמו פותח את ההורדה
   if (act === "voice") return voiceAdd();
@@ -2047,38 +2069,129 @@ $("#view").addEventListener("click", e => {
 });
 
 // ================= התחברות והפעלה =================
-let gate = "loading"; // loading / login / denied / ok
+let gate = "loading"; // loading / login / error / ok
 
 function renderGate() {
   if (gate === "loading") return `<div class="card empty">טוען…</div>`;
   if (gate === "login") return `<div class="card" style="text-align:center;padding:28px 16px">
       <div style="font-size:42px">🛒</div><h2 style="color:var(--text);font-size:20px">ברוך הבא לסל החכם</h2>
-      <div class="muted" style="margin-bottom:16px">נכנסים עם חשבון Google. הרשימה נשמרת בענן ומשותפת עם מי שתבחר.</div>
+      <div class="muted" style="margin-bottom:16px">נכנסים עם חשבון Google – ומקבלים מיד רשימה משלך. אפשר ליצור עוד רשימות ולשתף אותן עם מי שתבחר.</div>
       <button class="btn" data-act="login" style="width:100%">התחברות עם Google</button></div>`;
   return `<div class="card" style="text-align:center;padding:24px 16px">
-      <div style="font-size:36px">🔒</div><h2 style="color:var(--text)">אין לך עדיין גישה לרשימה</h2>
-      <div class="muted">אתה מחובר בתור <b dir="ltr">${esc(window.Cloud?.email() || "")}</b>.<br>
-      בקש ממי שיצר את הרשימה להוסיף את המייל הזה ב"שיתוף הרשימה", ואז רענן את הדף.</div>
-      <div class="row" style="margin-top:14px"><button class="btn grow" onclick="location.reload()">רענון</button>
+      <div style="font-size:36px">⚠️</div><h2 style="color:var(--text)">לא הצלחתי לטעון את הרשימות</h2>
+      <div class="muted">אתה מחובר בתור <b dir="ltr">${esc(window.Cloud?.email() || "")}</b>. בדוק את החיבור לאינטרנט ונסה שוב.</div>
+      <div class="row" style="margin-top:14px"><button class="btn grow" onclick="location.reload()">נסה שוב</button>
       <button class="btn ghost grow" data-act="logout">חשבון אחר</button></div></div>`;
+}
+
+// ================= הרשימות שלי =================
+// כל משתמש רואה את הרשימות שהוא חבר בהן. בכניסה הראשונה נוצרת לו רשימה משלו (בלי אישור של אף אחד).
+let myLists = [], listsUnsub = null, creatingList = false;
+const CUR_KEY = () => "superlist-list:" + (window.Cloud?.email() || "");
+const savedListId = () => { try { return localStorage.getItem(CUR_KEY()); } catch { return null; } };
+const curList = () => myLists.find(l => l.id === window.Cloud?.listId) || null;
+const listName = l => l?.name || (l?.id === "home" ? "הרשימה המשותפת" : "הרשימה שלי");
+const isOwner = l => !!l && (l.owner === Cloud.email() || (!l.owner && l.members?.[0] === Cloud.email()));
+// רשימה ריקה חדשה (עם המתכונים המוכנים)
+const freshState = () => JSON.parse(JSON.stringify(blank()));
+
+function watchLists() {
+  if (listsUnsub) listsUnsub();
+  listsUnsub = Cloud.lists(async lists => {
+    const known = new Set(myLists.map(l => l.id)), first = !myLists.length;
+    myLists = lists.sort((a, b) => (a.id === "home" ? -1 : b.id === "home" ? 1 : listName(a).localeCompare(listName(b), "he")));
+    if (!lists.some(isOwner)) {
+      // משתמש חדש (גם מי שכבר צירפו אותו לרשימה של מישהו), או שמחק את כל הרשימות שלו: רשימה משלו
+      if (!creatingList) {
+        creatingList = true;
+        try { await Cloud.createList("הרשימה שלי", freshState()); if (!lists.length) toast("ברוך הבא! נוצרה לך רשימה חדשה 🛒"); }
+        catch (e) { console.warn(e); if (!lists.length) { gate = "error"; render(); } }
+        creatingList = false;
+      }
+      if (!lists.length) return;
+    }
+    // צורפת לרשימה של מישהו אחר
+    if (!first) for (const l of lists) if (!known.has(l.id) && !isOwner(l)) toast(`👥 צורפת לרשימה "${listName(l)}"`);
+    const want = savedListId();
+    const pick = lists.find(l => l.id === Cloud.listId) || lists.find(l => l.id === want) || lists.find(l => l.id === "home") || lists[0];
+    if (pick.id !== Cloud.listId) openList(pick.id);
+    else { members = pick.members; render(); }
+  }, code => { console.warn("lists", code); setOnline(false); if (gate === "loading") { gate = "error"; render(); } });
+}
+
+// מעבר לרשימה: שומרים את מה שלא נשמר, ופותחים את החדשה (קודם מהמטמון במכשיר, ואז מהענן)
+async function openList(id) {
+  if (dirty && Cloud.listId) { clearTimeout(saveTimer); await push(); }
+  if (unwatch) { unwatch(); unwatch = null; }
+  Cloud.open(id);
+  try { localStorage.setItem(CUR_KEY(), id); } catch {}
+  LS = `${LS_BASE}:${id}`;
+  const cached = loadLocal(LS);
+  // הרשימה המשותפת הישנה: המטמון שלה היה במפתח הישן
+  S = fill(cached.items.length || id !== "home" ? cached : loadLocal(LS_BASE));
+  dirty = false; onlineChecked = false; compareCache = null;
+  members = myLists.find(l => l.id === id)?.members || [];
+  gate = "ok";
+  render();
+  listen();
+  loadChains().then(refreshCompare).then(render);
 }
 
 function listen() {
   if (unwatch) unwatch();
+  const id = Cloud.listId;
   unwatch = Cloud.watch(data => {
-    if (gate !== "ok") { gate = "ok"; render(); }
-    if (data) onServerData(data);
-  }, async code => {
+    if (Cloud.listId !== id) return;
+    if (data) return onServerData(data);
+    // הרשימה נמחקה
+    const other = myLists.find(l => l.id !== id);
+    if (other) openList(other.id);
+  }, code => {
     unwatch = null;
     if (code !== "permission-denied") { setOnline(false); return; }
-    // אין גישה: או שהרשימה עוד לא קיימת (אז יוצרים אותה), או שהמייל לא ברשימת השותפים
-    try {
-      await Cloud.createList(JSON.parse(JSON.stringify(S)));
-      toast("נוצרה רשימה חדשה. אפשר לשתף אותה דרך \"שיתוף הרשימה\"");
-      listen();
-    } catch {
-      gate = "denied"; render();
-    }
+    // הוסרת מהרשימה (או שנמחקה): עוברים לרשימה אחרת
+    toast(`אין לך יותר גישה לרשימה "${listName(myLists.find(l => l.id === id))}"`);
+    const other = myLists.find(l => l.id !== id);
+    if (other) openList(other.id);
+  });
+}
+
+function listsSheet() {
+  const cur = Cloud.listId;
+  sheet(`<h2 style="margin-top:0">📋 הרשימות שלי</h2>
+    <div class="muted" style="margin-bottom:8px">לכל רשימה יש פריטים, מתכונים, סניפים והיסטוריה משלה. אפשר לשתף כל רשימה עם אנשים אחרים.</div>
+    <div class="card">${myLists.map(l => `<div class="item">
+      <button class="check" style="${l.id === cur ? "background:var(--accent);border-color:var(--accent)" : ""}" data-open-list="${esc(l.id)}" aria-label="פתח"></button>
+      <div class="grow" data-open-list="${esc(l.id)}" style="cursor:pointer"><b>${esc(listName(l))}</b>${l.id === cur ? ` <span class="who">פתוחה</span>` : ""}
+        <div class="muted">${l.open} פריטים · ${l.members.length > 1 ? `משותפת עם ${l.members.length - 1}` : "רק שלך"}${isOwner(l) ? "" : ` · של ${esc(l.owner.split("@")[0])}`}</div></div>
+      ${isOwner(l) ? `<button class="icon-btn" data-rename-list="${esc(l.id)}" title="שינוי שם">✏️</button>
+        <button class="icon-btn" data-del-list="${esc(l.id)}" title="מחיקה">🗑</button>`
+        : `<button class="btn small ghost" data-leave-list="${esc(l.id)}">יציאה</button>`}</div>`).join("")}</div>
+    <button class="btn" style="width:100%" id="ls-new">+ רשימה חדשה</button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  const root = $("#sheet-root");
+  root.querySelectorAll("[data-open-list]").forEach(b => b.onclick = () => { closeSheet(); if (b.dataset.openList !== Cloud.listId) openList(b.dataset.openList); });
+  $("#ls-new").onclick = async () => {
+    const name = (prompt("שם הרשימה החדשה (למשל: בית, שבת, מסיבה):") || "").trim();
+    if (!name) return;
+    try { const id = await Cloud.createList(name.slice(0, 40), freshState()); closeSheet(); toast(`נוצרה הרשימה "${name}"`); openList(id); }
+    catch (e) { toast("לא הצלחתי ליצור: " + (e.code || e.message)); }
+  };
+  root.querySelectorAll("[data-rename-list]").forEach(b => b.onclick = async () => {
+    const l = myLists.find(x => x.id === b.dataset.renameList);
+    const name = (prompt("שם חדש לרשימה:", listName(l)) || "").trim();
+    if (!name) return;
+    try { await Cloud.renameList(l.id, name.slice(0, 40)); l.name = name; listsSheet(); } catch (e) { toast("לא הצלחתי: " + (e.code || e.message)); }
+  });
+  root.querySelectorAll("[data-del-list]").forEach(b => b.onclick = async () => {
+    const l = myLists.find(x => x.id === b.dataset.delList);
+    if (!confirm(`למחוק את "${listName(l)}"${l.members.length > 1 ? " – גם אצל השותפים" : ""}? אי אפשר לשחזר.`)) return;
+    try { await Cloud.deleteList(l.id); closeSheet(); toast("הרשימה נמחקה"); } catch (e) { toast("לא הצלחתי למחוק: " + (e.code || e.message)); }
+  });
+  root.querySelectorAll("[data-leave-list]").forEach(b => b.onclick = async () => {
+    const l = myLists.find(x => x.id === b.dataset.leaveList);
+    if (!confirm(`לצאת מהרשימה "${listName(l)}"? היא תישאר אצל השאר.`)) return;
+    try { await Cloud.leaveList(l.id); closeSheet(); toast("יצאת מהרשימה"); } catch (e) { toast("לא הצלחתי: " + (e.code || e.message)); }
   });
 }
 
@@ -2091,10 +2204,16 @@ function startCloud() {
     return;
   }
   Cloud.onUser(user => {
-    if (!user) { gate = "login"; if (unwatch) { unwatch(); unwatch = null; } render(); return; }
+    if (!user) {
+      gate = "login";
+      if (unwatch) { unwatch(); unwatch = null; }
+      if (listsUnsub) { listsUnsub(); listsUnsub = null; }
+      myLists = []; Cloud.listId = null; LS = LS_BASE;
+      render(); return;
+    }
     if (!me && user.displayName) { me = user.displayName.split(" ")[0]; try { localStorage.setItem(ME_KEY, me); } catch {} }
     gate = "loading"; render();
-    listen();
+    watchLists();
     loadChains().then(refreshCompare).then(render).then(() => requestSlots());
   });
 }

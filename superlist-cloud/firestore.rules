@@ -1,24 +1,43 @@
 rules_version = '2';
-// הכללים שמגנים על הרשימה. מדביקים אותם ב-Firebase Console -> Firestore Database -> Rules -> Publish.
+// הכללים שמגנים על הרשימות. מדביקים אותם ב-Firebase Console -> Firestore Database -> Rules -> Publish.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
     function email() { return request.auth.token.email.lower(); }
-    function member() { return signedIn() && email() in get(/databases/$(database)/documents/lists/home).data.members; }
-
-    // הרשימה המשותפת: רק מי שברשימת החברים יכול לקרוא ולערוך.
-    // הפעם הראשונה: מי שיוצר את הרשימה חייב להכניס את עצמו לחברים.
-    match /lists/home {
-      allow read, update: if signedIn() && email() in resource.data.members;
-      allow create: if signedIn() && email() in request.resource.data.members;
+    function memberOf(listId) {
+      return signedIn() && exists(/databases/$(database)/documents/lists/$(listId))
+        && email() in get(/databases/$(database)/documents/lists/$(listId)).data.members;
     }
 
-    // מספרי הסניפים שנבחרו (בלי שום מידע אישי): כולם יכולים לקרוא, כדי שהעדכון האוטומטי של המחירים
-    // ב-GitHub ידע מה להוריד. רק חברי הרשימה יכולים לשנות.
+    // רשימות: כל מי שנכנס עם Google יכול ליצור רשימות משלו (בלי אישור).
+    // רק חברי הרשימה רואים ועורכים אותה. רק הבעלים משנה את רשימת השותפים או מוחק את הרשימה.
+    // חבר יכול לצאת מרשימה (להוריד את עצמו).
+    match /lists/{listId} {
+      allow read: if signedIn() && email() in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.owner == email()
+        && request.resource.data.members == [email()];
+      allow update: if signedIn() && email() in resource.data.members
+        && request.resource.data.get('owner', null) == resource.data.get('owner', null)
+        && request.resource.data.members.size() <= 30
+        && (request.resource.data.members.toSet() == resource.data.members.toSet()
+            || resource.data.get('owner', null) == email()
+            || request.resource.data.members.toSet() == resource.data.members.toSet().difference([email()].toSet()));
+      allow delete: if signedIn() && resource.data.get('owner', null) == email();
+    }
+
+    // הסניפים שנבחרו בכל רשימה (רק מספרי סניפים, בלי מידע אישי): כולם יכולים לקרוא, כדי שהעדכון
+    // האוטומטי של המחירים ב-GitHub ידע מה להוריד. רק חברי הרשימה משנים.
+    match /prefs/{listId} {
+      allow read: if true;
+      allow write: if memberOf(listId) && request.resource.data.keys().hasOnly(['stores', 'updated']);
+      allow delete: if signedIn() && (!exists(/databases/$(database)/documents/lists/$(listId)) || memberOf(listId));
+    }
+
+    // הגרסה הקודמת (רשימה אחת): נשאר לקריאה בלבד
     match /public/config {
       allow read: if true;
-      allow write: if member();
     }
 
     match /{document=**} {
