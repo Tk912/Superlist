@@ -68,15 +68,42 @@ async function spSlot({ base, rid }, addr) {
 }
 
 // ---------- רמי לוי (ציבורי, לפי כתובת מלאה) ----------
+// רמי לוי: החיפוש שלהם קפדני ("פתח תקוה" לא נמצא, רק "פתח תקווה"; "רחוב הרצל" לא נמצא, רק "הרצל";
+// ויש ערים שמופיעות פעמיים), אז מנסים כמה כתיבים ובודקים כל עיר מתאימה
+const loose = s => clean(s).replace(/[וי]/g, "").replace(/\s+/g, " ");
+const cityTries = c => [...new Set([c, c.replace(/קרית/g, "קריית"), c.replace(/קריית/g, "קרית"), c.replace(/תקוה/g, "תקווה"),
+  clean(c), ...clean(c).split(" ").filter(w => w.length > 2)])];
+const streetTries = s => {
+  const b = clean(String(s).replace(/^\s*(רחוב|רח'|רח|שדרות|שד'|שד)\s+/, ""));
+  return [...new Set([String(s).trim(), b, ...b.split(" ").filter(w => w.length > 2).sort((x, y) => y.length - x.length)])];
+};
+const near = (a, b) => loose(a) === loose(b) || loose(a).includes(loose(b)) || loose(b).includes(loose(a));
+async function ramiAddress(addr) {
+  let cities = [];
+  for (const q of cityTries(addr.city)) {
+    const r = await json("https://www.rami-levy.co.il/api/address-autocomplete/city?q=" + encodeURIComponent(q));
+    const list = r.data || [];
+    cities = list.filter(x => loose(x.city_name) === loose(addr.city));
+    if (!cities.length) cities = list.filter(x => near(x.city_name, addr.city));
+    if (cities.length) break;
+  }
+  if (!cities.length) return { reason: "העיר לא נמצאה ברמי לוי" };
+  for (const city of cities.slice(0, 3)) {
+    for (const q of streetTries(addr.street)) {
+      const r = await json(`https://www.rami-levy.co.il/api/address-autocomplete/street?q=${encodeURIComponent(q)}&city_id=${city.city_id}`);
+      const list = (r.data || []).filter(x => x.city_id == city.city_id);
+      const st = list.find(x => loose(x.street_name) === loose(addr.street)) || list.find(x => near(x.street_name, addr.street)) || (list.length === 1 ? list[0] : null);
+      if (st) return { city, st };
+    }
+  }
+  return { reason: "הרחוב לא נמצא ברמי לוי – בדוק את שם הרחוב בהגדרות" };
+}
+
 async function ramiSlot(addr) {
   if (!addr.city || !addr.street || !addr.num) return { ok: false, reason: "צריך עיר, רחוב ומספר בהגדרות" };
-  const cities = await json("https://www.rami-levy.co.il/api/address-autocomplete/city?q=" + encodeURIComponent(addr.city));
-  const city = (cities.data || cities).find?.(x => clean(x.city_name) === clean(addr.city)) || (cities.data || cities)[0];
-  if (!city) return { ok: false, reason: "העיר לא נמצאה" };
-  const streets = await json(`https://www.rami-levy.co.il/api/address-autocomplete/street?q=${encodeURIComponent(addr.street)}&city_id=${city.city_id}`);
-  const st = (streets.data || streets).find?.(x => x.city_id == city.city_id && clean(x.street_name) === clean(addr.street))
-    || (streets.data || streets).find?.(x => x.city_id == city.city_id);
-  if (!st) return { ok: false, reason: "הרחוב לא נמצא" };
+  const found = await ramiAddress(addr);
+  if (!found.city) return { ok: false, reason: found.reason };
+  const { city, st } = found;
   const r = await json("https://www-api.rami-levy.co.il/api/v2/site/supply/get-supply-date", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ only_area_availability: false, city_id: city.city_id, street_id: st.street_id, street_name: st.street_name,
@@ -117,11 +144,27 @@ async function haziSlot() {
 
 // ---------- שופרסל (צריך להיות מחובר לאתר בכרום, עם כתובת בחשבון) ----------
 // המבנה של התשובה למשתמש מחובר לא נבדק, אז מחפשים בה כל תאריך+שעה עם סימון זמינות.
+// שופרסל מחזירה {"20261103": [{fromHourString, toHour, selectable, price}, ...]} (כמו שהאתר שלהם קורא אותה)
+const ilLocal = v => { const d = new Date(v); return isNaN(d) ? null : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function shufersalSlots(j) {
+  const out = [];
+  for (const [day, list] of Object.entries(j || {})) {
+    if (!/^\d{8}$/.test(day) || !Array.isArray(list)) continue;
+    for (const s of list) {
+      if (s.selectable === false) continue;
+      const from = ilLocal(s.fromHourString ?? s.fromHour), to = ilLocal(s.toHourString ?? s.toHour);
+      if (from) out.push({ from, to, price: s.price?.value ?? null });
+    }
+  }
+  return out;
+}
 async function shufersalSlot() {
   const r = await fetch("https://www.shufersal.co.il/online/he/timeSlot/preselection/getHomeDeliverySlots?amount=1.0&prescription=false",
     { credentials: "include", headers: { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" } });
   const j = await r.json().catch(() => ({}));
   if (!j || !Object.keys(j).length) return { ok: false, reason: "התחבר לשופרסל בכרום", login: true };
+  const direct = first(shufersalSlots(j));
+  if (direct) return { ok: true, ...direct };
   const slots = [];
   const walk = (o, ctxDate) => {
     if (!o || typeof o !== "object") return;
