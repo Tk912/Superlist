@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "הסל החכם – מועדי משלוח",
+  "short_name": "הסל החכם",
+  "version": "1.2.2",
+  "description": "מציג באפליקציית הסל החכם את חלון המשלוח הקרוב בכל רשת, ומביא דפי מתכונים לייבוא. רק קורא – לא קונה ולא משנה כלום.",
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://tk912.github.io/Superlist/*", "http://localhost:8790/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "host_permissions": [
+    "https://www.carrefour.co.il/*",
+    "https://www.tivtaam.co.il/*",
+    "https://www.victoryonline.co.il/*",
+    "https://www.rami-levy.co.il/*",
+    "https://www-api.rami-levy.co.il/*",
+    "https://www.shufersal.co.il/*",
+    "https://api.yochananof.co.il/*",
+    "https://shop.hazi-hinam.co.il/*",
+    "https://*/*"
+  ],
+  "permissions": ["storage"]
+}
