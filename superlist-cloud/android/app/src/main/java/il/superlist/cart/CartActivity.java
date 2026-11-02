@@ -42,7 +42,7 @@ public class CartActivity extends Activity {
     static final Map<String, String[]> SITES = new HashMap<>();
     static {
         SITES.put("shufersal", new String[]{"שופרסל", "https://www.shufersal.co.il/online/he/"});
-        SITES.put("ramilevy", new String[]{"רמי לוי", "https://www.rami-levy.co.il/he/online"});
+        SITES.put("ramilevy", new String[]{"רמי לוי", "https://www.rami-levy.co.il/he"});
         SITES.put("carrefour", new String[]{"קרפור", "https://www.carrefour.co.il/"});
         SITES.put("hazihinam", new String[]{"חצי חינם", "https://shop.hazi-hinam.co.il/"});
         SITES.put("yochananof", new String[]{"יוחננוף", "https://yochananof.co.il/"});
