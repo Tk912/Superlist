@@ -81,6 +81,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .day b { display: inline-block; width: 52px; }
 .meal-chip { background: var(--accent-soft); color: var(--text); border: 0; border-radius: 999px; padding: 4px 10px; font-size: 14px; cursor: pointer; }
 .meal-chip::after { content: " ✕"; color: var(--muted); font-size: 11px; }
+.alt { font-size: 11px; color: var(--muted); max-width: 120px; white-space: normal; line-height: 1.25; }
 .chain-card { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .chain-card:last-child { border-bottom: 0; }
 .chain-card .total { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -491,6 +492,7 @@ function renderList() {
     <button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center">לחיצה על פריט מעבירה אותו לעגלה</div>` : ""}
   ${basketCard()}
+  ${deliveryCard()}
   ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>` : ""}
   <div class="row" style="margin-top:8px">
     <button class="btn ghost grow" data-act="import">📥 ייבוא רשימת קניות</button>
@@ -662,7 +664,7 @@ function importSheet(prefill = "", title = "📥 ייבוא רשימת קניו�
 // ================= שליחה לסופר (כפתור הסימנייה, cart.js) =================
 const CART_URLS = {
   shufersal: "https://www.shufersal.co.il/online/he/",
-  ramilevy: "https://www.rami-levy.co.il/he/online",
+  ramilevy: "https://www.rami-levy.co.il/he",
   yochananof: "https://yochananof.co.il/",
   tivtaam: "https://www.tivtaam.co.il/",
   victory: "https://www.victoryonline.co.il/",
@@ -1144,6 +1146,11 @@ async function refreshCompare() {
     await PriceDB.load(selected());
     // פריט חדש מקבל מוצר אוטומטית (אפשר להחליף ב-🔗), כדי שמחיר הסל יופיע מיד
     let linked = 0;
+    // התאמה אוטומטית ישנה שלא מתאימה לשם (למשל "חלב" שהותאם בטעות ל"חלבה") – מבטלים ומתאימים מחדש
+    for (const i of live().filter(i => i.auto && i.code && i.product && !PriceDB.matches(i.name, i.product))) {
+      Object.assign(i, { code: null, product: null, auto: false, t: now() });
+      linked++;
+    }
     for (const i of live().filter(i => !i.code && !i.noLink)) {
       const r = PriceDB.search(i.name, 10);
       const pick = (i.unit === "kg" && r.find(x => x.weighted)) || r[0];
@@ -1167,7 +1174,8 @@ function fmtSlot(r) {
   const d = new Date(r.from), t = new Date(); t.setHours(0, 0, 0, 0);
   const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - t) / 864e5);
   const day = diff === 0 ? "היום" : diff === 1 ? "מחר" : `יום ${DAYS_SHORT[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
-  return `${day} ${r.from.slice(11, 16)}${r.to ? "–" + r.to.slice(11, 16) : ""}`;
+  // ⁦…⁩: הטווח נשאר משמאל לימין בתוך טקסט עברי (10:00–11:00 ולא 11:00–10:00)
+  return `${day} ⁦${r.from.slice(11, 16)}${r.to ? "–" + r.to.slice(11, 16) : ""}⁩`;
 }
 // הרשת עם המשלוח הקרוב ביותר (Wolt Market נחשבת רק אם נבחרה חנות שלה)
 function fastestChain(chainsList) {
@@ -1203,6 +1211,28 @@ const slotLine = c => {
     : `<div class="muted" style="font-size:12px">⚡ ${esc(r.reason || "אין מידע")}</div>`;
 };
 
+// מוצרים שלא נמכרים ברשת, והמוצר המקביל שהושווה (ויתווסף לעגלה) במקומם
+function altLine(chain) {
+  const alts = (compareCache?.lines || []).filter(l => l.approx?.[chain]);
+  if (!alts.length) return "";
+  return `<details class="muted" style="font-size:12px"><summary>≈ ${alts.length} ${alts.length === 1 ? "מוצר מקביל" : "מוצרים מקבילים"}</summary>
+    ${alts.map(l => `<div>${esc(l.name)} ← <b>${esc(l.approx[chain])}</b> ${money(l.prices[chain])}</div>`).join("")}</details>`;
+}
+
+// כרטיס "מועדי משלוח": המשלוח הקרוב בכל אחת מהרשתות (גם בלי השוואת מחירים), הקרוב ביותר למעלה
+function deliveryCard() {
+  if (!hasExt() || !S.settings.address?.city) return "";
+  const list = [...CART_CHAINS, ...(selected().wolt ? ["wolt"] : [])];
+  if (!slots) return `<h2>🚚 מועדי משלוח</h2><div class="card muted">${slotsLoading ? "⏳ בודק מועדי משלוח בכל הרשתות…" : "אין עדיין מידע על מועדי משלוח."}</div>`;
+  const key = c => slots[c]?.ok ? (slots[c].from || "0") : "9" + (slots[c] ? "0" : "1");
+  const order = list.sort((a, b) => key(a).localeCompare(key(b)));
+  return `<h2>🚚 מועדי משלוח</h2><div class="card">
+    ${order.map(c => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)">
+      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
+    <div class="row" style="margin-top:6px"><span class="muted grow" style="font-size:12px">לפי הכתובת בהגדרות · ${slotsAt ? ago(slotsAt) : ""}</span>
+      <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
+}
+
 // כרטיס "מחיר הסל" מתחת לרשימה: כמה עולה כל הרשימה בכל רשת
 function basketCard() {
   const c = compareCache;
@@ -1227,12 +1257,13 @@ function basketCard() {
     ${ranked.map(x => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(x.name)}</b>${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
         <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
-        ${cartTotalLine(x.chain)}${slotLine(x.chain)}</div>
+        ${altLine(x.chain)}
+        ${cartTotalLine(x.chain)}</div>
       <div style="text-align:center"><div class="total">${money(x.total)}</div>
         ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button>` : `<div class="muted" style="font-size:11px">הזמנה באפליקציית Wolt</div>`}</div></div>`).join("")}
     ${CART_CHAINS.filter(ch => !ranked.some(x => x.chain === ch) && cartTotal(ch)).map(ch => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(CART_NAMES[ch])}</b><span class="who">לפי העגלה</span></div>
-        <div class="muted">אין לרשת קובץ מחירים – זה הסכום שהאתר הציג בעגלה ${ago(cartTotal(ch).at)}</div>${slotLine(ch)}</div>
+        <div class="muted">אין לרשת קובץ מחירים – זה הסכום שהאתר הציג בעגלה ${ago(cartTotal(ch).at)}</div></div>
       <div style="text-align:center"><div class="total">${money(cartTotal(ch).total)}</div>
         <button class="btn small ghost" data-fill="${ch}">🛒 שלח</button></div></div>`).join("")}
     ${ranked.length > 1 && best.found === total && ranked[ranked.length - 1].found === total ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה: <b>${money(ranked[ranked.length - 1].total - best.total)}</b></div>` : ""}
@@ -1268,9 +1299,9 @@ function renderPrices() {
     <div class="card scroll-x"><table><tr><th>מוצר</th>${c.chains.map(x => `<th>${esc(x.name)}</th>`).join("")}</tr>
       ${c.lines.map(l => { const vals = Object.values(l.prices); const min = Math.min(...vals);
         return `<tr><td>${esc(l.name)}${l.weighted ? ` <span class="muted">${fmtNum(l.kg)} ק״ג</span>` : l.units > 1 ? ` ×${l.units}` : ""}</td>${c.chains.map(x => { const p = l.prices[x.chain], ap = l.approx?.[x.chain];
-          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}</td>`; }).join("")}</tr>`; }).join("")}
+          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}${ap ? `<div class="alt">${esc(ap)}</div>` : ""}</td>`; }).join("")}</tr>`; }).join("")}
     </table></div>
-    <div class="muted">≈ = לא נמצא אותו ברקוד, הושווה מוצר דומה בשמו. המחיר בטבלה הוא ליחידה או לק״ג, והסכום למעלה כבר מחושב לפי הכמות או המשקל שברשימה.</div>`;
+    <div class="muted">≈ = המוצר הזה לא נמכר ברשת (למשל מותג פרטי של רשת אחרת), אז הושווה מוצר מקביל – שמו מופיע מתחת למחיר, וזה מה שיתווסף לעגלה. המחיר בטבלה הוא ליחידה או לק״ג, והסכום למעלה כבר מחושב לפי הכמות או המשקל שברשימה.</div>`;
   }
   if (unlinked.length) html += `<h2>מוצרים שעוד לא הותאמו (${unlinked.length})</h2>
     <div class="card"><div class="muted" style="margin-bottom:6px">כדי להשוות, צריך לבחור לכל פריט מוצר ספציפי. הבחירה נשמרת לפעם הבאה.</div>

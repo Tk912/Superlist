@@ -42,12 +42,65 @@
   const round05 = x => Math.max(0.5, Math.round((x || 1) * 2) / 2);
   const units = it => Math.max(1, Math.round(it.qty || 1));
 
+  // בחירת מוצר מתוצאות החיפוש של האתר. מוסיפים רק מוצר שבאמת מתאים לשם ברשימה – אף פעם לא "התוצאה הראשונה"
+  // (החיפוש באתר מחזיר גם מוצרים אחרים: "עגבניות" -> "עגבניות שרי", "חלב" -> "שוקו"). אין התאמה בטוחה = לא מוסיפים.
+  const FIN = { "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" };
+  const stem = w => {
+    w = w.replace(/["'׳״.,()\/\-]/g, "").replace(/[ךםןףץ]/g, c => FIN[c]);
+    if (w.length > 4 && w.endsWith("ימ")) return w.slice(0, -2);
+    const s = w.length > 4 && w.endsWith("ות") ? w.slice(0, -2) + "ה" : w;   // עגבניות = עגבניה, אבל חלבה != חלב
+    if (s.length > 4 && s.endsWith("יה")) return s.slice(0, -1);
+    if (s.length > 5 && s.endsWith("ית")) return s.slice(0, -1);
+    return s;
+  };
+  const words = t => String(t || "").replace(/(\d)([א-ת])/g, "$1 $2").split(/[\s,]+/).map(stem).filter(Boolean);
+  const NOISE = new Set(["רמי", "לוי", "שופרסל", "יוחננוף", "קרפור", "ויקטורי", "חצי", "חינמ", "בדצ", "כשר", "גרמ", "גר", "ג", "קג", "ל", "ליטר", "מל", "יח"]);
+  const wm = (q, n) => n === q || (q.length >= 4 && n.startsWith(q)) || (n.length >= 4 && q.startsWith(n) && q.length - n.length <= 1);
+  const same = (a, b) => words(a).join(" ") === words(b).join(" ");
+  const less = (a, b) => { const i = a.findIndex((v, k) => v !== b[k]); return i >= 0 && a[i] < b[i]; };
+  // product: השם המדויק מקובץ המחירים (מחמירים פחות – שמות באתר ובקובץ כתובים קצת אחרת); name: מה שכתוב ברשימה
+  function pick(list, nameOf, { product, name, weighted, isWeighted }) {
+    for (const [q, need] of [[product, 0.75], [name, 1]]) {
+      if (!q) continue;
+      const exact = list.find(p => same(nameOf(p), q));
+      if (exact) return { found: exact, exact: true };
+      const qs = words(q).filter(w => !NOISE.has(w));
+      if (!qs.length) continue;
+      let best = null;
+      for (const [rank, p] of list.entries()) {
+        const ns = words(nameOf(p));
+        if (!ns.length || !wm(qs[0], ns[0]) && !(ns[1] && wm(qs[0], ns[1]))) continue;  // סוג המוצר בתחילת השם
+        const hit = qs.filter(w => ns.some(n => wm(w, n))).length / qs.length;
+        if (hit < need) continue;
+        // אחרי ההתאמה עצמה – הסדר של האתר (הנפוץ קודם)
+        const key = [-hit, weighted && isWeighted && !isWeighted(p) ? 1 : 0, wm(qs[0], ns[0]) ? 0 : 1, rank];
+        if (!best || less(key, best.key)) best = { key, p };
+      }
+      if (best) return { found: best.p };
+    }
+    return { found: null, closest: list[0] ? nameOf(list[0]) : null };
+  }
+  // מחפשים באתר לפי השם המדויק, לפי מה שכתוב ברשימה, ובלשון יחיד ("עגבניות" -> "עגבניה": ברמי לוי רק כך מופיעות העגבניות עצמן).
+  // עוצרים כשנמצא שם זהה; אחרת בוחרים את ההתאמה הטובה מכל התוצאות.
+  const singular = s => String(s || "").split(/\s+/).map(w => w.length > 4 && /ות$/.test(w) ? w.slice(0, -2) + "ה" : w.length > 4 && /ים$/.test(w) ? w.slice(0, -2) : w).join(" ");
+  async function searchPick(search, nameOf, it, isWeighted) {
+    const pool = [];
+    let m = { found: null };
+    for (const q of [...new Set([it.product, it.name, singular(it.name)].filter(Boolean))]) {
+      pool.push(...await search(q));
+      m = pick(pool, nameOf, { ...it, isWeighted });
+      if (m.exact) break;
+    }
+    return m;
+  }
+  const notFound = r => ({ ok: false, reason: r.closest ? `אין התאמה בטוחה – לא נוסף (באתר: ${r.closest.slice(0, 40)})` : "לא נמצא באתר" });
+
   const SITES = {
     shufersal: {
       match: /shufersal\.co\.il$/,
       ready: () => window.ACC && window.$,
       logged: async () => (await (await fetch("/online/he/authentication/get-status-includes-otp")).text()).trim() === "true",
-      async add({ name, code, kg }) {
+      async add({ name, code, kg, weighted, product }) {
         const ctx = ACC.config.encodedContextPath;
         const tiles = async q => {
           const html = await (await fetch(ctx + "/search?text=" + encodeURIComponent(q))).text();
@@ -57,8 +110,7 @@
         let found = null;
         const tries = code ? ["P_" + code].concat(/^7290{5,}\d+$/.test(code) ? ["P_" + parseInt(code.slice(3), 10)] : []) : [];
         for (const c of tries) { found = (await tiles(c.slice(2))).find(x => x.code === c); if (found) break; }
-        if (!found) { const t = await tiles(name); found = t.find(x => x.ok) || t[0] || null; }
-        if (!found) return { ok: false, reason: "לא נמצא באתר" };
+        if (!found) { const m = await searchPick(async q => (await tiles(q)).filter(x => x.ok), x => x.name, this.it, x => /WEIGHT/i.test(x.method || "")); found = m.found; if (!found) return notFound(m); }
         const method = (found.method || "BY_UNIT").toUpperCase(), byW = method === "BY_WEIGHT";
         const q = byW ? round05(kg) : units(this.it);
         try {
@@ -73,6 +125,7 @@
       match: /rami-levy\.co\.il$/,
       ready: () => window.$nuxt && $nuxt.$store,
       logged: async () => !!$nuxt.$store.getters["authuser/isAuthenticated"],
+      existing: () => ($nuxt.$store.state.cart.items || []).length,
       async add({ name, code, kg, weighted, product }) {
         const st = $nuxt.$store, store = String(st.state.cart.storeId || 331);
         const find = async q => (await (await fetch("/api/catalog", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -86,14 +139,12 @@
             for (const q of queries) { found = (await find(q)).find(p => String(p.barcode) === short); if (found) break; }
           }
         }
-        for (const q of found ? [] : queries) {
-          const r = (await find(q)).filter(p => p && p.name);
-          const pool = r.filter(p => !p.available_in || p.available_in.includes(Number(store)));
-          const list = pool.length ? pool : r;
-          found = (weighted && list.find(p => p.prop && p.prop.sw_shakil)) || list[0] || null;
-          if (found) break;
+        const here = p => !p.available_in || p.available_in.includes(Number(store));
+        if (!found) {
+          const m = await searchPick(async q => { const r = (await find(q)).filter(p => p && p.name); return r.some(here) ? r.filter(here) : r; }, p => p.name, this.it, p => !!(p.prop && p.prop.sw_shakil));
+          found = m.found;
+          if (!found) return notFound(m);
         }
-        if (!found || !found.name) return { ok: false, reason: "לא נמצא באתר" };
         const byKilo = !!(found.prop && found.prop.by_kilo && found.prop.sw_shakil);
         const amount = byKilo ? round05(kg) : units(this.it);
         const cur = st.state.cart.items.find(i => i.id === found.id);
@@ -111,6 +162,7 @@
       match: /(tivtaam\.co\.il|victoryonline\.co\.il|carrefour\.co\.il)$/,
       ready: () => { try { return !!angular.element(document.body).injector().get("Config").branch; } catch { return false; } },
       logged: async () => { const U = angular.element(document.body).injector().get("User"); return !!((U.session && U.session.token) || (U.data && U.data.id)); },
+      existing: () => Object.keys(angular.element(document.body).injector().get("Cart").lines || {}).length,
       async add({ name, code, kg, weighted, product }) {
         const inj = angular.element(document.body).injector();
         const Api = inj.get("Api"), Cart = inj.get("Cart"), cfg = inj.get("Config");
@@ -119,12 +171,7 @@
         const sellable = p => p && p.branch && p.branch.isActive && p.branch.isVisible && !p.branch.isOutOfStock;
         let found = null;
         if (code) found = (await get({ filters: JSON.stringify({ must: { term: { barcode: code } } }) })).find(sellable);
-        for (const q of found ? [] : [...new Set([product, name].filter(Boolean))]) {
-          const r = (await get({ query: q })).filter(sellable);
-          found = r.find(p => p.localName === q) || (weighted && r.find(p => p.isWeighable)) || r[0] || null;
-          if (found) break;
-        }
-        if (!found) return { ok: false, reason: "לא נמצא באתר" };
+        if (!found) { const m = await searchPick(async q => (await get({ query: q })).filter(sellable), p => p.localName, this.it, p => !!p.isWeighable); found = m.found; if (!found) return notFound(m); }
         const step = found.unitResolution || 0.5;
         const quantity = found.isWeighable ? Math.max(step, Math.round((kg || 1) / step) * step) : units(this.it);
         await Cart.addLine({ product: found, quantity });
@@ -136,19 +183,14 @@
       match: /hazi-hinam\.co\.il$/,
       ready: () => document.readyState !== "loading",
       logged: async () => !!(await (await fetch("/proxy/api/user/info", { credentials: "include" })).json())?.Results?.UserInfo,
-      async add({ name, code, kg, product }) {
+      async add({ name, code, kg, weighted, product }) {
         const call = async (u, b) => (await fetch("/proxy/api/" + u, { method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })).json();
         const find = async q => (await call("item/getItemsBySearch",
           { Paging: { Page: 1, PageSize: 20 }, Object: { SearchPhrase: q, SearchPhrases: [], ItemGroupping: 0 } }))?.Results?.Items || [];
         let found = null;
         if (code) found = (await find(code)).find(p => String(p.BarKod) === code);
-        for (const q of found ? [] : [...new Set([product, name].filter(Boolean))]) {
-          const r = (await find(q)).filter(p => p.IsInStock !== false);
-          found = r.find(p => p.Name === q) || r[0] || null;
-          if (found) break;
-        }
-        if (!found) return { ok: false, reason: "לא נמצא באתר" };
+        if (!found) { const m = await searchPick(async q => (await find(q)).filter(p => p.IsInStock !== false), p => p.Name, this.it, p => !!p.IsShakil); found = m.found; if (!found) return notFound(m); }
         const byKg = !!found.IsShakil;
         const quantity = byKg ? round05(kg) : units(this.it);
         const res = await call("item/addItemToCart", { Object: { ItemId: found.Id, Quantity: quantity, Type: byKg ? 2 : 1, IsCalculateCart: true } });
@@ -171,12 +213,7 @@
         const find = async q => (await gql("query($q:String!){ products(search:$q, pageSize:20){ items { sku name stock_status } } }", { q })).data?.products?.items || [];
         let found = null;
         if (code) found = (await find(code)).find(p => p.sku === code);
-        for (const q of found ? [] : [...new Set([product, name].filter(Boolean))]) {
-          const r = (await find(q)).filter(p => p.stock_status !== "OUT_OF_STOCK");
-          found = r.find(p => p.name === q) || r[0] || null;
-          if (found) break;
-        }
-        if (!found) return { ok: false, reason: "לא נמצא באתר" };
+        if (!found) { const m = await searchPick(async q => (await find(q)).filter(p => p.stock_status !== "OUT_OF_STOCK"), p => p.name, this.it); found = m.found; if (!found) return notFound(m); }
         const quantity = weighted ? round05(kg) : units(this.it);
         const res = await gql("mutation($c:String!,$i:[CartItemInput!]!){ addProductsToCart(cartId:$c, cartItems:$i){ user_errors { message } } }",
           { c: window.__slCart, i: [{ sku: found.sku, quantity }] });
@@ -191,6 +228,13 @@
   const site = Object.values(SITES).find(s => s.match.test(host));
   if (!site) { head("הכפתור עובד באתרים של שופרסל, רמי לוי, קרפור, חצי חינם, יוחננוף, טיב טעם וויקטורי. פתח את אחד מהם ולחץ שוב."); window.__slRunning = false; return; }
 
+  // רמי לוי העבירו את החנות מ-/he/online (היום דף 404) ל-/he
+  if (/rami-levy\.co\.il$/.test(host) && /^\/he\/online/.test(location.pathname)) {
+    window.__slRunning = false;
+    location.replace("/he");
+    return;
+  }
+
   head("מחכה שהאתר ייטען…");
   for (let i = 0; i < 60 && !site.ready(); i++) await sleep(500);
   if (!site.ready()) { head("האתר עוד לא נטען. חכה כמה שניות ולחץ שוב על הכפתור."); window.__slRunning = false; return; }
@@ -201,6 +245,11 @@
     window.__slRunning = false;
     return;
   }
+
+  // מוצרים שכבר היו בעגלה באתר (מקנייה קודמת) – לא מהרשימה. מציינים, כדי שלא ייראה כאילו המילוי הוסיף אותם
+  let before = 0;
+  try { before = site.existing ? site.existing() : 0; } catch {}
+  if (before) row(false, `בעגלה באתר כבר היו ${before} מוצרים מלפני (לא מהרשימה)`, "כדאי לבדוק ולהסיר בעגלה מה שלא צריך");
 
   let ok = 0;
   for (const [i, it] of job.items.entries()) {

@@ -57,14 +57,41 @@ const Slots = (() => {
     tivtaam: { base: "https://www.carrefour.co.il", rid: 1062 },
     victory: { base: "https://www.victoryonline.co.il", rid: 1470 },
   };
+  // רוב אזורי המשלוח שם מוגדרים כשטח על המפה (ולא כשם עיר), אז מאתרים את הכתובת על המפה (OpenStreetMap)
+  // ובודקים באיזה אזור היא נמצאת. נשמר במכשיר לכל כתובת, כדי לא לשאול שוב.
+  async function geocode(addr) {
+    const q = [addr.street && `${addr.street} ${addr.num || ""}`.trim(), addr.city].filter(Boolean).join(", ");
+    const key = "superlist-geo:" + q;
+    try { const c = JSON.parse(localStorage.getItem(key) || "null"); if (c) return c; } catch {}
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=il&accept-language=he&q=" + encodeURIComponent(q));
+      const g = (await r.json())[0];
+      if (!g) return null;
+      const p = { lat: +g.lat, lon: +g.lon };
+      try { localStorage.setItem(key, JSON.stringify(p)); } catch {}
+      return p;
+    } catch { return null; }
+  }
+  const inRing = (ring, y, x) => {
+    let ins = false;
+    for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) {
+      const [yi, xi] = ring[i], [yk, xk] = ring[k];
+      if ((yi > y) !== (yk > y) && x < (xk - xi) * (y - yi) / (yk - yi) + xi) ins = !ins;
+    }
+    return ins;
+  };
+  const cityName = s => clean(String(s || "").replace(/(^|\s)ת["״]?א(?=\s|$)/g, "$1תל אביב").replace(/תל אביב\s*יפו/g, "תל אביב"));
   async function spSlot({ base, rid }, addr) {
     if (!addr.city) return { ok: false, reason: "חסרה עיר בהגדרות" };
     const j = await json(`${base}/v2/retailers/${rid}/areas?appId=4&deliveryTypeId=1`);
-    const areas = j.areas || [j];
-    const c = clean(addr.city);
-    const area = areas.find(a => (a.names || []).some(n => clean(n.name) === c))
-      || areas.find(a => (a.names || []).some(n => clean(n.name).includes(c) || c.includes(clean(n.name))));
-    if (!area) return { ok: false, reason: "אין משלוחים לעיר" };
+    const areas = (j.areas || [j]).filter(a => a.isActive !== false && !a.isBranchDisabled);
+    const pt = await geocode(addr);
+    const c = cityName(addr.city);
+    const names = a => [a.name, ...(a.names || []).map(n => n.name)].map(cityName).filter(Boolean);
+    const area = (pt && areas.find(a => (a.polygons || []).some(r => r.length > 2 && inRing(r, pt.lat, pt.lon))))
+      || areas.find(a => names(a).some(n => n === c))
+      || areas.find(a => names(a).some(n => n.includes(c) || c.includes(n)));
+    if (!area) return { ok: false, reason: "אין משלוחים לכתובת" };
     const b = await json(`${base}/v2/retailers/${rid}/branches/${area.branchId}/areas?appId=4&deliveryTypeId=1&languageId=1`);
     const full = (b.areas || [b]).find(a => a.id === area.id) || area;
     // השעות מסומנות כ-UTC אבל הן שעון ישראל

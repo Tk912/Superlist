@@ -11,10 +11,12 @@ const PriceDB = (() => {
   const FIN = { "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" };
   function stem(word) {
     const w = word.replace(/["'׳״.,()\/\-]/g, "").replace(/[ךםןףץ]/g, c => FIN[c]);
-    if (w.length > 4 && (w.endsWith("ימ") || w.endsWith("ות"))) return w.slice(0, -2);
-    if (w.length > 3 && w.endsWith("ה")) return w.slice(0, -1);
-    if (w.length > 5 && w.endsWith("ית")) return w.slice(0, -1);   // עגבנית = עגבניה, טבעית = טבעי
-    return w;
+    // רבים -> יחיד: עגבניות = עגבניה, בננות = בננה, תפוחים = תפוח. לא מורידים סתם ה' בסוף: חלבה != חלב
+    if (w.length > 4 && w.endsWith("ימ")) return w.slice(0, -2);
+    const s = w.length > 4 && w.endsWith("ות") ? w.slice(0, -2) + "ה" : w;
+    if (s.length > 4 && s.endsWith("יה")) return s.slice(0, -1);      // עגבניה -> עגבני
+    if (s.length > 5 && s.endsWith("ית")) return s.slice(0, -1);      // עגבנית = עגבניה, טבעית = טבעי
+    return s;
   }
   const stems = t => String(t || "").trim().split(/\s+/).map(stem).filter(Boolean);
   // שום != שומר, חלב != חלבה: במילים קצרות דורשים התאמה מלאה
@@ -185,18 +187,32 @@ const PriceDB = (() => {
     return { results, fixed };
   }
 
-  // מוצר דומה ברשת שאין בה את אותו ברקוד (בעיקר ירקות ופירות, שלכל רשת קוד משלה)
+  // מוצר מקביל ברשת שאין בה את אותו ברקוד: ירקות ופירות (לכל רשת קוד משלה), ומוצרים שרק רשת אחת מוכרת
+  // (מותג פרטי כמו "סוכר לבן 1 ק"ג שופרסל"). משווים לפי סוג המוצר והגודל, בלי שם הרשת ויחידות המידה.
+  const NOISE = new Set(["רמי", "לוי", "רמילוי", "שופרסל", "יוחננוף", "קרפור", "ויקטורי", "חצי", "חינמ", "טיב", "טעמ", "מותג", "בדצ", "כשר",
+    "גרמ", "גר", "ג", "קג", "ק", "ל", "ליטר", "מל", "יח", "יחידה", "מע", "אריזת", "אריז", "מארז", "באריז"]);
+  const isNum = s => /\d/.test(s);
+  const wm2 = (q, n) => wm(q, n) || (n.length >= 4 && q.startsWith(n));   // מינרליים / מינרלים
+  const core = ss => ss.filter(s => !NOISE.has(s) && !isNum(s));
+  const nums = ss => ss.filter(isNum).map(s => s.replace(/[^\d.*]/g, "")).filter(Boolean);
   function similar(chain, refName, weighted) {
-    const qs = stems(refName);
+    const all = stems(refName), qs = core(all), qn = nums(all);
     if (!qs.length) return null;
     let best = null;
     for (const it of data[chain].items) {
       if (weighted !== null && !!it[3] !== weighted) continue;
-      const ns = it[4];
-      if (!ns.length || !wm(qs[0], ns[0])) continue;
-      const overlap = qs.filter(q => ns.some(n => wm(q, n))).length / qs.length;
-      if (overlap < 0.5) continue;
-      const key = [-overlap, ns.length, it[2]];
+      const ns = core(it[4]);
+      // סוג המוצר (המילה הראשונה) חייב להתאים: "סוכר" לא יוחלף ב"סוכריות". מותר שלפניו יבוא שם מותג ("נביעות מים…"),
+      // ואז צריך עוד מילה משותפת: "מנקה אמבטיה" לא יוחלף ב"מנקה אסלות"
+      if (!ns.length) continue;
+      const pos = ns.findIndex(n => wm(qs[0], n));
+      if (pos < 0 || pos > 1 || (pos === 1 && qs.length === 1)) continue;
+      const hit = qs.filter(q => ns.some(n => wm2(q, n))).length;
+      const overlap = hit / qs.length;
+      if (overlap < 0.5 || (qs.length > 1 && hit < 2 && ns.length > 1)) continue;
+      const nn = nums(it[4]);
+      const size = qn.length ? qn.filter(n => nn.includes(n)).length / qn.length : 0;
+      const key = [-overlap, -size, ns.length - hit, it[2]];
       if (!best || cmp(key, best.key) < 0) best = { key, it };
     }
     return best ? best.it : null;
@@ -219,7 +235,8 @@ const PriceDB = (() => {
       const line = { name: it.name, code, qty, kg: Math.round(kg * 100) / 100, units, weighted: !!weighted, prices: {}, approx: {}, codes: {}, names: {} };
       for (const c of chains) {
         let r = exact[c];
-        if (!r) { r = similar(c, refName, weighted); if (r) line.approx[c] = r[1]; }
+        // אם אין מוצר מקביל לשם המלא, מנסים לפי מה שכתוב ברשימה ("טונה בשמן")
+        if (!r) { r = similar(c, refName, weighted) || (it.name && it.name !== refName ? similar(c, it.name, weighted) : null); if (r) line.approx[c] = r[1]; }
         if (r) {
           line.prices[c] = r[2]; line.codes[c] = r[0]; line.names[c] = r[1];
           result[c].total += r[2] * (r[3] ? kg : units);
@@ -257,6 +274,8 @@ const PriceDB = (() => {
 
   // האם המילה מופיעה בשמות המוצרים (לפיצול משפט מוקלט: "חלב ולחם" -> חלב, לחם)
   const isWord = w => getVocab().has(stem(w));
+  // האם שם המוצר מתאים למה שכתוב ברשימה (לבדיקת התאמות אוטומטיות ישנות)
+  const matches = (name, product) => !!nameScore(stems(name), stems(product));
 
-  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, images, compare, stores, info: () => ({ status, data, local }) };
+  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, images, compare, stores, info: () => ({ status, data, local }) };
 })();
