@@ -115,6 +115,8 @@ async function ramiAddress(addr) {
     const scored = seen.filter(x => x.city_id == city.city_id).map(x => [editDist(loose(x.street_name), loose(street)), x]).sort((a, b) => a[0] - b[0]);
     if (scored[0] && scored[0][0] <= Math.max(1, Math.min(2, Math.floor(loose(street).length / 4)))) return { city, st: scored[0][1] };
   }
+  // יישובים קטנים (למשל צור יצחק): לרמי לוי אין בהם רשימת רחובות, והבדיקה עובדת עם שם הרחוב בלבד
+  if (!seen.length) return { city: cities[0], st: { street_id: null, street_name: street } };
   const maybe = [...new Set(seen.map(x => x.street_name))].slice(0, 3);
   return { reason: `הרחוב "${street}" לא נמצא ברמי לוי${maybe.length ? ` (אולי: ${maybe.join(", ")})` : ""} – תקן בהגדרות` };
 }
@@ -129,7 +131,7 @@ async function ramiSlot(addr) {
     body: JSON.stringify({ only_area_availability: false, city_id: city.city_id, street_id: st.street_id, street_name: st.street_name,
       home_num: String(addr.num), entrance: null, is_save_request: false, user_id: null }) });
   if (String(r.status) !== "200" || !r.data) return { ok: false, reason: r.message === "Need specific address" ? "צריך כתובת מלאה" : "אין משלוחים לכתובת" };
-  const slots = Object.values(r.data).flat().filter(t => t.active)
+  const slots = Object.values(r.data).flat().filter(t => t && t.active)
     .map(t => ({ from: `${t.date}T${hhmm(t.fromHour)}`, to: `${t.date}T${hhmm(t.toHour)}`, price: t.deliveryCost ?? null }));
   const s = first(slots);
   return s ? { ok: true, ...s } : { ok: false, reason: "אין חלונות פנויים" };
