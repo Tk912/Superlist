@@ -78,7 +78,17 @@ const streetTries = s => {
   return [...new Set([String(s).trim(), b, ...b.split(" ").filter(w => w.length > 2).sort((x, y) => y.length - x.length)])];
 };
 const near = (a, b) => loose(a) === loose(b) || loose(a).includes(loose(b)) || loose(b).includes(loose(a));
+// מרחק עריכה קטן: "ז'בוטינסקי" / "זבוטינסקי" / "ז'בוטינסקיי"
+const editDist = (a, b) => {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+};
 async function ramiAddress(addr) {
+  // מספר בית שנכתב בתוך שם הרחוב ("הרצל 12")
+  const street = String(addr.street || "").replace(/\s*\d+\s*[א-ת]?\s*$/, "").trim() || String(addr.street || "");
   let cities = [];
   for (const q of cityTries(addr.city)) {
     const r = await json("https://www.rami-levy.co.il/api/address-autocomplete/city?q=" + encodeURIComponent(q));
@@ -87,16 +97,26 @@ async function ramiAddress(addr) {
     if (!cities.length) cities = list.filter(x => near(x.city_name, addr.city));
     if (cities.length) break;
   }
-  if (!cities.length) return { reason: "העיר לא נמצאה ברמי לוי" };
+  if (!cities.length) return { reason: `העיר "${addr.city}" לא נמצאה ברמי לוי` };
+  const seen = [];
   for (const city of cities.slice(0, 3)) {
-    for (const q of streetTries(addr.street)) {
+    const tries = streetTries(street);
+    // ולבסוף: תחילת המילה הארוכה, כדי למצוא את הרחוב גם עם שגיאת כתיב
+    const longest = clean(street).split(" ").sort((x, y) => y.length - x.length)[0] || "";
+    if (longest.length >= 3) tries.push(longest.slice(0, 2));
+    for (const q of [...new Set(tries)]) {
       const r = await json(`https://www.rami-levy.co.il/api/address-autocomplete/street?q=${encodeURIComponent(q)}&city_id=${city.city_id}`);
       const list = (r.data || []).filter(x => x.city_id == city.city_id);
-      const st = list.find(x => loose(x.street_name) === loose(addr.street)) || list.find(x => near(x.street_name, addr.street)) || (list.length === 1 ? list[0] : null);
+      seen.push(...list);
+      const st = list.find(x => loose(x.street_name) === loose(street)) || list.find(x => near(x.street_name, street));
       if (st) return { city, st };
     }
+    // הכי קרוב בכתיב (עד 2 אותיות הבדל)
+    const scored = seen.filter(x => x.city_id == city.city_id).map(x => [editDist(loose(x.street_name), loose(street)), x]).sort((a, b) => a[0] - b[0]);
+    if (scored[0] && scored[0][0] <= Math.max(1, Math.min(2, Math.floor(loose(street).length / 4)))) return { city, st: scored[0][1] };
   }
-  return { reason: "הרחוב לא נמצא ברמי לוי – בדוק את שם הרחוב בהגדרות" };
+  const maybe = [...new Set(seen.map(x => x.street_name))].slice(0, 3);
+  return { reason: `הרחוב "${street}" לא נמצא ברמי לוי${maybe.length ? ` (אולי: ${maybe.join(", ")})` : ""} – תקן בהגדרות` };
 }
 
 async function ramiSlot(addr) {

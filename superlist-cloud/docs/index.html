@@ -59,6 +59,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 0; background: var(--chip); border-radius: 999px; padding: 6px 12px; font-size: 14px; cursor: pointer; }
 .chip.add::before { content: "+ "; color: var(--accent); font-weight: 700; }
+.chip.on { background: var(--accent); color: #fff; }
 .item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .item:last-child { border-bottom: 0; }
 .check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); flex: none; cursor: pointer;
@@ -248,7 +249,7 @@ let tab = "list";
 
 function blank() {
   return { rev: 0, items: [], history: {}, recipes: SEED_RECIPES.map(([name, ing]) => ({ id: uid(), t: 1, name, ingredients: ing.map(([n, q]) => ({ name: n, qty: q })) })),
-    plan: { t: 0, days: {} }, settings: { t: 0, stores: {} } };
+    plan: { t: 0, days: {} }, settings: { t: 0, stores: {} }, orders: [] };
 }
 function loadLocal(key = LS) {
   try { const s = JSON.parse(localStorage.getItem(key)); if (s && s.items) return s; } catch {}
@@ -257,7 +258,7 @@ function loadLocal(key = LS) {
 function fill(s) {
   const b = blank();
   if (!s || !Array.isArray(s.items)) return b;
-  s.history ||= {}; s.recipes ||= b.recipes; s.plan ||= b.plan; s.plan.days ||= {}; s.settings ||= b.settings; s.settings.stores ||= {};
+  s.history ||= {}; s.orders ||= []; s.recipes ||= b.recipes; s.plan ||= b.plan; s.plan.days ||= {}; s.settings ||= b.settings; s.settings.stores ||= {};
   // פריטים מגרסה קודמת: ירקות ופירות עוברים לק"ג, כל השאר ליחידות; מחלקה מחושבת מחדש (תיקון אותיות סופיות)
   for (const i of s.items) {
     if (i.uv === 2) continue;
@@ -291,6 +292,8 @@ function merge(local, server) {
     rev: server.rev,
     items: mergeById(server.items, local.items),
     recipes: mergeById(server.recipes, local.recipes),
+    // היסטוריית ההזמנות: 80 האחרונות
+    orders: mergeById(server.orders, local.orders).sort((a, b) => b.at - a.at).slice(0, 80),
     history: hist,
     plan: (local.plan.t || 0) > (server.plan.t || 0) ? local.plan : server.plan,
     settings: (local.settings.t || 0) > (server.settings.t || 0) ? local.settings : server.settings,
@@ -419,6 +422,81 @@ function suggestions() {
   return { due: due.slice(0, 8).map(x => x.name), freq: freq.slice(0, 10).map(x => x.name) };
 }
 
+// ================= היסטוריית הזמנות =================
+// כל "שלח לסופר" נשמר כהזמנה (רשת, תאריך, פריטים, הסכום המשוער), וכך גם "סיימתי קנייה" (קנייה בחנות).
+// הסכום שהאתר הציג בעגלה מצטרף להזמנה כשהוא מגיע מהאפליקציה. נשמר ברשימה המשותפת.
+const ORDER_PLACE = c => c === "store" ? "קנייה בחנות" : CART_NAMES[c] || chains[c] || c;
+function recordOrder(chain, items) {
+  if (!items.length) return;
+  const at = now();
+  const line = it => compareCache?.lines.find(l => l.code && l.code === String(it.code || "").replace(/^0+/, ""));
+  // הסכום המשוער: מחיר כל פריט ברשת × הכמות (או המשקל), כמו במחיר הסל
+  let est = 0, found = 0;
+  const rows = items.map(i => {
+    const l = chain === "store" ? null : line(i), price = l?.prices[chain] ?? null;
+    if (price != null) { est += price * (l.weighted ? l.kg : l.units); found++; }
+    return { name: i.name, qty: i.qty || 1, unit: i.unit || "unit", code: i.code || null, product: i.product || null, price, alt: l?.approx?.[chain] || null };
+  });
+  S.orders = [{
+    id: uid(), t: at, at, chain, by: me || "", items: rows,
+    est: found ? Math.round(est * 100) / 100 : null, found: chain === "store" ? null : found,
+  }, ...(S.orders || [])].slice(0, 80);
+}
+const orderTotal = o => o.cart ?? o.est ?? null;
+let ordersFilter = "all";
+function ordersSheet() {
+  const all = (S.orders || []).filter(o => !o.deleted).sort((a, b) => b.at - a.at);
+  if (!all.length) return sheet(`<h2 style="margin-top:0">🧾 היסטוריית הזמנות</h2>
+    <div class="card muted">עוד אין הזמנות. כל פעם שלוחצים "שלח לסופר" (או "סיימתי קנייה" בחנות) ההזמנה נשמרת כאן, עם הרשת, התאריך והמוצרים.</div>
+    <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
+  const places = [...new Set(all.map(o => o.chain))];
+  if (ordersFilter !== "all" && !places.includes(ordersFilter)) ordersFilter = "all";
+  const shown = all.filter(o => ordersFilter === "all" || o.chain === ordersFilter);
+  const sum = shown.reduce((s, o) => s + (orderTotal(o) || 0), 0);
+  const month = o => new Date(o.at).toLocaleDateString("he-IL", { month: "long", year: "numeric" });
+  const date = o => new Date(o.at).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(o.at).toTimeString().slice(0, 5);
+  let last = "";
+  sheet(`<h2 style="margin-top:0">🧾 היסטוריית הזמנות</h2>
+    <div class="chips" style="margin-bottom:8px">${["all", ...places].map(p => `<button class="chip ${p === ordersFilter ? "on" : ""}" data-of="${esc(p)}">${p === "all" ? "הכל" : esc(ORDER_PLACE(p))} (${p === "all" ? all.length : all.filter(o => o.chain === p).length})</button>`).join("")}</div>
+    <div class="muted" style="margin-bottom:6px">${shown.length} הזמנות${sum ? ` · סה"כ ${money(sum)}` : ""}</div>
+    ${shown.map(o => {
+      const head = month(o) !== last ? `<div class="cat-title">${esc(last = month(o))}</div>` : "";
+      const tot = orderTotal(o);
+      return `${head}<details class="card" style="margin-bottom:8px"><summary class="row" style="cursor:pointer;gap:8px">
+          <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
+            <div class="muted" style="font-size:12px">${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
+          <b>${tot != null ? money(tot) : ""}</b></summary>
+        <div style="margin-top:6px">${o.items.map(i => `<div class="row" style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">
+          <span class="grow">${esc(i.name)}${i.unit === "kg" ? ` <span class="muted">${fmtNum(i.qty)} ק״ג</span>` : i.qty > 1 ? ` ×${fmtNum(i.qty)}` : ""}${i.alt ? `<div class="alt">≈ ${esc(i.alt)}</div>` : ""}</span>
+          <span class="muted">${i.price != null ? money(i.price) : ""}</span></div>`).join("")}</div>
+        <div class="row" style="margin-top:8px"><button class="btn small grow" data-reorder="${o.id}">↻ הוסף שוב לרשימה</button>
+          <button class="btn small ghost" data-odel="${o.id}">🗑 מחק</button></div></details>`;
+    }).join("")}
+    <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
+  const root = $("#sheet-root");
+  root.querySelectorAll("[data-of]").forEach(el => el.onclick = () => { ordersFilter = el.dataset.of; ordersSheet(); });
+  root.querySelectorAll("[data-reorder]").forEach(el => el.onclick = () => {
+    const o = S.orders.find(x => x.id === el.dataset.reorder);
+    const have = new Set(live().filter(i => !i.done).map(i => norm(i.name)));
+    let n = 0;
+    for (const i of o.items) {
+      if (have.has(norm(i.name))) continue;
+      addItem(i.name, i.qty, "order", i.unit);
+      const it = live().find(x => norm(x.name) === norm(i.name) && !x.done);
+      if (it && i.code && !it.code) Object.assign(it, { code: i.code, product: i.product, t: now() });
+      n++;
+    }
+    commit(); closeSheet(); refreshCompare().then(render);
+    toast(n ? `נוספו ${n} פריטים מההזמנה` : "כל הפריטים כבר ברשימה");
+  });
+  root.querySelectorAll("[data-odel]").forEach(el => el.onclick = () => {
+    if (!confirm("למחוק את ההזמנה מההיסטוריה?")) return;
+    const o = S.orders.find(x => x.id === el.dataset.odel);
+    Object.assign(o, { deleted: true, t: now() });
+    commit(); ordersSheet();
+  });
+}
+
 function finishShopping() {
   const done = live().filter(i => i.done);
   if (!done.length) return toast("סמן קודם את מה שקנית");
@@ -431,6 +509,7 @@ function finishShopping() {
     S.history[k] = h;
     Object.assign(i, { deleted: true, t });
   }
+  recordOrder("store", done);
   commit();
   toast(`נשמרו ${done.length} פריטים בהיסטוריה 👍`);
 }
@@ -497,13 +576,14 @@ function renderList() {
   <div class="row" style="margin-top:8px">
     <button class="btn ghost grow" data-act="import">📥 ייבוא רשימת קניות</button>
     <button class="btn ghost grow" data-act="share">👥 שיתוף הרשימה</button>
-  </div>`;
+  </div>
+  <button class="btn ghost" style="width:100%;margin-top:8px" data-act="orders">🧾 היסטוריית הזמנות${(S.orders || []).some(o => !o.deleted) ? ` (${S.orders.filter(o => !o.deleted).length})` : ""}</button>`;
 }
 
 // בחירת רשת למילוי עגלה; הזולה ביותר (לפי ההשוואה) למעלה
 function sendSheet() {
   const totals = Object.fromEntries((compareCache?.chains || []).filter(c => c.found).map(c => [c.chain, c]));
-  const order = [...CART_CHAINS].sort((a, b) => (totals[a]?.total ?? 1e9) - (totals[b]?.total ?? 1e9));
+  const order = [...CART_CHAINS].sort((a, b) => (totals[b]?.found || 0) - (totals[a]?.found || 0) || (totals[a]?.total ?? 1e9) - (totals[b]?.total ?? 1e9));
   const best = order.find(c => totals[c]);
   const fast = fastestChain(CART_CHAINS);
   const others = [...new Set(live().filter(i => !i.done && i.by && i.by !== me).map(i => i.by))];
@@ -722,6 +802,8 @@ function fillWithApp(chain, job) {
 async function fillCart(chain) {
   if (!live().some(i => !i.done)) return toast("אין פריטים ברשימה");
   const job = JSON.stringify(cartJob(chain));
+  recordOrder(chain, live().filter(i => !i.done));
+  commit();
   if (inApp) { closeSheet(); return window.SuperlistNative.fill(chain, job); }
   if (isAndroid() && !useBookmarkOnAndroid) return fillWithApp(chain, job);
   let copied = false;
@@ -1233,6 +1315,9 @@ function deliveryCard() {
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
 
+// "הכי זול" רק מבין הרשתות שיש בהן הכי הרבה מהמוצרים: רשת עם מוצר אחד מתוך 10 לא תיחשב זולה רק כי הסכום שלה קטן
+const byCoverage = (a, b) => b.found - a.found || a.total - b.total;
+
 // כרטיס "מחיר הסל" מתחת לרשימה: כמה עולה כל הרשימה בכל רשת
 function basketCard() {
   const c = compareCache;
@@ -1241,14 +1326,14 @@ function basketCard() {
   if (!Object.keys(selected()).length) return `<div class="card muted">💰 כדי לראות כמה עולה הסל בכל רשת, בחר סניפי אונליין ב<b>הגדרות</b>.</div>`;
   if (!c || !c.lines.length) return `<div class="card muted">💰 מחשב את מחיר הסל…</div>`;
   const total = c.lines.length;
-  const ranked = c.chains.slice().sort((a, b) => (b.found === total) - (a.found === total) || a.total - b.total);
+  const ranked = c.chains.slice().sort(byCoverage);
   const best = ranked[0];
   const unlinked = open.filter(i => !i.code).length;
   const fast = fastestChain(ranked.map(x => x.chain));
   // המשלוח הקרוב בכל הרשתות שאפשר להזמין בהן (גם בלי השוואת מחירים)
   const fastAll = fastestChain([...new Set([...CART_CHAINS, ...ranked.map(x => x.chain)])]);
   const summary = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">
-      ${best?.found ? `<span class="chip">💰 הכי זול: <b>${esc(best.name)}</b> ${money(best.total)}${isEstimate(best.chain) ? " (הערכה)" : ""}</span>` : ""}
+      ${best?.found ? `<span class="chip">💰 הכי זול: <b>${esc(best.name)}</b> ${money(best.total)}${isEstimate(best.chain) ? " (הערכה)" : ""}${best.found < total ? ` · ${best.found} מתוך ${total} מוצרים` : ""}</span>` : ""}
       ${fastAll ? `<span class="chip">⚡ הכי מהיר: <b>${esc(CART_NAMES[fastAll] || chains[fastAll])}</b> · ${esc(fmtSlot(slots[fastAll]))}</span>`
         : !hasExt() ? (inApp ? "" : `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`)
         : !S.settings.address?.city ? `<button class="chip" data-tab-go="settings">⚡ הוסף כתובת בהגדרות כדי לראות מועדי משלוח</button>` : ""}
@@ -1284,7 +1369,7 @@ function renderPrices() {
   if (c && c.lines.length) {
     const ranked = c.chains.filter(x => x.found);
     const full = ranked.filter(x => x.found === c.lines.length);
-    const best = (full.length ? full : ranked).slice().sort((a, b) => a.total - b.total)[0];
+    const best = ranked.slice().sort(byCoverage)[0];
     const max = Math.max(...ranked.map(x => x.total), 1);
     html += `<h2>איפה הסל הכי זול?</h2><div class="card">
       ${c.chains.map(x => `<div class="chain-card">
@@ -1644,7 +1729,12 @@ const NO_ONLINE_PRICES = {
 const CART_TOTAL_DAYS = 3;
 window.onCartTotals = all => {
   const ct = (S.settings.cartTotals ||= {});
-  for (const [c, v] of Object.entries(all || {})) if (v && v.total > 0) ct[c] = { total: Math.round(v.total * 100) / 100, at: v.at || Date.now(), items: v.items || 0 };
+  for (const [c, v] of Object.entries(all || {})) if (v && v.total > 0) {
+    ct[c] = { total: Math.round(v.total * 100) / 100, at: v.at || Date.now(), items: v.items || 0 };
+    // הסכום שבעגלה נרשם גם בהזמנה האחרונה לאותה רשת (אם נשלחה ב-12 השעות שלפני)
+    const o = (S.orders || []).find(o => !o.deleted && o.chain === c && ct[c].at >= o.at - 6e4 && ct[c].at - o.at < 12 * 36e5);
+    if (o && o.cart !== ct[c].total) Object.assign(o, { cart: ct[c].total, t: now() });
+  }
   S.settings.t = now(); commit(); render();
   const first = Object.entries(all || {})[0];
   if (first) toast(`🧾 נשמר: ${CART_NAMES[first[0]] || first[0]} – ${money(first[1].total)} בעגלה`);
@@ -1919,6 +2009,7 @@ function renderHelp() {
     <li>לחיצה על פריט מסמנת אותו "בעגלה". ✕ מוחק.</li>
     <li>🔗 ליד פריט = בחירת המוצר המדויק (מותג, גודל). התמונה הקטנה מראה מה נבחר – לחיצה מגדילה.</li>
     <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
+    <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
   </ul>`)}
 
   ${sec("📋 הרשימות שלי ושיתוף", `<ul>
@@ -2089,6 +2180,7 @@ $("#view").addEventListener("click", e => {
     case "recipe-import": return importRecipeSheet();
     case "autolink": return autoLink();
     case "import": return importSheet();
+    case "orders": return ordersSheet();
     case "send": return sendSheet();
     case "share": return shareSheet();
     case "bookmark": return bookmarkSheet();
