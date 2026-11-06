@@ -1383,6 +1383,15 @@ function deliveryCard() {
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
 
+// המחירים מ-GitHub מתעדכנים פעמיים בשעה. אם העדכון נתקע (קרה בנובמבר 2026) – אומרים את זה, במקום להציג מחירים ישנים בשקט
+const STALE_HOURS = 3;
+function staleWarn() {
+  const at = (PriceDB.info().status?.updated || 0) * 1000;
+  if (!at || !Object.keys(publicStores()).length || Date.now() - at < STALE_HOURS * 36e5) return "";
+  const d = new Date(at);
+  return `<div class="warn">⚠️ המחירים לא התעדכנו מאז ${d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" })} ${d.toTimeString().slice(0, 5)} (${ago(at)}), ולכן ייתכן שהם לא מדויקים. העדכון האוטומטי כנראה תקוע – נשלחה על כך התרעה.</div>`;
+}
+
 // "הכי זול" רק מבין הרשתות שיש בהן הכי הרבה מהמוצרים: רשת עם מוצר אחד מתוך 10 לא תיחשב זולה רק כי הסכום שלה קטן
 const byCoverage = (a, b) => b.found - a.found || a.total - b.total;
 
@@ -1406,7 +1415,7 @@ function basketCard() {
         : !hasExt() ? (inApp ? "" : `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`)
         : !S.settings.address?.city ? `<button class="chip" data-tab-go="settings">⚡ הוסף כתובת בהגדרות כדי לראות מועדי משלוח</button>` : ""}
     </div>`;
-  return `<h2>💰 מחיר הסל</h2><div class="card">${summary}
+  return `<h2>💰 מחיר הסל</h2><div class="card">${staleWarn()}${summary}
     ${ranked.map(x => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(x.name)}</b>${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
         <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
@@ -1430,7 +1439,7 @@ function renderPrices() {
   const items = live();
   const unlinked = items.filter(i => !i.code);
   const c = compareCache;
-  let html = "";
+  let html = staleWarn();
   const waiting = Object.entries(PriceDB.info().data).filter(([, d]) => d.missing).map(([ch]) => chains[ch] || ch);
   if (waiting.length) html += `<div class="warn">המחירים של ${esc(waiting.join(", "))} עוד לא הורדו. הם מתעדכנים אוטומטית כל שעה, כך שסניף שנבחר עכשיו יופיע תוך שעה בערך.</div>`;
   if (!items.length) html += `<div class="card empty">הרשימה ריקה – אין מה להשוות עדיין</div>`;

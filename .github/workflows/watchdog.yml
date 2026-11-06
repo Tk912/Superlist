@@ -1,0 +1,91 @@
+# שומר: בודק כל שעה שעדכון המחירים והאתר באמת רצים.
+# ריצה שנתקעת בתור לא "נכשלת", ולכן GitHub לא שולח עליה כלום (כך קרה בנובמבר 2026).
+# כשמשהו לא תקין: נפתחת Issue במאגר (מגיע אליך מייל), והבדיקה עצמה מסומנת כנכשלת (עוד מייל מ-GitHub).
+# כשהכל חוזר לתקין, ה-Issue נסגרת לבד. אפשר גם להריץ ידנית: Actions -> "שומר עדכון המחירים" -> Run workflow.
+name: שומר עדכון המחירים
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+# תור נפרד: גם אם עדכון המחירים תקוע, השומר ירוץ
+concurrency:
+  group: watchdog
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SITE: https://tk912.github.io/Superlist
+      STALE_MINUTES: "180"     # מחירים ישנים מ-3 שעות = בעיה
+      STUCK_MINUTES: "120"     # ריצה שמחכה בתור יותר משעתיים = תקועה
+      TITLE: "⚠️ עדכון המחירים לא רץ"
+      # ריצות "רפאים" מנובמבר 2026 ש-GitHub לא מאפשר לבטל – לא נספרות
+      GHOSTS: "42067639190 42251257510"
+    steps:
+      - name: בדיקה
+        id: check
+        run: |
+          problems=""
+          # 1. מתי התעדכנו המחירים באתר
+          age=$(curl -fsS -m 30 "$SITE/data/status.json?t=$(date +%s)" | python3 -c "import json,sys,time; print(int((time.time()-json.load(sys.stdin)['updated'])/60))" || echo "-1")
+          if [ "$age" = "-1" ]; then problems="$problems- לא הצלחתי לקרוא את $SITE/data/status.json (האתר לא עונה?)\n"
+          elif [ "$age" -gt "$STALE_MINUTES" ]; then problems="$problems- המחירים באתר לא התעדכנו כבר $((age / 60)) שעות ו-$((age % 60)) דקות.\n"; fi
+          # 2. ריצות של עדכון המחירים שתקועות בתור (מהיממה האחרונה; ריצות "רפאים" ישנות של GitHub לא נספרות)
+          gh run list -R "$REPO" --workflow site.yml -L 40 --json databaseId,status,createdAt > runs.json
+          stuck=$(python3 - <<'PY'
+          import json, os, time, datetime
+          ghosts = set(os.environ["GHOSTS"].split())
+          out = []
+          for r in json.load(open("runs.json")):
+              if r["status"] not in ("queued", "pending", "waiting") or str(r["databaseId"]) in ghosts:
+                  continue
+              mins = (time.time() - datetime.datetime.fromisoformat(r["createdAt"].replace("Z", "+00:00")).timestamp()) / 60
+              if int(os.environ["STUCK_MINUTES"]) < mins < 24 * 60:
+                  out.append(str(r["databaseId"]))
+          print(" ".join(out))
+          PY
+          )
+          if [ -n "$stuck" ]; then problems="$problems- ריצות של עדכון המחירים תקועות בתור יותר משעתיים: $stuck\n"; fi
+          # 3. ההרצות האחרונות נכשלו
+          failed=$(gh run list -R "$REPO" --workflow site.yml -L 3 --json conclusion -q '[.[] | select(.conclusion == "failure")] | length')
+          if [ "$failed" = "3" ]; then problems="$problems- שלוש ההרצות האחרונות של עדכון המחירים נכשלו.\n"; fi
+          echo "age=$age stuck=[$stuck] failed=$failed"
+          printf "%b" "$problems" > problems.txt
+          if [ -s problems.txt ]; then echo "bad=1" >> "$GITHUB_OUTPUT"; else echo "bad=0" >> "$GITHUB_OUTPUT"; fi
+
+      - name: התרעה (Issue)
+        if: steps.check.outputs.bad == '1'
+        run: |
+          {
+            echo "השומר האוטומטי מצא בעיה בעדכון המחירים והאתר:"
+            echo
+            cat problems.txt
+            echo
+            echo "**ההרצות האחרונות:** https://github.com/$REPO/actions/workflows/site.yml"
+            echo
+            echo "מה עושים: פותחים את הקישור ובודקים אם יש ריצה תקועה (עיגול צהוב שלא זז) או אדומה. אפשר לבקש מ-Claude לבדוק ולתקן."
+            echo
+            echo "_נבדק: $(TZ=Asia/Jerusalem date '+%d/%m/%Y %H:%M')_ · ה-Issue תיסגר לבד כשהכל יחזור לתקין."
+          } > body.md
+          num=$(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number -q '.[0].number')
+          if [ -n "$num" ]; then gh issue comment "$num" -R "$REPO" --body-file body.md
+          else gh issue create -R "$REPO" --title "$TITLE" --body-file body.md; fi
+          echo "::error::עדכון המחירים לא תקין – ראו את ה-Issue במאגר"
+          exit 1
+
+      - name: הכל תקין – סגירת התרעה פתוחה
+        if: steps.check.outputs.bad == '0'
+        run: |
+          for num in $(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number -q '.[].number'); do
+            gh issue close "$num" -R "$REPO" --comment "✅ עדכון המחירים חזר לעבוד ($(TZ=Asia/Jerusalem date '+%d/%m/%Y %H:%M'))."
+          done
