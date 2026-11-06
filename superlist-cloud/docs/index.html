@@ -1383,8 +1383,9 @@ function deliveryCard() {
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
 
-// המחירים מ-GitHub מתעדכנים פעמיים בשעה. אם העדכון נתקע (קרה בנובמבר 2026) – אומרים את זה, במקום להציג מחירים ישנים בשקט
-const STALE_HOURS = 3;
+// המחירים מ-GitHub אמורים להתעדכן פעמיים בשעה, אבל GitHub לפעמים דוחה ריצות מתוזמנות בכמה שעות.
+// אם עברו יותר מ-12 שעות העדכון כנראה תקוע (קרה בנובמבר 2026) – אומרים את זה, במקום להציג מחירים ישנים בשקט
+const STALE_HOURS = 12;
 function staleWarn() {
   const at = (PriceDB.info().status?.updated || 0) * 1000;
   if (!at || !Object.keys(publicStores()).length || Date.now() - at < STALE_HOURS * 36e5) return "";
