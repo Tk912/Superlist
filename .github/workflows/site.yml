@@ -17,7 +17,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  # שם חדש לתור: ריצה ישנה נתקעה ב-GitHub בתור "pages" וחסמה את כל העדכונים (נובמבר 2026)
+  group: site-update
   cancel-in-progress: false
 
 jobs:
