@@ -117,6 +117,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   .d9 { --dbg: #3a2019; --dfg: #f0ae98; } .d10 { --dbg: #23272b; --dfg: #b8c0c8; }
   .tile .tile-check { color: #0b1a12; }
 }
+.tile-note { font-size: 12px; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
 .shop-bar { position: sticky; top: calc(48px + env(safe-area-inset-top)); z-index: 4; background: var(--card); border-radius: 14px; padding: 10px 12px;
   margin-bottom: 10px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .shop-bar select { width: auto; padding: 4px 8px; font-size: 14px; }
@@ -399,6 +400,8 @@ function onServerData(data) {
   const before = new Map(S.items.map(i => [i.id, i]));
   S = dirty ? merge(S, data) : fill(data);
   notifyOthers(before);
+  const sn = othersShopping();
+  if (sn && sn.at !== lastShoppingSeen) { lastShoppingSeen = sn.at; toast(`🛍️ ${sn.by} בסופר עכשיו – זה הזמן להוסיף מה שחסר`); }
   if (!onlineChecked) {
     onlineChecked = true;
     setTimeout(() => { ensureOnlineStores(); if (Object.keys(publicStores()).length) Cloud.setPublicStores(publicStores()).catch(() => {}); }, 0);
@@ -615,6 +618,61 @@ function ordersSheet() {
   });
 }
 
+// ================= "אני בסופר עכשיו" =================
+// מי שנכנס למצב קנייה מסמן את זה ברשימה המשותפת, והשותפים רואים הודעה (תקף לשעתיים).
+let lastShoppingSeen = 0;
+function setShoppingNow(on) {
+  const who = me || (window.Cloud?.email?.() || "").split("@")[0] || "מישהו";
+  S.settings.shoppingNow = on ? { by: who, email: window.Cloud?.email?.() || "", at: now(), chain: shopChain() } : null;
+  S.settings.t = now(); commit();
+}
+function othersShopping() {
+  const s = S.settings.shoppingNow;
+  if (!s || now() - s.at > 2 * 36e5) return null;
+  const mine = window.Cloud?.email?.() || "";
+  return (mine && s.email === mine) || (!mine && s.by === me) ? null : s;
+}
+
+// ================= מה אפשר לבשל ממה שיש =================
+// מסמנים מה יש בבית (מוצע: מה שנקנה לאחרונה), ומקבלים מתכונים מהספרייה ומהמתכונים שלך, לפי כמה מהמצרכים כבר יש.
+const cookStem = w => norm(w).replace(/[יו]?(ות|ים)$/, "").replace(/ה$/, "");
+const cookMatch = (ing, have) => { const a = cookStem(ing.split(" ")[0]); return have.some(h => cookStem(h.split(" ")[0]) === a); };
+let cookHave = null;
+function cookHaveSheet() {
+  if (!cookHave) {
+    // מה שנקנה בשבועיים האחרונים + מה שסומן "בעגלה"
+    const recent = Object.values(S.history).filter(h => (h.buys || []).some(b => now() - b < 14 * 864e5)).map(h => h.name);
+    cookHave = [...new Set([...recent, ...live().filter(i => i.done).map(i => i.name)])];
+  }
+  const all = [...recipeList().map(r => ({ name: r.name, ing: r.ingredients.map(x => [x.name, x.pantry]), mine: r })),
+    ...RECIPE_LIBRARY.filter(l => !recipeList().some(r => norm(r.name) === norm(l.name))).map(l => ({ name: l.name, ing: l.ing.map(x => [x[0], x[3]]), lib: l }))];
+  const scored = all.map(r => {
+    const need = r.ing.filter(([, pantry]) => !pantry).map(([n]) => n);
+    const missing = need.filter(n => !cookMatch(n, cookHave));
+    return { r, need, missing, score: need.length ? (need.length - missing.length) / need.length : 0 };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score || a.missing.length - b.missing.length).slice(0, 10);
+  sheet(`<h2 style="margin-top:0">🥕 מה יש בבית?</h2>
+    <div class="chips" style="margin-bottom:6px">${cookHave.map((n, k) => `<button class="chip on" data-have-del="${k}">${esc(n)} ✕</button>`).join("") || `<span class="muted">עוד לא סימנתם כלום.</span>`}</div>
+    <form id="have-form" class="row" style="margin-bottom:10px"><input type="text" id="have-in" placeholder="הוסיפו מצרך שיש בבית (למשל: אורז)"><button class="btn small">הוסף</button></form>
+    <h3 style="margin:6px 0">אפשר לבשל</h3>
+    ${scored.length ? scored.map(({ r, need, missing, score }, k) => `<div class="card" style="margin-bottom:8px">
+      <div class="row"><b class="grow">${esc(r.name)}</b><span class="badge" style="background:${score === 1 ? "var(--accent)" : "#b5470b"}">${Math.round(score * 100)}%</span></div>
+      <div class="muted" style="font-size:13px">${missing.length ? `חסר: ${esc(missing.join(", "))}` : "יש את כל המצרכים! 🎉"}</div>
+      <div class="row" style="margin-top:6px">${missing.length ? `<button class="btn small grow" data-cook-add="${k}">🛒 הוסף את החסר לרשימה</button>` : ""}
+        ${r.mine ? `<button class="btn small ghost grow" data-view-recipe="${r.mine.id}">📖 למתכון</button>` : ""}</div></div>`).join("")
+      : `<div class="card muted">אין עדיין התאמה. הוסיפו עוד מצרכים שיש בבית.</div>`}
+    <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
+  const root = $("#sheet-root");
+  root.querySelectorAll("[data-have-del]").forEach(el => el.onclick = () => { cookHave.splice(+el.dataset.haveDel, 1); cookHaveSheet(); });
+  root.querySelector("#have-form").onsubmit = e => { e.preventDefault(); const v = $("#have-in").value.trim(); if (v) { cookHave.push(v); cookHaveSheet(); } };
+  root.querySelectorAll("[data-cook-add]").forEach(el => el.onclick = () => {
+    const { missing } = scored[+el.dataset.cookAdd];
+    missing.forEach(n => addItem(n, 1, "recipe"));
+    commit(); closeSheet(); toast(`נוספו ${missing.length} מצרכים לרשימה`);
+  });
+  root.querySelectorAll("[data-view-recipe]").forEach(el => el.onclick = () => recipeView(el.dataset.viewRecipe));
+}
+
 // ================= מוצרים קבועים =================
 // {name, qty, unit, every (ימים), last (מתי נוסף לאחרונה)} – נשמר ברשימה המשותפת. כשמגיע הזמן, המוצר חוזר לרשימה לבד.
 const recurringOf = name => (S.settings.recurring || []).find(r => norm(r.name) === norm(name));
@@ -797,12 +855,17 @@ function deptOrderSheet() {
 
 // העברת מוצר למחלקה אחרת (לחיצה ארוכה על האריח). נזכר לפעם הבאה שמוסיפים אותו.
 function deptSheet(item) {
-  sheet(`<h2 style="margin-top:0">לאיזו מחלקה להעביר את "${esc(item.name)}"?</h2>
+  sheet(`<h2 style="margin-top:0">${esc(item.name)}</h2>
+    <div class="muted" style="margin:-6px 0 6px">לאיזו מחלקה?</div>
     <div class="dept-pick">${CAT_ORDER.map((c, k) => `<button class="d${k} ${item.cat === c ? "on" : ""}" data-dept="${esc(c)}">${DEPT_ICON[c]} ${esc(c)}</button>`).join("")}</div>
+    <h3 style="margin:14px 0 6px">📝 הערה</h3>
+    <input type="text" id="item-note" value="${esc(item.note || "")}" placeholder="למשל: רק בלי גלוטן, את הירוק" maxlength="80">
     <h3 style="margin:14px 0 6px">🔁 להוסיף לרשימה באופן קבוע?</h3>
     <div class="chips">${[[0, "לא"], [7, "כל שבוע"], [14, "כל שבועיים"], [30, "כל חודש"]].map(([d, l]) =>
       `<button class="chip ${(recurringOf(item.name)?.every || 0) === d ? "on" : ""}" data-every="${d}">${l}</button>`).join("")}</div>
     <button class="btn ghost" style="width:100%;margin-top:12px" data-close>ביטול</button>`);
+  const noteIn = $("#item-note");
+  noteIn.onchange = () => { Object.assign(item, { note: noteIn.value.trim() || null, t: now() }); commit(); toast(noteIn.value.trim() ? "📝 ההערה נשמרה" : "ההערה נמחקה"); };
   $("#sheet-root").querySelectorAll("[data-every]").forEach(el => el.onclick = () => {
     setRecurring(item, +el.dataset.every);
     closeSheet(); commit();
@@ -858,7 +921,7 @@ function renderList() {
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none">לא נמצא בסניפים</div>`
       : p ? `<div class="tile-price">${p.promo ? `<s class="muted">${money(p.regular)}</s> ` : ""}${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${
           p.promo ? `<div class="promo">🏷️ ${esc(p.promo)}</div>` : p.hint ? `<div class="promo hint">🏷️ ${esc(p.hint)}</div>` : ""}${trendTag(p.trend)}</div>` : "";
-    const who = i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "";
+    const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
     const img = thumb(i.code, "tile-img", `data-act="toggle" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="toggle">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
@@ -888,6 +951,7 @@ function renderList() {
   };
 
   const cl = curList();
+  const sn = othersShopping();
   if (shop) return `${shopBar(items, done)}
   <div class="shop">${deptOrder().filter(c => byDept[c]).map(deptBlock).join("")}</div>
   ${!open.length ? `<div class="card empty">הכל בעגלה! 🎉</div>` : ""}
@@ -905,6 +969,7 @@ function renderList() {
     <button class="btn">הוסף</button>
     <div class="ac hidden" id="ac" role="listbox"></div>
   </form>
+  ${sn ? `<div class="warn" style="background:var(--accent-soft);color:var(--text)">🛍️ <b>${esc(sn.by)}</b> בסופר עכשיו${sn.chain ? ` (${esc(chains[sn.chain] || sn.chain)})` : ""} – מה שתוסיפו לרשימה יופיע מיד במסך הקנייה.</div>` : ""}
   ${updateBanner()}
   ${installBanner()}
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
@@ -1214,6 +1279,7 @@ function renderMeals() {
   const recipes = recipeList();
   return `
   ${weekPlanCard(recipes)}
+  <button class="btn ghost" style="width:100%;margin-bottom:8px" data-act="cook-have">🥕 מה אפשר לבשל ממה שיש בבית?</button>
   <div class="row" style="margin:4px 0 12px">
     <button class="btn grow" data-act="recipe-library">📚 ספריית מתכונים</button>
     <button class="btn ghost grow" data-act="recipe-import">📋 ייבוא מתכון</button>
@@ -2461,6 +2527,9 @@ function renderHelp() {
     <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
+    <li><b>📝 הערה למוצר:</b> לחיצה ארוכה על מוצר ← "הערה" (למשל "רק בלי גלוטן"). ההערה מופיעה באריח, וכל השותפים רואים אותה.</li>
+    <li><b>🛍️ "אני בסופר":</b> כשמישהו נכנס למצב קנייה, השותפים ברשימה רואים הודעה – זה הזמן להוסיף מה שחסר.</li>
+    <li><b>🥕 מה אפשר לבשל ממה שיש</b> (לשונית מתכונים): מסמנים מה יש בבית ומקבלים מתכונים לפי כמה מהמצרכים כבר יש, עם הוספה של מה שחסר.</li>
     <li><b>🔁 מוצרים קבועים:</b> לחיצה ארוכה על מוצר ← "כל שבוע / שבועיים / חודש", והוא יחזור לרשימה לבד בזמן.</li>
     <li><b>🗓️ תכנון שבועי</b> (לשונית מתכונים): בוחרים מתכון לכל יום, ו"הוסף את מצרכי השבוע" מכניס הכל לרשימה – מצרכים זהים מתאחדים.</li>
     <li><b>🛍️ מצב קנייה בסופר</b> (כפתור מתחת לרשימה): אריחים גדולים, המסך לא נכבה, ובראש המסך כמה כבר בעגלה ובכמה כסף – לפי הסופר שבחרתם. "⇅ סדר המחלקות" מסדר את הרשימה לפי המעברים בסניף שלכם.</li>
@@ -2666,10 +2735,11 @@ $("#view").addEventListener("click", e => {
     case "autolink": return autoLink();
     case "import": return importSheet();
     case "orders": return ordersSheet();
-    case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); return render();
-    case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); return render();
+    case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); setShoppingNow(true); return render();
+    case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); setShoppingNow(false); return render();
     case "dept-order": return deptOrderSheet();
     case "recurring": return recurringSheet();
+    case "cook-have": return cookHaveSheet();
     case "plan-to-list": return planToListSheet();
     case "send": return sendSheet();
     case "share": return shareSheet();
