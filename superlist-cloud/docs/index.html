@@ -120,6 +120,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .dept-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dept-pick button { border: 0; border-radius: 12px; padding: 10px; background: var(--dbg); color: var(--dfg); font-weight: 600; text-align: start; cursor: pointer; }
 .dept-pick button.on { outline: 2px solid var(--dfg); }
+.promo { font-size: 11px; color: #c2410c; font-weight: 600; line-height: 1.3; }
+.promo.hint { font-weight: 400; color: var(--muted); }
+@media (prefers-color-scheme: dark) { .promo { color: #fb923c; } }
 .alt { font-size: 11px; color: var(--muted); max-width: 120px; white-space: normal; line-height: 1.25; }
 .chain-card { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .chain-card:last-child { border-bottom: 0; }
@@ -576,7 +579,9 @@ function priceFor(item) {
   const e = Object.entries(line.prices);
   if (!e.length) return { none: true };
   e.sort((a, b) => a[1] - b[1]);
-  return { price: e[0][1], chain: chains[e[0][0]] || e[0][0], weighted: line.weighted };
+  const ck = e[0][0];
+  return { price: e[0][1], chain: chains[ck] || ck, weighted: line.weighted,
+    promo: line.promo?.[ck] || null, regular: line.regular?.[ck] ?? null, hint: line.promoHint?.[ck] || null };
 }
 
 function renderList() {
@@ -587,7 +592,8 @@ function renderList() {
   const tile = i => {
     const p = priceFor(i);
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none">לא נמצא בסניפים</div>`
-      : p ? `<div class="tile-price">${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}</div>` : "";
+      : p ? `<div class="tile-price">${p.promo ? `<s class="muted">${money(p.regular)}</s> ` : ""}${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${
+          p.promo ? `<div class="promo">🏷️ ${esc(p.promo)}</div>` : p.hint ? `<div class="promo hint">🏷️ ${esc(p.hint)}</div>` : ""}</div>` : "";
     const who = i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "";
     const img = thumb(i.code, "tile-img", `data-act="toggle" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="toggle">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
@@ -1419,7 +1425,7 @@ function basketCard() {
   return `<h2>💰 מחיר הסל</h2><div class="card">${staleWarn()}${summary}
     ${ranked.map(x => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(x.name)}</b>${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
-        <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
+        <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${x.promos ? ` · 🏷️ ${x.promos} במבצע` : ""}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
         ${altLine(x.chain)}
         ${cartTotalLine(x.chain)}</div>
       <div style="text-align:center"><div class="total">${money(x.total)}</div>
@@ -1462,7 +1468,8 @@ function renderPrices() {
     <div class="card scroll-x"><table><tr><th>מוצר</th>${c.chains.map(x => `<th>${esc(x.name)}</th>`).join("")}</tr>
       ${c.lines.map(l => { const vals = Object.values(l.prices); const min = Math.min(...vals);
         return `<tr><td>${esc(l.name)}${l.weighted ? ` <span class="muted">${fmtNum(l.kg)} ק״ג</span>` : l.units > 1 ? ` ×${l.units}` : ""}</td>${c.chains.map(x => { const p = l.prices[x.chain], ap = l.approx?.[x.chain];
-          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}${ap ? `<div class="alt">${esc(ap)}</div>` : ""}</td>`; }).join("")}</tr>`; }).join("")}
+          const pm = l.promo?.[x.chain], ph = l.promoHint?.[x.chain];
+          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}${pm ? `<div class="promo">🏷️ ${esc(pm)}</div>` : ph ? `<div class="promo hint">🏷️ ${esc(ph)}</div>` : ""}${ap ? `<div class="alt">${esc(ap)}</div>` : ""}</td>`; }).join("")}</tr>`; }).join("")}
     </table></div>
     <div class="muted">≈ = המוצר הזה לא נמכר ברשת (למשל מותג פרטי של רשת אחרת), אז הושווה מוצר מקביל – שמו מופיע מתחת למחיר, וזה מה שיתווסף לעגלה. המחיר בטבלה הוא ליחידה או לק״ג, והסכום למעלה כבר מחושב לפי הכמות או המשקל שברשימה.</div>`;
   }
@@ -2090,6 +2097,7 @@ function renderHelp() {
     <li>לחיצה ארוכה על מוצר מעבירה אותו למחלקה אחרת – והאפליקציה זוכרת את זה לפעם הבאה.</li>
     <li>🔗 ליד פריט = בחירת המוצר המדויק (מותג, גודל). התמונה הקטנה מראה מה נבחר – לחיצה מגדילה.</li>
     <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
+    <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
   </ul>`)}
 

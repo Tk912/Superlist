@@ -59,7 +59,8 @@ const PriceDB = (() => {
         const j = local[chain]?.store === store ? local[chain] : await getJSON(`data/prices/${chain}-${store}.json`);
         const byCode = new Map();
         for (const it of j.items) { it[4] = stems(it[1]); byCode.set(it[0], it); }
-        data[chain] = { store, updated: j.updated, items: j.items, byCode };
+        // מבצעים: {קוד: [מחיר ליחידה/לק"ג במבצע, כמות מינימום, תיאור, עד תאריך]}
+        data[chain] = { store, updated: j.updated, items: j.items, byCode, promos: j.promos || {} };
       } catch (e) {
         data[chain] = { store, missing: e.message, items: [], byCode: new Map() };
       }
@@ -232,15 +233,24 @@ const PriceDB = (() => {
       const ref = Object.values(exact)[0];
       const weighted = ref ? !!ref[3] : (byKg ? true : null);
       const refName = (ref && ref[1]) || it.product || it.name || "";
-      const line = { name: it.name, code, qty, kg: Math.round(kg * 100) / 100, units, weighted: !!weighted, prices: {}, approx: {}, codes: {}, names: {} };
+      const line = { name: it.name, code, qty, kg: Math.round(kg * 100) / 100, units, weighted: !!weighted, prices: {}, approx: {}, codes: {}, names: {},
+                     regular: {}, promo: {}, promoHint: {} };
       for (const c of chains) {
         let r = exact[c];
         // אם אין מוצר מקביל לשם המלא, מנסים לפי מה שכתוב ברשימה ("טונה בשמן")
         if (!r) { r = similar(c, refName, weighted) || (it.name && it.name !== refName ? similar(c, it.name, weighted) : null); if (r) line.approx[c] = r[1]; }
         if (r) {
-          line.prices[c] = r[2]; line.codes[c] = r[0]; line.names[c] = r[1];
-          result[c].total += r[2] * (r[3] ? kg : units);
+          // מבצע נחשב כשהכמות ברשימה עומדת במינימום שלו ("4 ב-10" -> צריך 4); אחרת רק מציינים אותו
+          const need = r[3] ? kg : units, pr = data[c].promos[r[0]];
+          let price = r[2];
+          if (pr && pr[0] < price) {
+            if (need + 1e-9 >= pr[1]) { price = pr[0]; line.promo[c] = pr[2]; line.regular[c] = r[2]; }
+            else line.promoHint[c] = pr[2];
+          }
+          line.prices[c] = price; line.codes[c] = r[0]; line.names[c] = r[1];
+          result[c].total += price * need;
           result[c].found++;
+          if (line.promo[c]) result[c].promos = (result[c].promos || 0) + 1;
         } else result[c].missing.push(it.name);
       }
       return line;

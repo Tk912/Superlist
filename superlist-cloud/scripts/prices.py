@@ -261,6 +261,75 @@ def wolt_pricefull(store_id):
     return _unpack(_get(_opener(), WOLT + url, timeout=300))
 
 
+# ---------- מבצעים (PromoFull: אותם אתרים, קובץ לכל סניף) ----------
+
+PROMO_RE = re.compile(r"PromoFull\d+-(\d+)-(\d+)-(\d{8})-?(\d{4,6})", re.I)
+ONLINE_PROMO_RE = re.compile(r"^promofull\d+-(\d{3})-20\d{10}", re.I)
+
+
+def chain_promofull(chain, store_id):
+    """קובץ המבצעים העדכני של הסניף (XML), או None אם לרשת/לסניף אין."""
+    cfg, sid = CHAINS[chain], f"{int(store_id):03d}"
+    if cfg["kind"] == "shufersal":
+        url = _latest([u for u in _shuf_links(4, store_id) if f"-{sid}-" in u])
+        return _unpack(_get(_opener(), url, timeout=300)) if url else None
+    if cfg["kind"] == "wolt":
+        url = _latest([f for f in _wolt_files() if (m := PROMO_RE.search(f)) and m.group(2) == sid])
+        return _unpack(_get(_opener(), WOLT + url, timeout=300)) if url else None
+    if cfg["kind"] == "cerberus":
+        c = Cerberus(cfg["user"])
+        names = [n for n in c.files("PromoFull") if (m := PROMO_RE.search(n)) and m.group(2) == sid]
+        names += [n for n in c.files("promofull") if (m := ONLINE_PROMO_RE.search(n)) and m.group(1) == sid]
+        name = _latest(names)
+        return c.download(name) if name else None
+    return None
+
+
+def _promo_unit(f):
+    """המחיר ליחידה (או לק"ג) במבצע, והכמות המינימלית. f: שדות המבצע או של המוצר במבצע."""
+    # DiscountedPrice = המחיר הכולל לכמות המינימום ("2 ב-20" -> 20). DiscountedPricePerMida הוא לפעמים ל-100 גרם/מ"ל,
+    # ולכן משתמשים בו רק כשאין מחיר כולל
+    minq = _num(f.get("minqty")) or 1
+    total = _num(f.get("discountedprice"))
+    unit = total / minq if total and total > 0 else _num(f.get("discountedpricepermida"))
+    # במוצר במשקל המחיר הוא לק"ג והמינימום בק"ג ("2 ק"ג ב-65")
+    return (unit if unit and unit > 0 else None), minq
+
+
+def _promos_from_xml(root, today):
+    """{קוד: [מחיר ליחידה במבצע, כמות מינימום, תיאור, תאריך סיום]} – רק מבצעי מחיר פעילים ופתוחים לכולם (לא מועדון).
+    שני מבנים: הישן (המחיר ברמת המבצע, Item) והחדש (Groups/PromotionItem, המחיר לכל מוצר)."""
+    out = {}
+    for el in root.iter():
+        if _local(el.tag) != "promotion":
+            continue
+        f = _fields(el)
+        # "0" / "0 - כלל הלקוחות" = לכולם; כל מועדון אחר – לא
+        clubs = {(c.text or "").strip() for c in el.iter() if _local(c.tag) == "clubid"}
+        if any(c and not re.match(r"0(\D|$)", c) for c in clubs):
+            continue
+        start = (f.get("promotionstartdate") or f.get("promotionstartdatetime") or "")[:10]
+        end = (f.get("promotionenddate") or f.get("promotionenddatetime") or "")[:10]
+        if (start and start > today) or (end and end < today):
+            continue
+        desc = re.sub(r"\s+", " ", f.get("promotiondescription", "")).strip()[:60]
+        base = _promo_unit(f)
+        for it in el.iter():
+            if _local(it.tag) not in ("item", "promotionitem"):
+                continue
+            g = _fields(it)
+            code = (g.get("itemcode") or "").lstrip("0")
+            if not code:
+                continue
+            unit, minq = _promo_unit(g) if ("discountedprice" in g or "discountedpricepermida" in g) else base
+            if not unit:
+                continue
+            cur = out.get(code)
+            if not cur or unit < cur[0]:
+                out[code] = [round(unit, 2), round(minq, 2), desc, end]
+    return out
+
+
 def chain_stores(chain):
     cfg = CHAINS[chain]
     return {"shufersal": shufersal_stores, "carrefour": carrefour_stores, "hazi": hazi_stores, "wolt": wolt_stores,

@@ -102,9 +102,22 @@ def main():
             raw = prices.chain_pricefull(chain, store)
             items = [[i["code"], i["name"], i["price"], 1 if i["weighted"] else 0]
                      for i in prices._items_from_xml(prices._parse_xml(raw))]
-            write_json(OUT / "prices" / f"{chain}-{store}.json", {"chain": chain, "store": store, "updated": time.time(), "items": items})
-            status["stores"][f"{chain}:{store}"] = {"updated": time.time(), "items": len(items)}
-            print(f"{cfg['name']} סניף {store}: {len(items):,} מוצרים")
+            # מבצעים: רק למוצרים שבאמת יורדים במחיר; אם הקובץ לא זמין – ממשיכים בלי
+            promos = {}
+            try:
+                praw = prices.chain_promofull(chain, store)
+                if praw:
+                    regular = {c: p for c, _, p, _ in items}
+                    today = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 3 * 3600))
+                    # הנחה של יותר מ-75% היא כמעט תמיד טעות בקובץ (מחיר ל-100 גרם וכו') – לא סומכים עליה
+                    promos = {c: v for c, v in prices._promos_from_xml(prices._parse_xml(praw), today).items()
+                              if c in regular and regular[c] * 0.25 <= v[0] < regular[c] - 0.005}
+            except Exception as e:
+                status["errors"][f"promos:{chain}:{store}"] = str(e)[:200]
+            write_json(OUT / "prices" / f"{chain}-{store}.json",
+                       {"chain": chain, "store": store, "updated": time.time(), "items": items, "promos": promos})
+            status["stores"][f"{chain}:{store}"] = {"updated": time.time(), "items": len(items), "promos": len(promos)}
+            print(f"{cfg['name']} סניף {store}: {len(items):,} מוצרים, {len(promos):,} במבצע")
         except Exception as e:
             status["errors"][f"{chain}:{store}"] = str(e)[:200]
             print(f"{cfg['name']} סניף {store}: שגיאה - {e}")
