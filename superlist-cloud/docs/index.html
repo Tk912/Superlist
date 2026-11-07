@@ -1113,7 +1113,10 @@ function shareSheet() {
   const link = location.origin + location.pathname;
   const mine = Cloud.email();
   const cl = curList(), owner = isOwner(cl), title = listName(cl);
-  const msg = encodeURIComponent(`${me || "הוספתי אותך"} – שיתפתי איתך את רשימת הקניות "${title}" 🛒\n${link}\nנכנסים עם חשבון ה-Google שלך, והרשימה מופיעה אצלך.`);
+  const app = new URL("app.html", link).href;
+  const text = `${me || "הוספתי אותך"} – שיתפתי איתך את רשימת הקניות "${title}" 🛒\n${link}\nנכנסים עם חשבון ה-Google שלך, והרשימה מופיעה אצלך.\n📱 אפליקציה לאנדרואיד: ${app}`;
+  const msg = encodeURIComponent(text);
+  const nativeShare = !!window.SuperlistNative?.share, webShare = !inApp && !!navigator.share;
   sheet(`<h2 style="margin-top:0">👥 שיתוף "${esc(title)}"</h2>
     <div class="muted" style="margin-bottom:10px">${owner
       ? "מוסיפים את כתובת ה-Gmail של מי שתרצה לשתף איתו (בן/בת זוג, ילדים). הוא נכנס לקישור עם חשבון ה-Google שלו, והרשימה מופיעה אצלו ב\"הרשימות שלי\". השינויים מופיעים אצל כולם מיד."
@@ -1127,8 +1130,9 @@ function shareSheet() {
     </div>
     <div class="card"><b>הקישור לאפליקציה</b>
       <input type="text" readonly value="${esc(link)}" style="margin:8px 0;direction:ltr;font-size:13px" onclick="this.select()">
-      <div class="row"><button class="btn grow" id="sh-copy">העתק קישור</button>
-      <a class="btn ghost grow" style="text-align:center;text-decoration:none" href="https://wa.me/?text=${msg}" target="_blank" rel="noopener">שלח בוואטסאפ</a></div></div>
+      ${nativeShare || webShare ? `<button class="btn" style="width:100%;margin-bottom:8px" id="sh-share">📤 שיתוף ההזמנה (וואטסאפ, הודעה…)</button>` : ""}
+      <div class="row"><button class="btn ${nativeShare || webShare ? "ghost " : ""}grow" id="sh-copy">העתק הזמנה</button>
+      <a class="btn ghost grow" style="text-align:center;text-decoration:none" href="https://wa.me/?text=${msg}" ${inApp ? "" : `target="_blank" rel="noopener"`}>שלח בוואטסאפ</a></div></div>
     <div class="row"><button class="btn ghost grow" data-act="rename">שינוי השם שלי (${esc(me)})</button>
     <button class="btn ghost grow" id="sh-out">התנתקות</button></div>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
@@ -1148,8 +1152,10 @@ function shareSheet() {
     try { await Cloud.setMembers(members.filter(m => m !== b.dataset.rm)); members = members.filter(m => m !== b.dataset.rm); shareSheet(); }
     catch (err) { toast("לא הצלחתי להסיר: " + (err.code || err.message)); }
   });
-  $("#sh-copy").onclick = async () => {
-    try { await navigator.clipboard.writeText(link); toast("הקישור הועתק"); } catch { toast("סמן את הקישור והעתק"); }
+  $("#sh-copy").onclick = async () => toast(await copyText(text) ? "ההזמנה הועתקה – הדביקו בוואטסאפ או בהודעה" : "סמנו את הקישור והעתיקו");
+  if ($("#sh-share")) $("#sh-share").onclick = () => {
+    if (nativeShare) return window.SuperlistNative.share(text);
+    navigator.share({ title: `רשימת הקניות "${title}"`, text }).catch(() => {});
   };
   $("#sheet-root").querySelector("[data-act=rename]").onclick = () => nameSheet(shareSheet);
   $("#sh-out").onclick = async () => { if (confirm("להתנתק מהחשבון במכשיר הזה?")) { closeSheet(); await Cloud.signOut(); } };
@@ -1250,6 +1256,19 @@ function cartJob(chain) {
   };
 }
 
+// העתקה ללוח: באפליקציה דרך האפליקציה עצמה (בתוך WebView הלוח חסום), אחרת הלוח של הדפדפן, ואם גם זה חסום – בחירה והעתקה
+async function copyText(text) {
+  if (window.SuperlistNative?.copy) { window.SuperlistNative.copy(text); return true; }
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;opacity:0;top:0";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch { return false; }
+}
 const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 // אנדרואיד: אפליקציית "הסל החכם" (superlist-cloud/android) פותחת את אתר הסופר בתוכה וממלאת לבד – בלי סימנייה.

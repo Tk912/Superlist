@@ -351,6 +351,20 @@ public class MainActivity extends Activity {
             return shouldShowRequestPermissionRationale("android.permission.POST_NOTIFICATIONS") || !notifAsked ? "ask" : "denied";
         }
         @JavascriptInterface public void askNotif() { ui.post(MainActivity.this::askNotifications); }
+        // תפריט השיתוף של הטלפון (וואטסאפ, הודעה, מייל...) – לשיתוף הרשימה
+        @JavascriptInterface public void share(String text) {
+            ui.post(() -> {
+                Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text);
+                try { startActivity(Intent.createChooser(send, "שיתוף הרשימה")); } catch (Exception ignored) { }
+            });
+        }
+        // העתקה ללוח (בתוך WebView הלוח של הדפדפן חסום)
+        @JavascriptInterface public void copy(String text) {
+            ui.post(() -> {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("הסל החכם", text));
+            });
+        }
         @JavascriptInterface public void testReminder() { Reminders.show(getApplicationContext(), "🔔 הסל החכם", "כך ייראו התזכורות – למשל: כנראה נגמרו לכם הביצים"); }
     }
 
