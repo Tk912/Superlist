@@ -329,7 +329,7 @@ public class MainActivity extends Activity {
 
     // מה שהדף יכול לבקש מהאפליקציה
     class Bridge {
-        @JavascriptInterface public String version() { return "5"; }
+        @JavascriptInterface public String version() { return "6"; }
         // מספר הגרסה המותקנת (מספר הבנייה ב-GitHub) – הדף משווה לגרסה האחרונה ומציג "יש עדכון זמין"
         @SuppressWarnings("deprecation")
         @JavascriptInterface public int appVersion() {
@@ -342,6 +342,31 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void signIn() { ui.post(MainActivity.this::googleSignIn); }
         @JavascriptInterface public void signOut() { ui.post(MainActivity.this::googleSignOut); }
         @JavascriptInterface public void fill(String chain, String job) { ui.post(() -> openCart(chain, job)); }
+        // תזכורות: הדף מעביר את הרשימה [{at, title, body}] (רשימה ריקה = לבטל הכל)
+        @JavascriptInterface public void setReminders(String json) { Reminders.set(getApplicationContext(), json); }
+        // "granted" / "denied" / "ask" – האם מותר להציג הודעות (באנדרואיד 13 ומעלה צריך לבקש)
+        @JavascriptInterface public String notifStatus() {
+            if (android.os.Build.VERSION.SDK_INT < 33) return "granted";
+            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") == android.content.pm.PackageManager.PERMISSION_GRANTED) return "granted";
+            return shouldShowRequestPermissionRationale("android.permission.POST_NOTIFICATIONS") || !notifAsked ? "ask" : "denied";
+        }
+        @JavascriptInterface public void askNotif() { ui.post(MainActivity.this::askNotifications); }
+        @JavascriptInterface public void testReminder() { Reminders.show(getApplicationContext(), "🔔 הסל החכם", "כך ייראו התזכורות – למשל: כנראה נגמרו לכם הביצים"); }
+    }
+
+    // בקשת הרשאה להצגת הודעות; התשובה חוזרת לדף ב-window.onNotifPermission(true/false)
+    static final int NOTIF_REQ = 77;
+    boolean notifAsked;
+    void askNotifications() {
+        if (android.os.Build.VERSION.SDK_INT < 33) { js("window.onNotifPermission&&onNotifPermission(true)"); return; }
+        notifAsked = true;
+        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, NOTIF_REQ);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (code == NOTIF_REQ) js("window.onNotifPermission&&onNotifPermission(" + (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) + ")");
     }
 
     @Override

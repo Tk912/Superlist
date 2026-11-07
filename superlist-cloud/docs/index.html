@@ -354,13 +354,15 @@ function merge(local, server) {
   };
 }
 
-let priceTimer = null;
+let priceTimer = null, reminderTimer = null;
 function commit() {
   try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
   dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(push, 600);
   render();
+  clearTimeout(reminderTimer);
+  reminderTimer = setTimeout(syncReminders, 3000);
   // מחיר הסל מתעדכן אחרי כל שינוי ברשימה
   clearTimeout(priceTimer);
   priceTimer = setTimeout(() => refreshCompare().then(render), 300);
@@ -405,7 +407,7 @@ function onServerData(data) {
   if (!onlineChecked) {
     onlineChecked = true;
     setTimeout(() => { ensureOnlineStores(); if (Object.keys(publicStores()).length) Cloud.setPublicStores(publicStores()).catch(() => {}); }, 0);
-    setTimeout(applyRecurring, 1500);
+    setTimeout(() => { applyRecurring(); syncReminders(); }, 1500);
   }
   refreshCompare().then(render);
   try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
@@ -616,6 +618,67 @@ function ordersSheet() {
     Object.assign(o, { deleted: true, t: now() });
     commit(); ordersSheet();
   });
+}
+
+// ================= תזכורות בטלפון (בלי שרת) =================
+// הדף מחשב את התזכורות לחודש הקרוב ומעביר אותן לאפליקציה, שקובעת "שעון מעורר" לכל אחת –
+// כך הן מגיעות גם כשהאפליקציה סגורה. מתעדכן אחרי כל שינוי ובכל פתיחה. ההגדרה שמורה בטלפון הזה בלבד.
+const NOTIF_KEY = "superlist-notif";
+const canNotify = () => !!window.SuperlistNative?.setReminders;
+const notifOn = () => { try { return localStorage.getItem(NOTIF_KEY) === "1"; } catch { return false; } };
+const atHour = (t, h) => { const d = new Date(t); d.setHours(h, 0, 0, 0); return d.getTime(); };
+function reminderPlan() {
+  const out = [], horizon = now() + 30 * 864e5, byDay = (map, at, name) => { const k = atHour(at, 0); (map[k] ||= []).push(name); };
+  // מוצרים קבועים: ביום שהם חוזרים לרשימה
+  const rec = {};
+  for (const r of S.settings.recurring || []) {
+    const at = (r.last || now()) + r.every * 864e5;
+    if (at < horizon) byDay(rec, at, r.name);
+  }
+  for (const [day, names] of Object.entries(rec)) out.push({ at: atHour(+day, 10), title: `🔁 הגיע הזמן: ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`, body: "פתחו את הסל החכם – המוצרים הקבועים יתווספו לרשימה." });
+  // "כנראה נגמר לך": באותו חישוב כמו בהצעות ברשימה (85% מהזמן הממוצע בין קניות)
+  const onList = new Set(live().map(i => norm(i.name))), due = {};
+  for (const [k, h] of Object.entries(S.history)) {
+    const b = h.buys || [];
+    if (onList.has(k) || b.length < 2 || recurringOf(h.name)) continue;
+    const avg = (b[b.length - 1] - b[0]) / (b.length - 1);
+    if (avg < 864e5) continue;
+    let at = b[b.length - 1] + avg * 0.85;
+    // כבר "נגמר" ב-3 הימים האחרונים ועוד לא ברשימה – תזכורת ב-18:00 הקרוב
+    if (at <= now() && now() - at < 3 * 864e5) at = atHour(now(), 18) > now() ? now() : now() + 864e5;
+    if (at > now() - 1 && at < horizon) byDay(due, at, h.name);
+  }
+  for (const [day, names] of Object.entries(due)) out.push({ at: atHour(+day, 18), title: `⏰ כנראה נגמר לכם: ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`, body: "להוסיף לרשימת הקניות? פתחו את הסל החכם." });
+  return out.filter(x => x.at > now()).sort((a, b) => a.at - b.at).slice(0, 30);
+}
+function syncReminders() {
+  if (!canNotify()) return;
+  try { window.SuperlistNative.setReminders(JSON.stringify(notifOn() ? reminderPlan() : [])); } catch {}
+}
+function enableNotif() {
+  const s = window.SuperlistNative.notifStatus?.() || "granted";
+  if (s === "granted") return window.onNotifPermission(true);
+  if (s === "denied") return toast("ההודעות חסומות לאפליקציה. אפשר להתיר בהגדרות הטלפון ← אפליקציות ← הסל החכם ← התראות");
+  window.SuperlistNative.askNotif();
+}
+window.onNotifPermission = ok => {
+  if (!ok) return toast("בלי הרשאה להודעות אי אפשר להציג תזכורות");
+  try { localStorage.setItem(NOTIF_KEY, "1"); } catch {}
+  syncReminders(); render();
+  toast("🔔 התזכורות פעילות");
+};
+function notifCard() {
+  if (!inApp) return "";
+  if (!canNotify()) return `<h2>🔔 תזכורות בטלפון</h2><div class="card muted">צריך לעדכן את האפליקציה לגרסה החדשה כדי לקבל תזכורות. <a href="${APK_URL}">עדכון</a></div>`;
+  const plan = notifOn() ? reminderPlan() : [];
+  const when = at => new Date(at).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(at).toTimeString().slice(0, 5);
+  return `<h2>🔔 תזכורות בטלפון</h2><div class="card">
+    <div class="muted" style="margin-bottom:8px">הודעה בטלפון כשמוצר קבוע חוזר לרשימה, וכשמשהו כנראה נגמר (לפי הקניות הקודמות) – גם כשהאפליקציה סגורה.</div>
+    ${notifOn() ? `<div style="margin-bottom:6px">✅ פעיל${plan.length ? ` · ${plan.length} תזכורות בחודש הקרוב` : " · אין עדיין תזכורות קרובות"}</div>
+      ${plan.slice(0, 4).map(p => `<div class="muted" style="font-size:13px">${esc(when(p.at))} · ${esc(p.title)}</div>`).join("")}
+      <div class="row" style="margin-top:8px"><button class="btn small ghost grow" data-act="notif-test">שלח תזכורת לדוגמה</button>
+        <button class="btn small ghost grow" data-act="notif-off">כבה</button></div>`
+      : `<button class="btn" style="width:100%" data-act="notif-on">🔔 הפעל תזכורות</button>`}</div>`;
 }
 
 // ================= "אני בסופר עכשיו" =================
@@ -2425,6 +2488,7 @@ function renderSettings() {
   return `${installCard()}
   ${inApp ? `<div class="muted" style="margin:8px 0">📱 אפליקציית אנדרואיד${installedVersion() ? ` · גרסה 1.${installedVersion()}` : ""} ·
     ${appUpdate ? `<b style="color:var(--accent)">יש עדכון (1.${appUpdate.latest})</b> · <a href="${APK_URL}">עדכן עכשיו</a>` : `<a href="app.html">עדכון גרסה</a>`}</div>` : ""}
+  ${notifCard()}
   <h2>השוואת מחירים: סניפי אונליין</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא בין המחירים של אתרי הקנייה (סניפי האונליין). ליוחננוף אין קובץ אונליין, אז היא מושווית לפי סניף שבוחרים ומסומנת <b>הערכה</b>.</div>
     ${Object.entries(ONLINE).map(([c, o]) => {
@@ -2527,6 +2591,7 @@ function renderHelp() {
     <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
+    <li><b>🔔 תזכורות בטלפון</b> (הגדרות, באפליקציית האנדרואיד): הודעה כשמוצר קבוע חוזר לרשימה, וכשמשהו כנראה נגמר – גם כשהאפליקציה סגורה.</li>
     <li><b>📱 ווידג'ט למסך הבית</b> (באפליקציית האנדרואיד): לחיצה ארוכה על מסך הבית ← ווידג'טים ← "הסל החכם". שלושה כפתורים: הוספה לרשימה, הוספה בקול, ומצב קנייה.</li>
     <li><b>📝 הערה למוצר:</b> לחיצה ארוכה על מוצר ← "הערה" (למשל "רק בלי גלוטן"). ההערה מופיעה באריח, וכל השותפים רואים אותה.</li>
     <li><b>🛍️ "אני בסופר":</b> כשמישהו נכנס למצב קנייה, השותפים ברשימה רואים הודעה – זה הזמן להוסיף מה שחסר.</li>
@@ -2741,6 +2806,9 @@ $("#view").addEventListener("click", e => {
     case "dept-order": return deptOrderSheet();
     case "recurring": return recurringSheet();
     case "cook-have": return cookHaveSheet();
+    case "notif-on": return enableNotif();
+    case "notif-off": try { localStorage.removeItem(NOTIF_KEY); } catch {} syncReminders(); toast("התזכורות כובו"); return render();
+    case "notif-test": return window.SuperlistNative.testReminder();
     case "plan-to-list": return planToListSheet();
     case "send": return sendSheet();
     case "share": return shareSheet();
@@ -2883,7 +2951,7 @@ function startCloud() {
   if (!window.Cloud || !Cloud.configured) {
     // בלי Firebase (למשל בבדיקה): הכל נשמר רק בדפדפן הזה
     gate = "ok"; setOnline(false); render();
-    setTimeout(applyRecurring, 1500);
+    setTimeout(() => { applyRecurring(); syncReminders(); }, 1500);
     onlineChecked = true; ensureOnlineStores();
     loadChains().then(refreshCompare).then(render).then(() => requestSlots());
     return;
