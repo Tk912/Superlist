@@ -33,6 +33,18 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- ווידג'ט למסך הבית (הוספה מהירה / בקול / מצב קנייה) -->
+        <receiver
+            android:name=".WidgetProvider"
+            android:label="הסל החכם – הוספה מהירה"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/superlist_widget" />
+        </receiver>
         <!-- מילוי עגלה באתר הסופר -->
         <activity
             android:name=".CartActivity"

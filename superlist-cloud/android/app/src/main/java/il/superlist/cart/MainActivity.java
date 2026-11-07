@@ -101,6 +101,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 pageReady = true;
                 deliverShared();
+                deliverWidget();
             }
         });
         setContentView(web);
@@ -150,6 +151,18 @@ public class MainActivity extends Activity {
         }), 300);
     }
 
+    // פעולה מהווידג'ט – לדף (window.onWidget). אם הדף עוד נטען או מחכה להתחברות, מנסים שוב, עד חצי דקה
+    String widgetAction;
+    int widgetTries;
+    void deliverWidget() {
+        if (widgetAction == null || !pageReady) return;
+        String a = widgetAction;
+        widgetAction = null;
+        ui.postDelayed(() -> web.evaluateJavascript("window.onWidget?onWidget(" + JSONObject.quote(a) + "):false", r -> {
+            if (!"true".equals(r) && ++widgetTries < 30) { widgetAction = a; ui.postDelayed(this::deliverWidget, 1000); }
+        }), 300);
+    }
+
     // קישור ישן מהאתר בכרום: superlist://fill?c=רשת&j=רשימה – פותח מילוי עגלה
     void handle(Intent intent) {
         if (intent != null && Intent.ACTION_SEND.equals(intent.getAction())) {
@@ -160,6 +173,8 @@ public class MainActivity extends Activity {
         }
         Uri d = intent == null ? null : intent.getData();
         if (d == null || !"superlist".equals(d.getScheme())) return;
+        // מהווידג'ט: superlist://widget?a=add|voice|shop
+        if ("widget".equals(d.getHost())) { widgetAction = d.getQueryParameter("a"); widgetTries = 0; deliverWidget(); return; }
         String c = d.getQueryParameter("c"), j = d.getQueryParameter("j");
         if (c == null || j == null) return;
         try {
