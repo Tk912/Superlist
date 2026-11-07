@@ -469,6 +469,55 @@ function suggestions() {
   return { due: due.slice(0, 8).map(x => x.name), freq: freq.slice(0, 10).map(x => x.name) };
 }
 
+// ================= הוצאות ותקציב =================
+// ההוצאה לחודש: הזמנות (הסכום שבעגלה, או המשוער) וקניות בחנות שהוזן להן סכום.
+// כמה מילויי עגלה לאותה רשת באותו יום נספרים פעם אחת (האחרון).
+function spentOrders() {
+  const list = (S.orders || []).filter(o => !o.deleted && orderTotal(o) != null).sort((a, b) => b.at - a.at);
+  const seen = new Set();
+  return list.filter(o => { const k = o.chain + ":" + new Date(o.at).toDateString(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+const monthKey = t => { const d = new Date(t); return d.getFullYear() * 12 + d.getMonth(); };
+function monthSpent(key = monthKey(Date.now())) { return spentOrders().filter(o => monthKey(o.at) === key).reduce((s, o) => s + orderTotal(o), 0); }
+function budgetWarn(best) {
+  const b = S.settings.budget;
+  if (!b || !best?.found) return "";
+  const after = monthSpent() + best.total;
+  return after > b ? `<div class="warn">💸 עם הסל הזה ההוצאה החודש תגיע ל-${money(after)} – מעל התקציב (${money(b)}) ב-${money(after - b)}.</div>` : "";
+}
+function spendingCard() {
+  const now0 = monthKey(Date.now()), b = S.settings.budget, spent = monthSpent(now0);
+  const months = [5, 4, 3, 2, 1, 0].map(k => { const key = now0 - k; return { key, total: monthSpent(key), name: new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString("he-IL", { month: "short" }) }; });
+  const max = Math.max(b || 0, ...months.map(m => m.total), 1);
+  const bars = months.map((m, i) => { const h = Math.round(m.total / max * 70), x = 8 + i * 50;
+    return `<rect x="${x}" y="${80 - h}" width="34" height="${h}" rx="4" fill="${b && m.total > b ? "#dc2626" : "var(--accent)"}" opacity="${m.key === now0 ? 1 : .55}"/>
+      <text x="${x + 17}" y="96" text-anchor="middle" font-size="11" fill="var(--muted)">${m.name}</text>
+      ${m.total ? `<text x="${x + 17}" y="${74 - h}" text-anchor="middle" font-size="10" fill="var(--text)">${Math.round(m.total)}</text>` : ""}`; }).join("");
+  const budgetLine = b ? `<line x1="4" x2="304" y1="${80 - Math.round(b / max * 70)}" y2="${80 - Math.round(b / max * 70)}" stroke="#b5470b" stroke-dasharray="4 3"/>` : "";
+  // לפי רשת ולפי מחלקה – החודש
+  const cur = spentOrders().filter(o => monthKey(o.at) === now0), byChain = {}, byDept = {};
+  for (const o of cur) {
+    byChain[o.chain] = (byChain[o.chain] || 0) + orderTotal(o);
+    const sum = o.items.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0) || 1;
+    for (const i of o.items) {
+      const cat = S.history[norm(i.name)]?.cat || guessCat(i.name);
+      byDept[cat] = (byDept[cat] || 0) + orderTotal(o) * ((i.price || 0) * (i.qty || 1)) / sum;
+    }
+  }
+  const list = (obj, label) => Object.entries(obj).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([k, v]) => `<div class="row" style="font-size:13px"><span class="grow">${esc(label(k))}</span><span>${money(v)}</span></div>`).join("");
+  return `<div class="card" style="margin-bottom:10px">
+    <div class="row" style="gap:8px"><b class="grow">החודש: ${money(spent)}</b>
+      <label class="muted" style="font-size:13px">תקציב ₪ <input id="budget-in" inputmode="numeric" value="${b || ""}" placeholder="—" style="width:80px;padding:4px 6px"></label></div>
+    ${b ? `<div class="bar" style="height:8px;margin-top:6px"><i style="width:${Math.min(100, spent / b * 100)}%;${spent > b ? "background:#dc2626" : ""}"></i></div>
+      <div class="muted" style="font-size:12px">${spent > b ? `חריגה של ${money(spent - b)}` : `נשארו ${money(b - spent)}`}</div>` : ""}
+    <svg viewBox="0 0 312 100" style="width:100%;max-width:420px;display:block;margin:8px auto 0" aria-label="הוצאות ב-6 החודשים האחרונים">${budgetLine}${bars}</svg>
+    ${cur.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+      <div><div class="muted" style="font-size:12px">לפי רשת</div>${list(byChain, ORDER_PLACE)}</div>
+      <div><div class="muted" style="font-size:12px">לפי מחלקה (הערכה)</div>${list(byDept, x => x)}</div></div>` : ""}
+    <div class="muted" style="font-size:12px;margin-top:6px">נספר: הסכום שבעגלה (או המשוער) לכל הזמנה, וקניות בחנות שהזנת להן סכום.</div></div>`;
+}
+
 // ================= היסטוריית הזמנות =================
 // כל "שלח לסופר" נשמר כהזמנה (רשת, תאריך, פריטים, הסכום המשוער), וכך גם "סיימתי קנייה" (קנייה בחנות).
 // הסכום שהאתר הציג בעגלה מצטרף להזמנה כשהוא מגיע מהאפליקציה. נשמר ברשימה המשותפת.
@@ -503,7 +552,8 @@ function ordersSheet() {
   const month = o => new Date(o.at).toLocaleDateString("he-IL", { month: "long", year: "numeric" });
   const date = o => new Date(o.at).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(o.at).toTimeString().slice(0, 5);
   let last = "";
-  sheet(`<h2 style="margin-top:0">🧾 היסטוריית הזמנות</h2>
+  sheet(`<h2 style="margin-top:0">🧾 הזמנות והוצאות</h2>
+    ${spendingCard()}
     <div class="chips" style="margin-bottom:8px">${["all", ...places].map(p => `<button class="chip ${p === ordersFilter ? "on" : ""}" data-of="${esc(p)}">${p === "all" ? "הכל" : esc(ORDER_PLACE(p))} (${p === "all" ? all.length : all.filter(o => o.chain === p).length})</button>`).join("")}</div>
     <div class="muted" style="margin-bottom:6px">${shown.length} הזמנות${sum ? ` · סה"כ ${money(sum)}` : ""}</div>
     ${shown.map(o => {
@@ -513,6 +563,7 @@ function ordersSheet() {
           <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
             <div class="muted" style="font-size:12px">${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
           <b>${tot != null ? money(tot) : ""}</b></summary>
+        ${o.cart == null ? `<button class="btn small ghost" style="margin-top:6px" data-paid="${o.id}">₪ ${o.chain === "store" ? "כמה שילמת?" : "עדכן את הסכום ששילמת"}</button>` : ""}
         <div style="margin-top:6px">${o.items.map(i => `<div class="row" style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">
           <span class="grow">${esc(i.name)}${i.unit === "kg" ? ` <span class="muted">${fmtNum(i.qty)} ק״ג</span>` : i.qty > 1 ? ` ×${fmtNum(i.qty)}` : ""}${i.alt ? `<div class="alt">≈ ${esc(i.alt)}</div>` : ""}</span>
           <span class="muted">${i.price != null ? money(i.price) : ""}</span></div>`).join("")}</div>
@@ -522,6 +573,19 @@ function ordersSheet() {
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   const root = $("#sheet-root");
   root.querySelectorAll("[data-of]").forEach(el => el.onclick = () => { ordersFilter = el.dataset.of; ordersSheet(); });
+  root.querySelectorAll("[data-paid]").forEach(el => el.onclick = () => {
+    const o = S.orders.find(x => x.id === el.dataset.paid);
+    const v = parseFloat(String(prompt("כמה שילמת בסך הכל? (₪)", orderTotal(o) ?? "") || "").replace(/[^\d.]/g, ""));
+    if (!(v > 0)) return;
+    Object.assign(o, { cart: Math.round(v * 100) / 100, t: now() });
+    commit(); ordersSheet();
+  });
+  const bi = root.querySelector("#budget-in");
+  if (bi) bi.onchange = () => {
+    const v = parseFloat(bi.value.replace(/[^\d.]/g, ""));
+    Object.assign(S.settings, { budget: v > 0 ? Math.round(v) : null, t: now() });
+    commit(); ordersSheet();
+  };
   root.querySelectorAll("[data-reorder]").forEach(el => el.onclick = () => {
     const o = S.orders.find(x => x.id === el.dataset.reorder);
     const have = new Set(live().filter(i => !i.done).map(i => norm(i.name)));
@@ -655,7 +719,7 @@ function renderList() {
     <button class="btn ghost grow" data-act="import">📥 ייבוא רשימת קניות</button>
     <button class="btn ghost grow" data-act="share">👥 שיתוף הרשימה</button>
   </div>
-  <button class="btn ghost" style="width:100%;margin-top:8px" data-act="orders">🧾 היסטוריית הזמנות${(S.orders || []).some(o => !o.deleted) ? ` (${S.orders.filter(o => !o.deleted).length})` : ""}</button>`;
+  <button class="btn ghost" style="width:100%;margin-top:8px" data-act="orders">🧾 הזמנות והוצאות${(S.orders || []).some(o => !o.deleted) ? ` (${S.orders.filter(o => !o.deleted).length})` : ""}</button>`;
 }
 
 // בחירת רשת למילוי עגלה; הזולה ביותר (לפי ההשוואה) למעלה
@@ -1511,7 +1575,7 @@ function basketCard() {
         : !hasExt() ? (inApp ? "" : `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`)
         : !S.settings.address?.city ? `<button class="chip" data-tab-go="settings">⚡ הוסף כתובת בהגדרות כדי לראות מועדי משלוח</button>` : ""}
     </div>`;
-  return `<h2>💰 מחיר הסל</h2><div class="card">${staleWarn()}${summary}
+  return `<h2>💰 מחיר הסל</h2><div class="card">${staleWarn()}${budgetWarn(best)}${summary}
     ${ranked.map(x => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(x.name)}</b>${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
         <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${x.promos ? ` · 🏷️ ${x.promos} במבצע` : ""}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
@@ -2192,6 +2256,7 @@ function renderHelp() {
     <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
+    <li><b>💸 תקציב והוצאות</b> (בכפתור "הזמנות והוצאות"): קובעים תקציב חודשי, ורואים כמה הוצאתם החודש, גרף של חצי שנה, ופילוח לפי רשת ומחלקה. אם הסל יעבור את התקציב – תופיע אזהרה.</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
   </ul>`)}
 
