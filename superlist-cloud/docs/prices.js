@@ -231,6 +231,59 @@ const PriceDB = (() => {
   }
   const history = (chain, code) => data[chain]?.hist?.[code] || null;
 
+  // ---------- פיצול סל בין שתי רשתות ----------
+  // לכל זוג רשתות: כל מוצר הולך לזולה מבין השתיים. מחזיר את הפיצול הכי משתלם, אחרי דמי משלוח נוסף.
+  function split(cmp, extraDelivery = 30) {
+    const ok = cmp.chains.filter(x => x.found);
+    if (ok.length < 2) return null;
+    const best = ok.slice().sort((a, b) => b.found - a.found || a.total - b.total)[0];
+    let top = null;
+    for (let i = 0; i < ok.length; i++) for (let k = i + 1; k < ok.length; k++) {
+      const A = ok[i].chain, B = ok[k].chain, part = { [A]: { total: 0, items: [] }, [B]: { total: 0, items: [] } };
+      let found = 0;
+      for (const l of cmp.lines) {
+        const a = l.cost[A], b = l.cost[B];
+        if (a == null && b == null) continue;
+        const to = b == null || (a != null && a <= b) ? A : B;
+        part[to].total += l.cost[to]; part[to].items.push(l.name); found++;
+      }
+      // שתי הרשתות צריכות לכסות לפחות כמו הרשת הטובה לבד, וכל אחת לקבל משהו
+      if (found < best.found || !part[A].items.length || !part[B].items.length) continue;
+      const total = part[A].total + part[B].total, saving = best.total - total - extraDelivery;
+      if (!top || saving > top.saving) top = { chains: [A, B], part, total, saving, vs: best.chain, vsTotal: best.total };
+    }
+    return top && top.saving > 5 ? top : null;
+  }
+
+  // ---------- מותג פרטי: אותו מוצר של הרשת עצמה, בזול ----------
+  const OWN = { ramilevy: /רמי ?לוי/, shufersal: /שופרסל/, yochananof: /יוחננוף/, tivtaam: /טיב טעם/, carrefour: /קרפור/, hazihinam: /חצי חינם/ };
+  function ownBrand(chain, code) {
+    const d = data[chain], re = OWN[chain], cur = d?.byCode.get(code);
+    if (!cur || !re || re.test(cur[1])) return null;
+    const all = stems(cur[1]), qs = core(all);
+    if (!qs.length) return null;
+    // אחוזים (שומן) חייבים להיות זהים; גדלים (ליטר/גרם) – חייבים להופיע בשניהם, ולפחות אחד משותף
+    const pct = s => (s.match(/\d+(\.\d+)?\s*%/g) || []).map(x => parseFloat(x)).sort().join(",");
+    const sizes = s => (s.replace(/\d+(\.\d+)?\s*%/g, " ").match(/\d+(\.\d+)?/g) || []).map(Number);
+    const qp = pct(cur[1]), qz = sizes(cur[1]);
+    let best = null;
+    for (const it of d.items) {
+      if (!re.test(it[1]) || !!it[3] !== !!cur[3] || it[2] >= cur[2] - 0.05) continue;
+      const ns = core(it[4]);
+      if (!ns.length || !wm(qs[0], ns[0])) continue;   // אותו סוג מוצר
+      if (pct(it[1]) !== qp) continue;
+      const nz = sizes(it[1]);
+      if ((qz.length || nz.length) && !qz.some(z => nz.includes(z))) continue;   // גודל רק בצד אחד = לא בטוח שזה אותו מוצר
+      // התאמה לשני הכיוונים: שם המותג ("תנובה") לא אמור להפיל, אבל "חלב שוקו" לא יוחלף ב"חלב"
+      const hit = Math.max(qs.filter(q => ns.some(n => wm2(q, n))).length / qs.length,
+                           ns.filter(n => qs.some(q => wm2(q, n) || wm2(n, q))).length / ns.length);
+      if (hit < 0.6) continue;
+      const key = [-hit, it[2]];
+      if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1])) best = { key, it };
+    }
+    return best ? { code: best.it[0], name: best.it[1], price: best.it[2], from: cur[2], fromName: cur[1] } : null;
+  }
+
   // items: [{code, qty, unit, kg, name, product}] -> סכום לכל רשת. מוצר במשקל: מחיר לק"ג × ק"ג.
   function compare(items) {
     const chains = Object.keys(data).filter(c => !data[c].missing);
@@ -246,7 +299,7 @@ const PriceDB = (() => {
       const weighted = ref ? !!ref[3] : (byKg ? true : null);
       const refName = (ref && ref[1]) || it.product || it.name || "";
       const line = { name: it.name, code, qty, kg: Math.round(kg * 100) / 100, units, weighted: !!weighted, prices: {}, approx: {}, codes: {}, names: {},
-                     regular: {}, promo: {}, promoHint: {}, trend: {} };
+                     regular: {}, promo: {}, promoHint: {}, trend: {}, cost: {} };
       for (const c of chains) {
         let r = exact[c];
         // אם אין מוצר מקביל לשם המלא, מנסים לפי מה שכתוב ברשימה ("טונה בשמן")
@@ -263,6 +316,7 @@ const PriceDB = (() => {
           const tr = trend(c, r[0]);
           if (tr) line.trend[c] = tr;
           result[c].total += price * need;
+          line.cost[c] = price * need;
           result[c].found++;
           if (line.promo[c]) result[c].promos = (result[c].promos || 0) + 1;
         } else result[c].missing.push(it.name);
@@ -301,5 +355,5 @@ const PriceDB = (() => {
   // האם שם המוצר מתאים למה שכתוב ברשימה (לבדיקת התאמות אוטומטיות ישנות)
   const matches = (name, product) => !!nameScore(stems(name), stems(product));
 
-  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, history, images, compare, stores, info: () => ({ status, data, local }) };
+  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, history, split, ownBrand, images, compare, stores, info: () => ({ status, data, local }) };
 })();

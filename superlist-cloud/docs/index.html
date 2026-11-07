@@ -1394,6 +1394,45 @@ function deliveryCard() {
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
 
+// ---------- פיצול סל ומותג הבית ----------
+// דמי המשלוח הנוסף: מה שהרשת השנייה גובה (ממועדי המשלוח), או 30 ₪ כהערכה
+function basketSplit(c) {
+  if (!c?.lines.length) return null;
+  const fees = Object.values(slots || {}).map(s => s?.price).filter(p => p > 0);
+  return PriceDB.split(c, fees.length ? Math.max(...fees) : 30);
+}
+function splitCard(c) {
+  const s = basketSplit(c);
+  if (!s) return "";
+  const [A, B] = s.chains, nm = x => esc(chains[x] || x);
+  const part = x => `<div style="margin-top:6px"><b>${nm(x)}</b> · ${money(s.part[x].total)} · ${s.part[x].items.length} מוצרים
+      <div class="muted" style="font-size:12px">${esc(s.part[x].items.slice(0, 8).join(", "))}${s.part[x].items.length > 8 ? "…" : ""}</div>
+      <button class="btn small ghost" style="margin-top:4px" data-fill="${x}">🛒 שלח ל${nm(x)}</button></div>`;
+  return `<h2>✂️ פיצול סל</h2><div class="card">
+    <div>קנייה בשתי רשתות יוצאת <b>${money(s.saving)}</b> זול יותר מהכל ב${nm(s.vs)} (${money(s.vsTotal)}), גם אחרי משלוח נוסף.</div>
+    ${part(A)}${part(B)}
+    <div class="muted" style="font-size:12px;margin-top:6px">מילוי עגלה בכל רשת שולח את כל הרשימה; את מה שלא שייך לרשת מסירים בעגלה שלה.</div></div>`;
+}
+// מותג הבית של הרשת הזולה: אותו מוצר (סוג, גודל, אחוז שומן) בזול יותר
+function swapsCard(c, best) {
+  if (!best?.chain) return "";
+  const rows = [];
+  for (const l of c.lines) {
+    const code = l.codes[best.chain];
+    const s = code && PriceDB.ownBrand(best.chain, code);
+    if (s) rows.push({ l, s, save: (s.from - s.price) * (l.weighted ? l.kg : l.units) });
+  }
+  if (!rows.length) return "";
+  rows.sort((a, b) => b.save - a.save);
+  const total = rows.reduce((a, r) => a + r.save, 0);
+  return `<h2>💡 חיסכון עם מותג ${esc(chains[best.chain] || best.chain)}</h2><div class="card">
+    <div class="muted" style="margin-bottom:4px">אותו מוצר, מהמותג של הרשת – עד ${money(total)} פחות בסל.</div>
+    ${rows.slice(0, 10).map(({ l, s, save }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
+      <div class="grow" style="min-width:0;font-size:14px">${esc(s.fromName)} <span class="muted">${money(s.from)}</span>
+        <div style="color:var(--accent)">← ${esc(s.name)} <b>${money(s.price)}</b> <span style="font-size:12px">(חוסך ${money(save)})</span></div></div>
+      <button class="btn small" data-swap="${esc(l.code)}" data-to="${esc(s.code)}" data-to-name="${esc(s.name)}">החלף</button></div>`).join("")}</div>`;
+}
+
 // ---------- היסטוריית מחירים: חץ למעלה/למטה, גרף קטן, והתרעה כשמוצר ברשימה מוזל ----------
 const trendTag = tr => !tr ? "" : tr.to < tr.from
   ? `<div class="trend down">📉 ירד מ-${money(tr.from)}</div>` : `<div class="trend up">📈 עלה מ-${money(tr.from)}</div>`;
@@ -1466,6 +1505,7 @@ function basketCard() {
   // המשלוח הקרוב בכל הרשתות שאפשר להזמין בהן (גם בלי השוואת מחירים)
   const fastAll = fastestChain([...new Set([...CART_CHAINS, ...ranked.map(x => x.chain)])]);
   const summary = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">
+      ${(() => { const s = basketSplit(c); return s ? `<button class="chip" data-tab-go="prices">✂️ פיצול בין ${esc(chains[s.chains[0]] || s.chains[0])} ל${esc(chains[s.chains[1]] || s.chains[1])} חוסך ${money(s.saving)}</button>` : ""; })()}
       ${best?.found ? `<span class="chip">💰 הכי זול: <b>${esc(best.name)}</b> ${money(best.total)}${isEstimate(best.chain) ? " (הערכה)" : ""}${best.found < total ? ` · ${best.found} מתוך ${total} מוצרים` : ""}</span>` : ""}
       ${fastAll ? `<span class="chip">⚡ הכי מהיר: <b>${esc(CART_NAMES[fastAll] || chains[fastAll])}</b> · ${esc(fmtSlot(slots[fastAll]))}</span>`
         : !hasExt() ? (inApp ? "" : `<button class="chip" data-act="ext-help">⚡ להצגת המשלוח המהיר ביותר – התקן את התוסף</button>`)
@@ -1513,6 +1553,8 @@ function renderPrices() {
         ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 מלא עגלה</button>` : ""}</div></div>`).join("")}
       ${best && full.length > 1 ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה ביותר: <b>${money(Math.max(...full.map(x => x.total)) - best.total)}</b></div>` : ""}
     </div>
+    ${splitCard(c)}
+    ${swapsCard(c, best)}
     ${changesCard(c)}
     <h2>פירוט לפי מוצר</h2>
     <div class="card scroll-x"><table><tr><th>מוצר</th>${c.chains.map(x => `<th>${esc(x.name)}</th>`).join("")}</tr>
@@ -2147,6 +2189,7 @@ function renderHelp() {
     <li>לחיצה ארוכה על מוצר מעבירה אותו למחלקה אחרת – והאפליקציה זוכרת את זה לפעם הבאה.</li>
     <li>🔗 ליד פריט = בחירת המוצר המדויק (מותג, גודל). התמונה הקטנה מראה מה נבחר – לחיצה מגדילה.</li>
     <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
+    <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
@@ -2292,6 +2335,12 @@ $("#view").addEventListener("click", e => {
   if (vr) return recipeView(vr.dataset.viewRecipe);
   const fc = t.closest("[data-fill]");
   if (fc) return fillCart(fc.dataset.fill);
+  const sw = t.closest("[data-swap]");
+  if (sw) {
+    const it = live().find(i => i.code && String(i.code).replace(/^0+/, "") === sw.dataset.swap);
+    if (it) { Object.assign(it, { code: sw.dataset.to, product: sw.dataset.toName, auto: false, t: now() }); commit(); toast(`הוחלף: ${sw.dataset.toName}`); refreshCompare().then(render); }
+    return;
+  }
   const go = t.closest("[data-tab-go]");
   if (go) return document.querySelector(`nav button[data-tab="${go.dataset.tabGo}"]`)?.click();
   const tg = t.closest("[data-toggle-online]");
