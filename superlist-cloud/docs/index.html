@@ -117,6 +117,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   .d9 { --dbg: #3a2019; --dfg: #f0ae98; } .d10 { --dbg: #23272b; --dfg: #b8c0c8; }
   .tile .tile-check { color: #0b1a12; }
 }
+.shop-bar { position: sticky; top: calc(48px + env(safe-area-inset-top)); z-index: 4; background: var(--card); border-radius: 14px; padding: 10px 12px;
+  margin-bottom: 10px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.shop-bar select { width: auto; padding: 4px 8px; font-size: 14px; }
+.shop .tile-name { font-size: 16px; font-weight: 600; }
+.shop .tile-img, .shop .tile-ph { width: 52px; height: 52px; }
+.shop .tile { padding: 10px; }
 .dept-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dept-pick button { border: 0; border-radius: 12px; padding: 10px; background: var(--dbg); color: var(--dfg); font-weight: 600; text-align: start; cursor: pointer; }
 .dept-pick button.on { outline: 2px solid var(--dfg); }
@@ -608,6 +614,74 @@ function ordersSheet() {
   });
 }
 
+// ================= מצב קנייה בסופר =================
+// מסך נקי עם אריחים גדולים, המסך לא נכבה, וסכום מצטבר של מה שכבר בעגלה – לפי הסופר שבחרת.
+const SHOP_KEY = "superlist-shop", SHOP_CHAIN = "superlist-shop-chain";
+let shopMode = (() => { try { return localStorage.getItem(SHOP_KEY) === "1"; } catch { return false; } })();
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && "wakeLock" in navigator) { wakeLock = await navigator.wakeLock.request("screen"); }
+    else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (shopMode && document.visibilityState === "visible") keepAwake(true); });
+if (shopMode) keepAwake(true);
+function shopChain() {
+  const have = Object.keys(compareCache?.chains ? Object.fromEntries(compareCache.chains.filter(x => x.found).map(x => [x.chain, 1])) : {});
+  let c = null;
+  try { c = localStorage.getItem(SHOP_CHAIN); } catch {}
+  return have.includes(c) ? c : (compareCache?.chains.slice().sort(byCoverage)[0]?.chain || null);
+}
+// המחיר של פריט בסופר שנבחר (כולל מבצע), כפול הכמות
+function shopCost(i, chain) {
+  const line = i.code && compareCache?.lines.find(l => l.code === String(i.code).replace(/^0+/, ""));
+  const p = line?.prices[chain];
+  return p == null ? null : p * (line.weighted ? line.kg : line.units);
+}
+function shopPriceTag(i) {
+  const c = shopChain(), v = c && shopCost(i, c);
+  return v == null ? "" : `<div class="tile-price" style="font-size:13px">${money(v)}</div>`;
+}
+function shopBar(items, done) {
+  const c = shopChain(), have = (compareCache?.chains || []).filter(x => x.found);
+  const sum = list => list.reduce((s, i) => s + (shopCost(i, c) || 0), 0);
+  const inCart = sum(done), all = sum(items);
+  return `<div class="shop-bar">
+    <div class="row" style="gap:8px"><b class="grow">🛍️ בקנייה</b>
+      ${have.length ? `<select id="shop-chain" aria-label="באיזה סופר">${have.map(x => `<option value="${x.chain}" ${x.chain === c ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : ""}</div>
+    <div class="row" style="margin-top:6px;font-size:14px"><span class="grow">✓ ${done.length} מתוך ${items.length}</span>
+      ${all ? `<span>בעגלה <b>${money(inCart)}</b> מתוך ~${money(all)}</span>` : ""}</div>
+    <div class="bar" style="height:8px;margin-top:6px"><i style="width:${items.length ? done.length / items.length * 100 : 0}%"></i></div></div>`;
+}
+document.addEventListener("change", e => {
+  if (e.target.id !== "shop-chain") return;
+  try { localStorage.setItem(SHOP_CHAIN, e.target.value); } catch {}
+  render();
+});
+// סדר המחלקות (כמו במעברים בסניף שלך). נשמר ברשימה, ומשמש גם מחוץ למצב קנייה.
+function deptOrder() {
+  const saved = (S.settings.deptOrder || []).filter(c => CAT_ORDER.includes(c));
+  return [...saved, ...CAT_ORDER.filter(c => !saved.includes(c))];
+}
+function deptOrderSheet() {
+  const order = deptOrder();
+  sheet(`<h2 style="margin-top:0">⇅ סדר המחלקות</h2>
+    <div class="muted" style="margin-bottom:8px">סדרו לפי המעברים בסופר שלכם – הרשימה תוצג באותו סדר.</div>
+    ${order.map((c, k) => `<div class="row dept d${CAT_ORDER.indexOf(c)}" style="padding:8px 10px;margin-bottom:6px;color:var(--dfg)">
+      <span class="grow">${DEPT_ICON[c]} ${esc(c)}</span>
+      <button class="btn small ghost" data-mv="${k}" data-dir="-1" ${k ? "" : "disabled"} aria-label="למעלה">↑</button>
+      <button class="btn small ghost" data-mv="${k}" data-dir="1" ${k < order.length - 1 ? "" : "disabled"} aria-label="למטה">↓</button></div>`).join("")}
+    <div class="row" style="margin-top:8px"><button class="btn grow" data-close>סיום</button><button class="btn ghost" id="dept-reset">ברירת מחדל</button></div>`);
+  const root = $("#sheet-root");
+  root.querySelectorAll("[data-mv]").forEach(el => el.onclick = () => {
+    const k = +el.dataset.mv, j = k + +el.dataset.dir, o = deptOrder();
+    [o[k], o[j]] = [o[j], o[k]];
+    Object.assign(S.settings, { deptOrder: o, t: now() }); commit(); deptOrderSheet();
+  });
+  root.querySelector("#dept-reset").onclick = () => { Object.assign(S.settings, { deptOrder: null, t: now() }); commit(); deptOrderSheet(); };
+}
+
 // העברת מוצר למחלקה אחרת (לחיצה ארוכה על האריח). נזכר לפעם הבאה שמוסיפים אותו.
 function deptSheet(item) {
   sheet(`<h2 style="margin-top:0">לאיזו מחלקה להעביר את "${esc(item.name)}"?</h2>
@@ -656,6 +730,7 @@ function renderList() {
   const items = live();
   const open = items.filter(i => !i.done), done = items.filter(i => i.done);
   const sug = suggestions();
+  const shop = shopMode && items.length > 0;
   // אריח: תמונה ושם (לחיצה = בעגלה), המחיר הזול, כמות; 🔗 ו-✕ בפינה. לחיצה ארוכה = העברה למחלקה אחרת
   const tile = i => {
     const p = priceFor(i);
@@ -667,9 +742,9 @@ function renderList() {
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
       <div class="tile-top">${img}<div class="tile-name" data-act="toggle">${esc(i.name)} ${who}</div>
-        ${i.done ? "" : `<div class="tile-tools"><button class="icon-btn" data-act="link" title="בחר מוצר" aria-label="בחר מוצר">🔗</button>
+        ${i.done || shop ? "" : `<div class="tile-tools"><button class="icon-btn" data-act="link" title="בחר מוצר" aria-label="בחר מוצר">🔗</button>
           <button class="icon-btn" data-act="del" title="מחק" aria-label="מחק">✕</button></div>`}</div>
-      ${ptag}
+      ${shop ? shopPriceTag(i) : ptag}
       <div class="tile-bottom">${i.done ? `<span class="muted" style="font-size:13px">${fmtQty(i)}</span>`
         : `<div class="qty ${i.unit === "kg" ? "kg" : ""}"><button data-act="dec" aria-label="פחות">−</button>
           <span data-act="unit" title="${i.unit === "kg" ? "נמכר במשקל. לחיצה: להחליף ליחידות" : "כמות יחידות/אריזות. לחיצה: להחליף לק״ג"}">${fmtQty(i)}</span>
@@ -692,6 +767,12 @@ function renderList() {
   };
 
   const cl = curList();
+  if (shop) return `${shopBar(items, done)}
+  <div class="shop">${deptOrder().filter(c => byDept[c]).map(deptBlock).join("")}</div>
+  ${!open.length ? `<div class="card empty">הכל בעגלה! 🎉</div>` : ""}
+  ${done.length ? `<button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה (${done.length})</button>` : ""}
+  <div class="row" style="margin-top:8px"><button class="btn ghost grow" data-act="dept-order">⇅ סדר המחלקות</button>
+    <button class="btn ghost grow" data-act="shop-exit">יציאה ממצב קנייה</button></div>`;
   return `
   ${cl ? `<div class="row" style="margin:0 0 8px;gap:6px">
     <button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
@@ -708,13 +789,14 @@ function renderList() {
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   <h2>${items.length ? `ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})` : ""}</h2>
-  ${items.length ? CAT_ORDER.filter(c => byDept[c]).map(deptBlock).join("") : ""}
+  ${items.length ? deptOrder().filter(c => byDept[c]).map(deptBlock).join("") : ""}
   ${!open.length ? `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או להוסיף מצרכים ממתכון בלשונית מתכונים."}</div>` : ""}
   ${done.length ? `<button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה (${done.length})</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center;font-size:14px">לחיצה על מוצר מסמנת שהוא בעגלה · לחיצה ארוכה מעבירה למחלקה אחרת</div>` : ""}
   ${basketCard()}
   ${deliveryCard()}
-  ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>` : ""}
+  ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-act="shop-enter">🛍️ אני בסופר – מצב קנייה</button>` : ""}
   <div class="row" style="margin-top:8px">
     <button class="btn ghost grow" data-act="import">📥 ייבוא רשימת קניות</button>
     <button class="btn ghost grow" data-act="share">👥 שיתוף הרשימה</button>
@@ -2256,6 +2338,7 @@ function renderHelp() {
     <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
+    <li><b>🛍️ מצב קנייה בסופר</b> (כפתור מתחת לרשימה): אריחים גדולים, המסך לא נכבה, ובראש המסך כמה כבר בעגלה ובכמה כסף – לפי הסופר שבחרתם. "⇅ סדר המחלקות" מסדר את הרשימה לפי המעברים בסניף שלכם.</li>
     <li><b>💸 תקציב והוצאות</b> (בכפתור "הזמנות והוצאות"): קובעים תקציב חודשי, ורואים כמה הוצאתם החודש, גרף של חצי שנה, ופילוח לפי רשת ומחלקה. אם הסל יעבור את התקציב – תופיע אזהרה.</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
   </ul>`)}
@@ -2450,6 +2533,9 @@ $("#view").addEventListener("click", e => {
     case "autolink": return autoLink();
     case "import": return importSheet();
     case "orders": return ordersSheet();
+    case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); return render();
+    case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); return render();
+    case "dept-order": return deptOrderSheet();
     case "send": return sendSheet();
     case "share": return shareSheet();
     case "bookmark": return bookmarkSheet();
