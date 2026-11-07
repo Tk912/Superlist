@@ -402,6 +402,7 @@ function onServerData(data) {
   if (!onlineChecked) {
     onlineChecked = true;
     setTimeout(() => { ensureOnlineStores(); if (Object.keys(publicStores()).length) Cloud.setPublicStores(publicStores()).catch(() => {}); }, 0);
+    setTimeout(applyRecurring, 1500);
   }
   refreshCompare().then(render);
   try { localStorage.setItem(LS, JSON.stringify(S)); } catch {}
@@ -614,6 +615,118 @@ function ordersSheet() {
   });
 }
 
+// ================= מוצרים קבועים =================
+// {name, qty, unit, every (ימים), last (מתי נוסף לאחרונה)} – נשמר ברשימה המשותפת. כשמגיע הזמן, המוצר חוזר לרשימה לבד.
+const recurringOf = name => (S.settings.recurring || []).find(r => norm(r.name) === norm(name));
+function setRecurring(item, every) {
+  const list = (S.settings.recurring || []).filter(r => norm(r.name) !== norm(item.name));
+  if (every) list.push({ name: item.name, qty: item.qty || 1, unit: item.unit || "unit", code: item.code || null, product: item.product || null, every, last: now() });
+  Object.assign(S.settings, { recurring: list, t: now() });
+}
+let recurringChecked = false;
+function applyRecurring() {
+  if (recurringChecked) return;
+  recurringChecked = true;
+  const due = (S.settings.recurring || []).filter(r => now() - (r.last || 0) >= r.every * 864e5 - 36e5);
+  if (!due.length) return;
+  const added = [];
+  for (const r of due) {
+    r.last = now();
+    if (live().some(i => norm(i.name) === norm(r.name) && !i.done)) continue;   // כבר ברשימה
+    addItem(r.name, r.qty, "recurring", r.unit);
+    const it = live().find(i => norm(i.name) === norm(r.name) && !i.done);
+    if (it && r.code && !it.code) Object.assign(it, { code: r.code, product: r.product });
+    added.push(r.name);
+  }
+  S.settings.t = now();
+  commit();
+  if (added.length) toast(`🔁 נוספו לרשימה (קבועים): ${added.join(", ")}`);
+}
+function recurringSheet() {
+  const list = S.settings.recurring || [];
+  const label = d => ({ 7: "כל שבוע", 14: "כל שבועיים", 30: "כל חודש" })[d] || `כל ${d} ימים`;
+  sheet(`<h2 style="margin-top:0">🔁 מוצרים קבועים</h2>
+    <div class="muted" style="margin-bottom:8px">חוזרים לרשימה לבד בזמן שקבעתם. מוסיפים מוצר קבוע בלחיצה ארוכה עליו ברשימה.</div>
+    <div class="card">${list.length ? list.map((r, k) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)">
+      <div class="grow">${esc(r.name)} <span class="muted" style="font-size:13px">${r.unit === "kg" ? fmtNum(r.qty) + " ק״ג" : "×" + r.qty}</span>
+        <div class="muted" style="font-size:12px">${label(r.every)} · בפעם הבאה ${new Date((r.last || 0) + r.every * 864e5).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" })}</div></div>
+      <button class="icon-btn" data-rdel="${k}" aria-label="הסר">✕</button></div>`).join("") : `<div class="muted">אין מוצרים קבועים.</div>`}</div>
+    <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
+  $("#sheet-root").querySelectorAll("[data-rdel]").forEach(el => el.onclick = () => {
+    const l = (S.settings.recurring || []).slice(); l.splice(+el.dataset.rdel, 1);
+    Object.assign(S.settings, { recurring: l, t: now() }); commit(); recurringSheet();
+  });
+}
+
+// ================= תכנון ארוחות שבועי =================
+// S.plan.days: {"YYYY-MM-DD": [recipeId, ...]} – 7 הימים הקרובים. "הוסף לרשימה" מאחד מצרכים זהים מכל המתכונים.
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const weekDays = () => [...Array(7)].map((_, k) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + k); return d; });
+function weekPlanCard(recipes) {
+  const byId = Object.fromEntries(recipes.map(r => [r.id, r]));
+  const days = weekDays(), planned = days.flatMap(d => (S.plan.days[dayKey(d)] || []).filter(id => byId[id]));
+  return `<h2>🗓️ תכנון שבועי</h2><div class="card">
+    ${days.map((d, k) => { const key = dayKey(d), ids = (S.plan.days[key] || []).filter(id => byId[id]);
+      return `<div class="day row" style="gap:6px;flex-wrap:wrap"><b>${k === 0 ? "היום" : k === 1 ? "מחר" : d.toLocaleDateString("he-IL", { weekday: "short" })}</b>
+        ${ids.map(id => `<button class="meal-chip" data-unplan="${key}|${id}">${esc(byId[id].name)}</button>`).join("")}
+        <button class="chip add" data-plan="${key}" style="font-size:13px">מתכון</button></div>`; }).join("")}
+    ${planned.length ? `<button class="btn" style="width:100%;margin-top:8px" data-act="plan-to-list">🛒 מצרכי השבוע לרשימה (${planned.length})</button>` : `<div class="muted" style="margin-top:6px">בחרו מתכון לכל יום – ואז כל המצרכים נכנסים לרשימה בלחיצה אחת.</div>`}
+  </div>`;
+}
+function planPickSheet(key) {
+  const recipes = recipeList();
+  if (!recipes.length) return toast("קודם הוסיפו מתכונים (מהספרייה או בייבוא)");
+  sheet(`<h2 style="margin-top:0">מה מבשלים ${new Date(key + "T12:00").toLocaleDateString("he-IL", { weekday: "long" })}?</h2>
+    <div class="card">${recipes.map(r => `<div class="result" data-pick-recipe="${r.id}">${esc(r.name)} <span class="muted" style="font-size:13px">· ${r.ingredients.length} מצרכים</span></div>`).join("")}</div>
+    <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
+  $("#sheet-root").querySelectorAll("[data-pick-recipe]").forEach(el => el.onclick = () => {
+    const l = S.plan.days[key] || [];
+    if (!l.includes(el.dataset.pickRecipe)) l.push(el.dataset.pickRecipe);
+    S.plan.days[key] = l; S.plan.t = now();
+    // ימים שעברו לפני יותר משבוע – לא צריך לשמור
+    const old = dayKey(new Date(Date.now() - 8 * 864e5));
+    for (const k of Object.keys(S.plan.days)) if (k < old) delete S.plan.days[k];
+    closeSheet(); commit();
+  });
+}
+function planToListSheet() {
+  const byId = Object.fromEntries(recipeList().map(r => [r.id, r]));
+  const sum = new Map();   // שם+יחידה -> {name, qty, unit, pantry, from: [...]}
+  for (const d of weekDays()) for (const id of S.plan.days[dayKey(d)] || []) {
+    const r = byId[id];
+    if (!r) continue;
+    for (const x of r.ingredients) {
+      const unit = x.unit === "kg" ? "kg" : "unit", k = norm(x.name) + "|" + unit;
+      const cur = sum.get(k) || { name: x.name, qty: 0, unit, pantry: !!x.pantry, from: [] };
+      cur.qty += Number(x.qty) || 1;
+      cur.pantry = cur.pantry && !!x.pantry;
+      if (!cur.from.includes(r.name)) cur.from.push(r.name);
+      sum.set(k, cur);
+    }
+  }
+  const rows = [...sum.values()].map(x => ({ ...x, qty: x.unit === "kg" ? roundKg(x.qty) : Math.max(1, Math.round(x.qty)) }));
+  const picked = rows.map(x => !x.pantry);
+  const draw = () => {
+    sheet(`<h2 style="margin-top:0">🛒 מצרכים לשבוע</h2>
+      <div class="card">${rows.map((x, k) => `<label class="item" style="cursor:pointer">
+        <input type="checkbox" data-k="${k}" ${picked[k] ? "checked" : ""} style="width:20px;height:20px">
+        <div class="grow">${esc(x.name)}${x.pantry ? ` <span class="who">יש בבית?</span>` : ""}
+          ${x.from.length > 1 ? `<div class="muted" style="font-size:12px">${esc(x.from.join(" + "))}</div>` : ""}</div>
+        <span class="muted">${x.unit === "kg" ? fmtNum(x.qty) + " ק״ג" : "×" + x.qty}</span></label>`).join("")}</div>
+      <div class="row"><button class="btn grow" id="pl-go">הוסף ${picked.filter(Boolean).length} מצרכים לרשימה</button></div>
+      <button class="btn ghost" style="width:100%;margin-top:8px" data-close>ביטול</button>`);
+    $("#sheet-root").querySelectorAll("[data-k]").forEach(c => c.onchange = () => { picked[+c.dataset.k] = c.checked; draw(); });
+    $("#pl-go").onclick = () => {
+      const chosen = rows.filter((x, k) => picked[k]);
+      chosen.forEach(x => addItem(x.name, x.qty, "recipe", x.unit));
+      commit(); closeSheet(); refreshCompare().then(render);
+      toast(`נוספו ${chosen.length} מצרכים לשבוע`);
+      document.querySelector('nav button[data-tab="list"]')?.click();
+    };
+  };
+  draw();
+}
+
 // ================= מצב קנייה בסופר =================
 // מסך נקי עם אריחים גדולים, המסך לא נכבה, וסכום מצטבר של מה שכבר בעגלה – לפי הסופר שבחרת.
 const SHOP_KEY = "superlist-shop", SHOP_CHAIN = "superlist-shop-chain";
@@ -686,7 +799,15 @@ function deptOrderSheet() {
 function deptSheet(item) {
   sheet(`<h2 style="margin-top:0">לאיזו מחלקה להעביר את "${esc(item.name)}"?</h2>
     <div class="dept-pick">${CAT_ORDER.map((c, k) => `<button class="d${k} ${item.cat === c ? "on" : ""}" data-dept="${esc(c)}">${DEPT_ICON[c]} ${esc(c)}</button>`).join("")}</div>
+    <h3 style="margin:14px 0 6px">🔁 להוסיף לרשימה באופן קבוע?</h3>
+    <div class="chips">${[[0, "לא"], [7, "כל שבוע"], [14, "כל שבועיים"], [30, "כל חודש"]].map(([d, l]) =>
+      `<button class="chip ${(recurringOf(item.name)?.every || 0) === d ? "on" : ""}" data-every="${d}">${l}</button>`).join("")}</div>
     <button class="btn ghost" style="width:100%;margin-top:12px" data-close>ביטול</button>`);
+  $("#sheet-root").querySelectorAll("[data-every]").forEach(el => el.onclick = () => {
+    setRecurring(item, +el.dataset.every);
+    closeSheet(); commit();
+    toast(+el.dataset.every ? `🔁 ${item.name} יתווסף לרשימה ${el.textContent}` : `${item.name} כבר לא קבוע`);
+  });
   $("#sheet-root").querySelectorAll("[data-dept]").forEach(el => el.onclick = () => {
     const c = el.dataset.dept, k = norm(item.name);
     Object.assign(item, { cat: c, t: now() });
@@ -801,6 +922,7 @@ function renderList() {
     <button class="btn ghost grow" data-act="import">📥 ייבוא רשימת קניות</button>
     <button class="btn ghost grow" data-act="share">👥 שיתוף הרשימה</button>
   </div>
+  ${(S.settings.recurring || []).length ? `<button class="btn ghost" style="width:100%;margin-top:8px" data-act="recurring">🔁 מוצרים קבועים (${S.settings.recurring.length})</button>` : ""}
   <button class="btn ghost" style="width:100%;margin-top:8px" data-act="orders">🧾 הזמנות והוצאות${(S.orders || []).some(o => !o.deleted) ? ` (${S.orders.filter(o => !o.deleted).length})` : ""}</button>`;
 }
 
@@ -1091,6 +1213,7 @@ const recipeList = () => S.recipes.filter(r => !r.deleted);
 function renderMeals() {
   const recipes = recipeList();
   return `
+  ${weekPlanCard(recipes)}
   <div class="row" style="margin:4px 0 12px">
     <button class="btn grow" data-act="recipe-library">📚 ספריית מתכונים</button>
     <button class="btn ghost grow" data-act="recipe-import">📋 ייבוא מתכון</button>
@@ -2338,6 +2461,8 @@ function renderHelp() {
     <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
+    <li><b>🔁 מוצרים קבועים:</b> לחיצה ארוכה על מוצר ← "כל שבוע / שבועיים / חודש", והוא יחזור לרשימה לבד בזמן.</li>
+    <li><b>🗓️ תכנון שבועי</b> (לשונית מתכונים): בוחרים מתכון לכל יום, ו"הוסף את מצרכי השבוע" מכניס הכל לרשימה – מצרכים זהים מתאחדים.</li>
     <li><b>🛍️ מצב קנייה בסופר</b> (כפתור מתחת לרשימה): אריחים גדולים, המסך לא נכבה, ובראש המסך כמה כבר בעגלה ובכמה כסף – לפי הסופר שבחרתם. "⇅ סדר המחלקות" מסדר את הרשימה לפי המעברים בסניף שלכם.</li>
     <li><b>💸 תקציב והוצאות</b> (בכפתור "הזמנות והוצאות"): קובעים תקציב חודשי, ורואים כמה הוצאתם החודש, גרף של חצי שנה, ופילוח לפי רשת ומחלקה. אם הסל יעבור את התקציב – תופיע אזהרה.</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
@@ -2483,6 +2608,14 @@ $("#view").addEventListener("click", e => {
   if (vr) return recipeView(vr.dataset.viewRecipe);
   const fc = t.closest("[data-fill]");
   if (fc) return fillCart(fc.dataset.fill);
+  const pl = t.closest("[data-plan]");
+  if (pl) return planPickSheet(pl.dataset.plan);
+  const up = t.closest("[data-unplan]");
+  if (up) {
+    const [key, id] = up.dataset.unplan.split("|");
+    S.plan.days[key] = (S.plan.days[key] || []).filter(x => x !== id); S.plan.t = now();
+    return commit();
+  }
   const sw = t.closest("[data-swap]");
   if (sw) {
     const it = live().find(i => i.code && String(i.code).replace(/^0+/, "") === sw.dataset.swap);
@@ -2536,6 +2669,8 @@ $("#view").addEventListener("click", e => {
     case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); return render();
     case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); return render();
     case "dept-order": return deptOrderSheet();
+    case "recurring": return recurringSheet();
+    case "plan-to-list": return planToListSheet();
     case "send": return sendSheet();
     case "share": return shareSheet();
     case "bookmark": return bookmarkSheet();
@@ -2677,6 +2812,7 @@ function startCloud() {
   if (!window.Cloud || !Cloud.configured) {
     // בלי Firebase (למשל בבדיקה): הכל נשמר רק בדפדפן הזה
     gate = "ok"; setOnline(false); render();
+    setTimeout(applyRecurring, 1500);
     onlineChecked = true; ensureOnlineStores();
     loadChains().then(refreshCompare).then(render).then(() => requestSlots());
     return;
