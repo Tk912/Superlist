@@ -2882,9 +2882,16 @@ function watchLists() {
       if (!lists.length) return;
     }
     // צורפת לרשימה של מישהו אחר
-    if (!first) for (const l of lists) if (!known.has(l.id) && !isOwner(l)) toast(`👥 צורפת לרשימה "${listName(l)}"`);
+    const joined = lists.filter(l => !known.has(l.id) && !isOwner(l));
+    if (!first) for (const l of joined) toast(`👥 צורפת לרשימה "${listName(l)}" של ${l.owner.split("@")[0]}`);
     const want = savedListId();
-    const pick = lists.find(l => l.id === Cloud.listId) || lists.find(l => l.id === want) || lists.find(l => l.id === "home") || lists[0];
+    let pick = lists.find(l => l.id === Cloud.listId) || lists.find(l => l.id === want) || lists.find(l => l.id === "home") || lists[0];
+    // הרשימה שלך ריקה ושיתפו איתך רשימה (חדשה, או בפתיחה הראשונה) – עוברים אליה, כדי שלא תיראה "חסרה"
+    const shared = (first ? lists.filter(l => !isOwner(l)) : joined).sort((a, b) => b.open - a.open)[0];
+    if (shared && isOwner(pick) && !pick.open && listName(pick) === "הרשימה שלי" && pick.id !== shared.id) {
+      pick = shared;
+      if (first) toast(`👥 נפתחה הרשימה "${listName(shared)}" ששיתפו איתך. את כל הרשימות שלך אפשר למצוא ב"📋" למעלה`);
+    }
     if (pick.id !== Cloud.listId) openList(pick.id);
     else { members = pick.members; render(); }
   }, code => { console.warn("lists", code); setOnline(false); if (gate === "loading") { gate = "error"; render(); } });
@@ -2939,6 +2946,8 @@ function listsSheet() {
         <button class="icon-btn" data-del-list="${esc(l.id)}" title="מחיקה">🗑</button>`
         : `<button class="btn small ghost" data-leave-list="${esc(l.id)}">יציאה</button>`}</div>`).join("")}</div>
     <button class="btn" style="width:100%" id="ls-new">+ רשימה חדשה</button>
+    <div class="muted" style="font-size:13px;margin-top:10px">מחובר כ-<b style="direction:ltr;unicode-bidi:embed">${esc(Cloud.email())}</b>.
+      לא רואים רשימה ששיתפו איתכם? ודאו שזו בדיוק הכתובת שהוסיפו לשיתוף (בטלפון עם כמה חשבונות Google – אפשר להתנתק ולבחור חשבון אחר בשיתוף ← התנתקות).</div>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
   const root = $("#sheet-root");
   root.querySelectorAll("[data-open-list]").forEach(b => b.onclick = () => { closeSheet(); if (b.dataset.openList !== Cloud.listId) openList(b.dataset.openList); });
