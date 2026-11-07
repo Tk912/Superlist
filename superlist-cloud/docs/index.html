@@ -120,6 +120,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .dept-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dept-pick button { border: 0; border-radius: 12px; padding: 10px; background: var(--dbg); color: var(--dfg); font-weight: 600; text-align: start; cursor: pointer; }
 .dept-pick button.on { outline: 2px solid var(--dfg); }
+.trend { font-size: 11px; font-weight: 600; }
+.trend.down { color: #15803d; } .trend.up { color: #b91c1c; }
+@media (prefers-color-scheme: dark) { .trend.down { color: #4ade80; } .trend.up { color: #f87171; } }
+.spark { width: 84px; height: 26px; flex: none; }
 .promo { font-size: 11px; color: #c2410c; font-weight: 600; line-height: 1.3; }
 .promo.hint { font-weight: 400; color: var(--muted); }
 @media (prefers-color-scheme: dark) { .promo { color: #fb923c; } }
@@ -581,7 +585,7 @@ function priceFor(item) {
   e.sort((a, b) => a[1] - b[1]);
   const ck = e[0][0];
   return { price: e[0][1], chain: chains[ck] || ck, weighted: line.weighted,
-    promo: line.promo?.[ck] || null, regular: line.regular?.[ck] ?? null, hint: line.promoHint?.[ck] || null };
+    promo: line.promo?.[ck] || null, regular: line.regular?.[ck] ?? null, hint: line.promoHint?.[ck] || null, trend: line.trend?.[ck] || null };
 }
 
 function renderList() {
@@ -593,7 +597,7 @@ function renderList() {
     const p = priceFor(i);
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none">לא נמצא בסניפים</div>`
       : p ? `<div class="tile-price">${p.promo ? `<s class="muted">${money(p.regular)}</s> ` : ""}${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${
-          p.promo ? `<div class="promo">🏷️ ${esc(p.promo)}</div>` : p.hint ? `<div class="promo hint">🏷️ ${esc(p.hint)}</div>` : ""}</div>` : "";
+          p.promo ? `<div class="promo">🏷️ ${esc(p.promo)}</div>` : p.hint ? `<div class="promo hint">🏷️ ${esc(p.hint)}</div>` : ""}${trendTag(p.trend)}</div>` : "";
     const who = i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "";
     const img = thumb(i.code, "tile-img", `data-act="toggle" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="toggle">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
@@ -1315,6 +1319,7 @@ async function refreshCompare() {
     if (linked) commit();
     const items = live().filter(i => i.code).map(i => ({ code: i.code, qty: i.qty || 1, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }));
     compareCache = PriceDB.compare(items);
+    setTimeout(alertDrops, 1500);
   } catch (e) { console.warn(e); compareCache = null; }
 }
 
@@ -1387,6 +1392,50 @@ function deliveryCard() {
       <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
     <div class="row" style="margin-top:6px"><span class="muted grow" style="font-size:12px">לפי הכתובת בהגדרות · ${slotsAt ? ago(slotsAt) : ""}</span>
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
+}
+
+// ---------- היסטוריית מחירים: חץ למעלה/למטה, גרף קטן, והתרעה כשמוצר ברשימה מוזל ----------
+const trendTag = tr => !tr ? "" : tr.to < tr.from
+  ? `<div class="trend down">📉 ירד מ-${money(tr.from)}</div>` : `<div class="trend up">📈 עלה מ-${money(tr.from)}</div>`;
+function sparkline(pts) {
+  if (!pts || pts.length < 2) return "";
+  const today = Math.floor(Date.now() / 864e5), all = [...pts, [today, pts[pts.length - 1][1]]];
+  const d0 = all[0][0], d1 = Math.max(all[all.length - 1][0], d0 + 1);
+  const ps = all.map(p => p[1]), lo = Math.min(...ps), hi = Math.max(...ps), span = hi - lo || 1;
+  const x = d => 2 + (d - d0) / (d1 - d0) * 80, y = v => 23 - (v - lo) / span * 20;
+  // מדרגות: המחיר נשאר עד השינוי הבא
+  let path = `M${x(all[0][0]).toFixed(1)},${y(all[0][1]).toFixed(1)}`;
+  for (let i = 1; i < all.length; i++) path += `H${x(all[i][0]).toFixed(1)}V${y(all[i][1]).toFixed(1)}`;
+  const down = pts[pts.length - 1][1] < pts[pts.length - 2][1];
+  return `<svg class="spark" viewBox="0 0 84 26" aria-hidden="true"><path d="${path}" fill="none" stroke="${down ? "#16a34a" : "#dc2626"}" stroke-width="1.8"/></svg>`;
+}
+// הכרטיס בלשונית המחירים: כל השינויים ב-30 הימים האחרונים במוצרים שברשימה
+function changesCard(c) {
+  const rows = [];
+  for (const l of c.lines) for (const [ch, tr] of Object.entries(l.trend || {}))
+    rows.push({ l, ch, tr, pts: PriceDB.history(ch, l.codes[ch]) });
+  if (!rows.length) return "";
+  rows.sort((a, b) => (a.tr.to / a.tr.from) - (b.tr.to / b.tr.from));
+  return `<h2>📊 שינויי מחיר אחרונים</h2><div class="card">${rows.slice(0, 12).map(({ l, ch, tr, pts }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
+      <div class="grow" style="min-width:0"><div>${esc(l.name)} <span class="muted" style="font-size:12px">· ${esc(chains[ch] || ch)}</span></div>
+        <div class="trend ${tr.to < tr.from ? "down" : "up"}">${money(tr.from)} ← ${money(tr.to)} (${tr.to < tr.from ? "−" : "+"}${Math.round(Math.abs(1 - tr.to / tr.from) * 100)}%) · ${ago(tr.day * 864e5)}</div></div>
+      ${sparkline(pts)}</div>`).join("")}
+    <div class="muted" style="font-size:12px;margin-top:6px">הגרף מראה את המחיר לאורך הזמן, מאז שהתחלנו לעקוב (נובמבר 2026).</div></div>`;
+}
+// התרעה פעם אחת לכל הוזלה של מוצר ברשימה
+const DROPS_SEEN = "superlist-drops-seen";
+function alertDrops() {
+  if (!compareCache) return;
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(DROPS_SEEN) || "{}"); } catch {}
+  const fresh = [];
+  for (const l of compareCache.lines) for (const [ch, tr] of Object.entries(l.trend || {})) {
+    const k = `${ch}:${l.codes[ch]}:${tr.day}`;
+    if (tr.to < tr.from && !seen[k] && Date.now() - tr.day * 864e5 < 7 * 864e5) { seen[k] = 1; fresh.push(`${l.name} (${chains[ch] || ch})`); }
+  }
+  if (!fresh.length) return;
+  try { localStorage.setItem(DROPS_SEEN, JSON.stringify(seen)); } catch {}
+  toast(`📉 הוזל: ${fresh.slice(0, 3).join(", ")}${fresh.length > 3 ? ` ועוד ${fresh.length - 3}` : ""}`);
 }
 
 // המחירים מ-GitHub אמורים להתעדכן פעמיים בשעה, אבל GitHub לפעמים דוחה ריצות מתוזמנות בכמה שעות.
@@ -1464,6 +1513,7 @@ function renderPrices() {
         ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 מלא עגלה</button>` : ""}</div></div>`).join("")}
       ${best && full.length > 1 ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה ביותר: <b>${money(Math.max(...full.map(x => x.total)) - best.total)}</b></div>` : ""}
     </div>
+    ${changesCard(c)}
     <h2>פירוט לפי מוצר</h2>
     <div class="card scroll-x"><table><tr><th>מוצר</th>${c.chains.map(x => `<th>${esc(x.name)}</th>`).join("")}</tr>
       ${c.lines.map(l => { const vals = Object.values(l.prices); const min = Math.min(...vals);
@@ -2097,6 +2147,7 @@ function renderHelp() {
     <li>לחיצה ארוכה על מוצר מעבירה אותו למחלקה אחרת – והאפליקציה זוכרת את זה לפעם הבאה.</li>
     <li>🔗 ליד פריט = בחירת המוצר המדויק (מותג, גודל). התמונה הקטנה מראה מה נבחר – לחיצה מגדילה.</li>
     <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
+    <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
   </ul>`)}

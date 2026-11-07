@@ -30,8 +30,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # היסטוריית המחירים נשמרת בין הרצות ב-cache (ויש עותק גם באתר עצמו, כגיבוי)
+      - uses: actions/cache/restore@v4
+        with:
+          path: superlist-cloud/docs/data/history
+          key: price-history-${{ github.run_id }}
+          restore-keys: price-history-
       - name: הורדת מחירים
         run: python superlist-cloud/scripts/update_prices.py superlist-cloud/docs/data
+      - uses: actions/cache/save@v4
+        if: always() && hashFiles('superlist-cloud/docs/data/history/**') != ''
+        with:
+          path: superlist-cloud/docs/data/history
+          key: price-history-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

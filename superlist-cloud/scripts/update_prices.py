@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -75,6 +76,61 @@ def selected_stores():
     return out
 
 
+# ---------- היסטוריית מחירים ----------
+# נשמרים רק שינויים: {קוד: [[יום, מחיר], ...]} (יום = ימים מ-1970). המחיר הקודם לכל מוצר נלקח מקובץ המחירים
+# שכבר באתר. הקובץ עצמו נשמר ב-cache של GitHub Actions וגם באתר, כדי שלא יאבד בין הרצות.
+SITE = "https://tk912.github.io/Superlist"
+HISTORY_DAYS = 180
+
+
+def fetch_site_json(path):
+    """קובץ JSON מהאתר החי; None אם אין (404). שגיאת רשת – מנסים שוב, ואז None."""
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(f"{SITE}/{path}?t={int(time.time())}", timeout=60) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+        except Exception:
+            pass
+        time.sleep(3 * (attempt + 1))
+    return None
+
+
+def update_history(chain, store, items, prev_file):
+    path = OUT / "history" / f"{chain}-{store}.json"
+    local = json.loads(path.read_text("utf-8")) if path.exists() else None   # מה-cache
+    remote = fetch_site_json(f"data/history/{chain}-{store}.json")
+    hist = max([h for h in (local, remote) if h], key=lambda h: h.get("updated", 0), default={"h": {}})
+    h = hist.get("h", {})
+    today = int(time.time() // 86400)
+    prev_day = int((prev_file or {}).get("updated", time.time() - 86400) // 86400)
+    prev = {c: p for c, _, p, _ in (prev_file or {}).get("items", [])}
+    for code, _, price, _ in items:
+        pts = h.get(code)
+        old = pts[-1][1] if pts else prev.get(code)
+        if old is None or abs(old - price) < 0.005:
+            continue
+        if not pts:
+            pts = h[code] = [[min(prev_day, today - 1), old]]
+        if pts[-1][0] == today:
+            pts[-1][1] = price
+        else:
+            pts.append([today, price])
+    # שומרים חצי שנה אחורה, ועוד נקודה אחת לפני כן (המחיר שממנו התחיל)
+    cut = today - HISTORY_DAYS
+    for code in list(h):
+        pts = h[code]
+        keep = [p for p in pts if p[0] >= cut]
+        older = [p for p in pts if p[0] < cut]
+        h[code] = ([older[-1]] if older else []) + keep
+        if len(h[code]) < 2:
+            del h[code]
+    write_json(path, {"chain": chain, "store": store, "updated": time.time(), "h": h})
+    return len(h)
+
+
 def write_json(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), "utf-8")
@@ -114,10 +170,15 @@ def main():
                               if c in regular and regular[c] * 0.25 <= v[0] < regular[c] - 0.005}
             except Exception as e:
                 status["errors"][f"promos:{chain}:{store}"] = str(e)[:200]
+            changed = 0
+            try:
+                changed = update_history(chain, store, items, fetch_site_json(f"data/prices/{chain}-{store}.json"))
+            except Exception as e:
+                status["errors"][f"history:{chain}:{store}"] = str(e)[:200]
             write_json(OUT / "prices" / f"{chain}-{store}.json",
                        {"chain": chain, "store": store, "updated": time.time(), "items": items, "promos": promos})
-            status["stores"][f"{chain}:{store}"] = {"updated": time.time(), "items": len(items), "promos": len(promos)}
-            print(f"{cfg['name']} סניף {store}: {len(items):,} מוצרים, {len(promos):,} במבצע")
+            status["stores"][f"{chain}:{store}"] = {"updated": time.time(), "items": len(items), "promos": len(promos), "history": changed}
+            print(f"{cfg['name']} סניף {store}: {len(items):,} מוצרים, {len(promos):,} במבצע, {changed:,} עם שינויי מחיר")
         except Exception as e:
             status["errors"][f"{chain}:{store}"] = str(e)[:200]
             print(f"{cfg['name']} סניף {store}: שגיאה - {e}")

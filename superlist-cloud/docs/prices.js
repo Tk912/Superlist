@@ -60,7 +60,9 @@ const PriceDB = (() => {
         const byCode = new Map();
         for (const it of j.items) { it[4] = stems(it[1]); byCode.set(it[0], it); }
         // מבצעים: {קוד: [מחיר ליחידה/לק"ג במבצע, כמות מינימום, תיאור, עד תאריך]}
-        data[chain] = { store, updated: j.updated, items: j.items, byCode, promos: j.promos || {} };
+        // היסטוריה: {קוד: [[יום, מחיר], ...]} – רק מוצרים שהמחיר שלהם השתנה (אין קובץ = אין עדיין שינויים)
+        const hist = local[chain]?.store === store ? {} : ((await getJSON(`data/history/${chain}-${store}.json`).catch(() => null))?.h || {});
+        data[chain] = { store, updated: j.updated, items: j.items, byCode, promos: j.promos || {}, hist };
       } catch (e) {
         data[chain] = { store, missing: e.message, items: [], byCode: new Map() };
       }
@@ -219,6 +221,16 @@ const PriceDB = (() => {
     return best ? best.it : null;
   }
 
+  // שינוי המחיר האחרון ב-30 הימים האחרונים: {from, to, day}
+  const today = () => Math.floor(Date.now() / 864e5);
+  function trend(chain, code) {
+    const pts = data[chain]?.hist?.[code];
+    if (!pts || pts.length < 2) return null;
+    const [day, to] = pts[pts.length - 1], from = pts[pts.length - 2][1];
+    return today() - day <= 30 ? { from, to, day } : null;
+  }
+  const history = (chain, code) => data[chain]?.hist?.[code] || null;
+
   // items: [{code, qty, unit, kg, name, product}] -> סכום לכל רשת. מוצר במשקל: מחיר לק"ג × ק"ג.
   function compare(items) {
     const chains = Object.keys(data).filter(c => !data[c].missing);
@@ -234,7 +246,7 @@ const PriceDB = (() => {
       const weighted = ref ? !!ref[3] : (byKg ? true : null);
       const refName = (ref && ref[1]) || it.product || it.name || "";
       const line = { name: it.name, code, qty, kg: Math.round(kg * 100) / 100, units, weighted: !!weighted, prices: {}, approx: {}, codes: {}, names: {},
-                     regular: {}, promo: {}, promoHint: {} };
+                     regular: {}, promo: {}, promoHint: {}, trend: {} };
       for (const c of chains) {
         let r = exact[c];
         // אם אין מוצר מקביל לשם המלא, מנסים לפי מה שכתוב ברשימה ("טונה בשמן")
@@ -248,6 +260,8 @@ const PriceDB = (() => {
             else line.promoHint[c] = pr[2];
           }
           line.prices[c] = price; line.codes[c] = r[0]; line.names[c] = r[1];
+          const tr = trend(c, r[0]);
+          if (tr) line.trend[c] = tr;
           result[c].total += price * need;
           result[c].found++;
           if (line.promo[c]) result[c].promos = (result[c].promos || 0) + 1;
@@ -287,5 +301,5 @@ const PriceDB = (() => {
   // האם שם המוצר מתאים למה שכתוב ברשימה (לבדיקת התאמות אוטומטיות ישנות)
   const matches = (name, product) => !!nameScore(stems(name), stems(product));
 
-  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, images, compare, stores, info: () => ({ status, data, local }) };
+  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, history, images, compare, stores, info: () => ({ status, data, local }) };
 })();
