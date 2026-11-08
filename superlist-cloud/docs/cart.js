@@ -153,7 +153,11 @@
         const cur = st.state.cart.items.find(i => i.id === found.id);
         st.commit("cart/updateItem", { ...found, amount: (cur && !byKilo ? cur.amount : 0) + amount });
         await sleep(300);
-        return { ok: true, product: found.name, note: byKilo ? amount + " ק\"ג" : "×" + amount };
+        return { ok: true, id: found.id, merged: !!cur, product: found.name, note: (byKilo ? amount + " ק\"ג" : "×" + amount) + (cur ? " (אוחד עם פריט קודם)" : "") };
+      },
+      async inCart() {
+        for (let i = 0; i < 60 && $nuxt.$store.state.cart.loadingCart; i++) await sleep(500);
+        return new Set(($nuxt.$store.state.cart.items || []).map(i => i.id));
       },
       async done() {
         for (let i = 0; i < 60 && $nuxt.$store.state.cart.loadingCart; i++) await sleep(500);
@@ -207,7 +211,12 @@
         locks[found.Id] = run.catch(() => {});
         const { res, before, sum } = await run;
         if (!res?.IsOK) return { ok: false, reason: res?.ErrorResponse?.ErrorDescription?.slice(0, 80) || "האתר דחה" };
-        return { ok: true, product: found.Name, merged: before > 0, note: (byKg ? sum + " ק\"ג" : "×" + sum) + (before > 0 ? " (אוחד עם פריט קודם)" : "") };
+        return { ok: true, id: found.Id, product: found.Name, merged: before > 0, note: (byKg ? sum + " ק\"ג" : "×" + sum) + (before > 0 ? " (אוחד עם פריט קודם)" : "") };
+      },
+      // מה באמת בעגלה באתר (לבדיקה בסוף)
+      async inCart() {
+        const j = await (await fetch("/proxy/api/item/getItemsInCart", { credentials: "include" })).json();
+        return new Set((j?.Results?.CartItems?.Items || []).map(p => p.Id));
       },
       done: () => { location.href = "/checkout/cart"; },
     },
@@ -237,7 +246,14 @@
           { c: window.__slCart, i: [{ sku: found.sku, quantity }] });
         const err = res.errors?.[0]?.message || res.data?.addProductsToCart?.user_errors?.[0]?.message;
         if (err) return { ok: false, reason: err.slice(0, 80) };
-        return { ok: true, product: found.name, note: weighted ? quantity + " ק\"ג" : "×" + quantity };
+        return { ok: true, id: found.sku, product: found.name, note: weighted ? quantity + " ק\"ג" : "×" + quantity };
+      },
+      async inCart() {
+        const token = localStorage.getItem("token"), store = localStorage.getItem("storeId");
+        const headers = { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(store ? { Store: store } : {}) };
+        const j = await (await fetch("https://api.yochananof.co.il/graphql", { method: "POST", headers,
+          body: JSON.stringify({ query: "query($c:String!){ cart(cart_id:$c){ items { product { sku } } } }", variables: { c: window.__slCart } }) })).json();
+        return new Set((j.data?.cart?.items || []).map(i => i.product.sku));
       },
       // האתר שומר עותק של העגלה במטמון (Service Worker) ומציג אותו – בלי למחוק אותו, העגלה נראית ריקה
       async done() {
@@ -287,24 +303,35 @@
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, n) }, worker));
+  // בדיקה מול העגלה האמיתית באתר: מוצר שהאתר "אישר" אבל לא שמר – נחשב כלא עבר
+  if (site.inCart) {
+    head("בודק מה באמת נכנס לעגלה…");
+    try {
+      const have = await site.inCart();
+      results.forEach(r => { if (r.ok && r.id != null && !have.has(r.id)) Object.assign(r, { ok: false, reason: "האתר לא שמר את המוצר בעגלה (נסו להוסיף ידנית)" }); });
+    } catch {}
+  }
   // קודם מה שלא עבר, ואז מה שעבר (בסדר של הרשימה)
   const failed = [], merged = [];
   results.forEach((r, k) => { if (!r.ok) { failed.push({ name: job.items[k].name, reason: r.reason }); row(false, job.items[k].name, r.reason); } });
   results.forEach((r, k) => { if (r.ok) { if (r.merged) merged.push(job.items[k].name); row(true, job.items[k].name, `${r.product} · ${r.note}`); } });
   const ok = n - failed.length;
+  // כמה שורות ייראו בעגלה: מוצרים שונים. פריטים ברשימה שהם אותו מוצר – שורה אחת
+  const lines = new Set(results.filter(r => r.ok).map((r, k) => r.id ?? "k" + k)).size;
+  const mergedNote = merged.length ? ` · ${merged.length} מהם היו אותו מוצר כמו פריט אחר ברשימה, ולכן בעגלה ${lines} שורות (הכמויות חוברו)` : "";
   sessionStorage.removeItem("__sl_job");
   // הדוח חוזר לאפליקציה (מופיע בראש הרשימה): מה לא עבר, ומה אוחד
-  const report = { chain: job.chain || null, at: Date.now(), total: n, ok, failed, merged };
+  const report = { chain: job.chain || null, at: Date.now(), total: n, ok, lines, failed, merged };
   try { window.SuperlistCart?.report(JSON.stringify(report)); } catch {}
   if (!failed.length) {
-    head(`✅ כל ${n} המוצרים נוספו${merged.length ? ` (${merged.length} אוחדו עם מוצר זהה)` : ""}. עוברים לעגלה – בדקו ושלמו בעצמכם.`);
+    head(`✅ כל ${n} המוצרים נוספו${mergedNote}. עוברים לעגלה – בדקו ושלמו בעצמכם.`);
     await sleep(2500);
     await site.done();
     window.__slRunning = false;
     return;
   }
   // יש מוצרים שלא עברו: לא עוברים לבד – שיהיה זמן לראות מה חסר
-  head(`⚠️ נוספו ${ok} מתוך ${n}. ${failed.length} לא עברו – מסומנים ב-✕ למטה (אפשר להוסיף אותם ידנית באתר).`);
+  head(`⚠️ נוספו ${ok} מתוך ${n}${mergedNote}. ${failed.length} לא עברו – מסומנים ב-✕ למטה (אפשר להוסיף אותם ידנית באתר).`);
   const go = document.createElement("button");
   go.textContent = "המשך לעגלה ←";
   go.style.cssText = "display:block;width:100%;margin:8px 0;padding:10px;border:0;border-radius:10px;background:#0f7a4a;color:#fff;font:600 15px system-ui;cursor:pointer";

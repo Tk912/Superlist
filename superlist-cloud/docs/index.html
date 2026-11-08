@@ -2330,7 +2330,7 @@ const NO_ONLINE_PRICES = {
 // מגיע מהמילוי (cart.js דרך האפליקציה), נשמר ברשימה ומוצג בראשה עד "הבנתי"
 window.onCartReport = r => {
   if (!r || !r.total) return;
-  S.settings.lastFill = { chain: r.chain, at: r.at || now(), total: r.total, ok: r.ok, failed: (r.failed || []).slice(0, 60), merged: (r.merged || []).slice(0, 60) };
+  S.settings.lastFill = { chain: r.chain, at: r.at || now(), total: r.total, ok: r.ok, lines: r.lines ?? null, failed: (r.failed || []).slice(0, 60), merged: (r.merged || []).slice(0, 60) };
   S.settings.t = now(); commit();
   if (r.failed?.length) toast(`⚠️ ${r.failed.length} מוצרים לא עברו ל${CART_NAMES[r.chain] || "אתר"} – מופיעים בראש הרשימה`);
 };
@@ -2342,7 +2342,7 @@ function fillReportCard() {
     <b>${r.failed.length ? `⚠️ ${r.failed.length} מתוך ${r.total} מוצרים לא עברו ל${esc(place)}` : `✅ כל המוצרים עברו ל${esc(place)}`}</b>
     <span class="muted" style="font-size:12px"> · ${ago(r.at)}</span>
     ${r.failed.map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">✕ <b>${esc(x.name)}</b>${x.reason ? `<div class="muted" style="font-size:12px">${esc(x.reason)}</div>` : ""}</div>`).join("")}
-    ${r.merged.length ? `<div class="muted" style="font-size:13px;margin-top:6px">🔗 אוחדו עם מוצר זהה שכבר היה בעגלה (שורה אחת באתר, הכמות חוברה): ${esc(r.merged.join(", "))}</div>` : ""}
+    ${r.merged.length ? `<div class="muted" style="font-size:13px;margin-top:6px">🔗 ${r.merged.length} פריטים ברשימה היו אותו מוצר כמו פריט אחר, ולכן אוחדו לשורה אחת עם הכמות הכוללת${r.lines ? ` – בעגלה ${r.lines} שורות` : ""}: ${esc(r.merged.join(", "))}</div>` : ""}
     ${r.failed.length ? `<div class="muted" style="font-size:12px;margin-top:6px">אפשר להוסיף אותם ידנית באתר, או לבחור להם מוצר אחר (🔗 באריח) ולמלא שוב.</div>` : ""}
     <button class="btn small ghost" style="width:100%;margin-top:8px" data-act="fill-report-ok">הבנתי</button></div>`;
 }
