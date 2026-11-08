@@ -55,7 +55,10 @@
   };
   const words = t => String(t || "").replace(/(\d)([א-ת])/g, "$1 $2").split(/[\s,]+/).map(stem).filter(Boolean);
   const NOISE = new Set(["רמי", "לוי", "שופרסל", "יוחננוף", "קרפור", "ויקטורי", "חצי", "חינמ", "בדצ", "כשר", "גרמ", "גר", "ג", "קג", "ל", "ליטר", "מל", "יח"]);
-  const wm = (q, n) => n === q || (q.length >= 4 && n.startsWith(q)) || (n.length >= 4 && q.startsWith(n) && q.length - n.length <= 1);
+  // כתיב מלא/חסר: "נישנושי" = "נשנושי", "משולש" ~ "משולשי" (משווים גם בלי י/ו)
+  const lo = s => s.replace(/[יו]/g, "");
+  const wm = (q, n) => n === q || (q.length >= 4 && n.startsWith(q)) || (n.length >= 4 && q.startsWith(n) && q.length - n.length <= 1)
+    || (q.length >= 4 && lo(q).length >= 3 && (lo(n) === lo(q) || lo(n).startsWith(lo(q))));
   const same = (a, b) => words(a).join(" ") === words(b).join(" ");
   // מילים שהופכות מוצר למוצר אחר ("תות קפוא" מול "תות קפוא בציפוי שוקולד") – אם הן לא ברשימה, המוצר מאחור
   const MODS = /^(ב?ציפוי|מצופ|ב?שוקולד|ב?טעמ|ממולא|ב?מילוי|ממותק|מסוכר|ב?קרמ|מטוגנ|בטמפורה|ב?רוטב|מרוכז|אבקת)$/;
@@ -298,6 +301,13 @@
       const k = next++, it = job.items[k];
       let r;
       try { r = await site.add.call({ it, site }, it); } catch (e) { r = { ok: false, reason: String(e.message || e).slice(0, 80) }; }
+      // המוצר עצמו לא נמצא באתר, וההשוואה מצאה תחליף דומה – מוסיפים אותו, ומדווחים שזה תחליף
+      if (!r.ok && it.alt && (it.alt.code || it.alt.name)) {
+        const alt = { ...it, code: it.alt.code, product: it.alt.name, name: it.alt.name, alt: null };
+        let r2;
+        try { r2 = await site.add.call({ it: alt, site }, alt); } catch { r2 = { ok: false }; }
+        if (r2.ok) r = { ...r2, substituted: it.alt.name, note: `${r2.note} · 🔄 תחליף (המוצר עצמו לא נמצא)` };
+      }
       results[k] = r;
       head(`מוסיף לעגלה: ${++doneCount} מתוך ${n}`);
     }
@@ -312,18 +322,20 @@
     } catch {}
   }
   // קודם מה שלא עבר, ואז מה שעבר (בסדר של הרשימה)
-  const failed = [], merged = [];
+  const failed = [], merged = [], substituted = [];
   results.forEach((r, k) => { if (!r.ok) { failed.push({ name: job.items[k].name, reason: r.reason }); row(false, job.items[k].name, r.reason); } });
-  results.forEach((r, k) => { if (r.ok) { if (r.merged) merged.push(job.items[k].name); row(true, job.items[k].name, `${r.product} · ${r.note}`); } });
+  results.forEach((r, k) => { if (r.ok && r.substituted) { substituted.push({ name: job.items[k].name, alt: r.product }); row(false, job.items[k].name, `🔄 נוסף תחליף: ${r.product}`); } });
+  results.forEach((r, k) => { if (r.ok && !r.substituted) { if (r.merged) merged.push(job.items[k].name); row(true, job.items[k].name, `${r.product} · ${r.note}`); } });
   const ok = n - failed.length;
   // כמה שורות ייראו בעגלה: מוצרים שונים. פריטים ברשימה שהם אותו מוצר – שורה אחת
   const lines = new Set(results.filter(r => r.ok).map((r, k) => r.id ?? "k" + k)).size;
   const mergedNote = merged.length ? ` · ${merged.length} מהם היו אותו מוצר כמו פריט אחר ברשימה, ולכן בעגלה ${lines} שורות (הכמויות חוברו)` : "";
   sessionStorage.removeItem("__sl_job");
   // הדוח חוזר לאפליקציה (מופיע בראש הרשימה): מה לא עבר, ומה אוחד
-  const report = { chain: job.chain || null, at: Date.now(), total: n, ok, lines, failed, merged };
+  const report = { chain: job.chain || null, at: Date.now(), total: n, ok, lines, failed, merged, substituted };
   try { window.SuperlistCart?.report(JSON.stringify(report)); } catch {}
-  if (!failed.length) {
+  const subNote = substituted.length ? ` · 🔄 ${substituted.length} לא נמצאו ונוסף במקומם תחליף (מסומנים למטה)` : "";
+  if (!failed.length && !substituted.length) {
     head(`✅ כל ${n} המוצרים נוספו${mergedNote}. עוברים לעגלה – בדקו ושלמו בעצמכם.`);
     await sleep(2500);
     await site.done();
@@ -331,7 +343,7 @@
     return;
   }
   // יש מוצרים שלא עברו: לא עוברים לבד – שיהיה זמן לראות מה חסר
-  head(`⚠️ נוספו ${ok} מתוך ${n}${mergedNote}. ${failed.length} לא עברו – מסומנים ב-✕ למטה (אפשר להוסיף אותם ידנית באתר).`);
+  head(`⚠️ נוספו ${ok} מתוך ${n}${mergedNote}${subNote}.${failed.length ? ` ${failed.length} לא עברו – מסומנים ב-✕ למטה (אפשר להוסיף אותם ידנית באתר).` : ""}`);
   const go = document.createElement("button");
   go.textContent = "המשך לעגלה ←";
   go.style.cssText = "display:block;width:100%;margin:8px 0;padding:10px;border:0;border-radius:10px;background:#0f7a4a;color:#fff;font:600 15px system-ui;cursor:pointer";
