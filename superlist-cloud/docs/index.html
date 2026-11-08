@@ -1139,6 +1139,7 @@ function shareSheet() {
       <a class="btn ghost grow" style="text-align:center;text-decoration:none" href="https://wa.me/?text=${msg}" ${inApp ? "" : `target="_blank" rel="noopener"`}>שלח בוואטסאפ</a></div></div>
     <div class="row"><button class="btn ghost grow" data-act="rename">שינוי השם שלי (${esc(me)})</button>
     <button class="btn ghost grow" id="sh-out">התנתקות</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px;color:var(--warn)" id="sh-delete">🗑 מחיקת החשבון וכל הנתונים</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
   if ($("#sh-leave")) $("#sh-leave").onclick = async () => {
     if (!confirm(`לצאת מהרשימה "${title}"? היא תישאר אצל השאר.`)) return;
@@ -1163,6 +1164,24 @@ function shareSheet() {
   };
   $("#sheet-root").querySelector("[data-act=rename]").onclick = () => nameSheet(shareSheet);
   $("#sh-out").onclick = async () => { if (confirm("להתנתק מהחשבון במכשיר הזה?")) { closeSheet(); await Cloud.signOut(); } };
+  $("#sh-delete").onclick = async () => {
+    const mineCount = myLists.filter(isOwner).length, others = myLists.length - mineCount;
+    if (!confirm(`למחוק את החשבון?
+
+• ${mineCount} הרשימות שלך יימחקו לגמרי – גם אצל מי ששיתפת איתו
+• תצא/י מ-${others} רשימות של אחרים (הן יישארו אצלם)
+• ההיסטוריה, המתכונים וההזמנות שברשימות שלך יימחקו
+
+אי אפשר לבטל את זה.`)) return;
+    if (prompt('כדי לאשר, כתבו "מחיקה"') !== "מחיקה") return toast("המחיקה בוטלה");
+    closeSheet(); toast("מוחק…");
+    try {
+      const full = await Cloud.deleteAccount(myLists.map(l => ({ id: l.id, owner: l.owner })));
+      try { for (const k of Object.keys(localStorage)) if (k.startsWith("superlist-")) localStorage.removeItem(k); } catch {}
+      alert(full ? "החשבון וכל הנתונים נמחקו." : "כל הנתונים נמחקו והתנתקתם. כדי למחוק גם את רישום ההתחברות עצמו: התחברו שוב, ולחצו שוב על \"מחיקת החשבון\" (Google מבקשת התחברות טרייה לפני מחיקה).");
+      location.reload();
+    } catch (err) { toast("המחיקה נכשלה: " + (err.code || err.message)); }
+  };
 }
 
 // ================= ייבוא רשימת קניות (מכל מקום: וואטסאפ, פתקים, AddIt, Keep…) =================
@@ -2643,6 +2662,7 @@ function renderHelp() {
     <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
+    <li><b>🔒 פרטיות ומחיקת חשבון:</b> <a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a>. מחיקת החשבון וכל הנתונים – ב"👥 שיתוף הרשימה".</li>
     <li><b>🔔 תזכורות בטלפון</b> (הגדרות, באפליקציית האנדרואיד): הודעה כשמוצר קבוע חוזר לרשימה, וכשמשהו כנראה נגמר – גם כשהאפליקציה סגורה.</li>
     <li><b>🛒 אחרי מילוי עגלה:</b> אם מוצרים לא עברו לאתר הספק, הם מופיעים בראש הרשימה עם הסיבה. מוצרים שונים ברשימה שהתאימו לאותו מוצר באתר – אוחדו לשורה אחת עם הכמות הכוללת.</li>
     <li><b>🏪 יוחננוף</b> – איסוף עצמי מהסניף בלבד (אין משלוח עד הבית).</li>

@@ -4,7 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut,
-  signInWithCredential,
+  signInWithCredential, deleteUser,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, query, where, onSnapshot,
@@ -110,6 +110,20 @@ window.Cloud = {
     return deleteDoc(doc(db, "lists", id));
   },
   leaveList(id) { return updateDoc(doc(db, "lists", id), { members: arrayRemove(this.email()) }); },
+
+  // מחיקת החשבון: הרשימות שלך נמחקות (גם אצל השותפים), מרשימות של אחרים יוצאים, וחשבון ההתחברות נמחק.
+  // lists: [{id, owner}] (מה ש-lists() החזיר). מחזיר true אם גם חשבון ההתחברות נמחק.
+  async deleteAccount(lists) {
+    const me = this.email();
+    for (const l of lists) {
+      if ((l.owner || "") === me) await this.deleteList(l.id);
+      else await this.leaveList(l.id).catch(() => {});
+    }
+    let removed = true;
+    try { await deleteUser(auth.currentUser); } catch { removed = false; }   // לפעמים Google דורשת התחברות מחדש לפני מחיקה
+    await this.signOut().catch(() => {});
+    return removed;
+  },
 
   // מספרי הסניפים שנבחרו ברשימה (בלי שום מידע אישי) - כדי שהעדכון האוטומטי ב-GitHub ידע אילו מחירים להוריד
   setPublicStores(stores) {
