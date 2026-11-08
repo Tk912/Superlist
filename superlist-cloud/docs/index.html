@@ -1071,7 +1071,7 @@ function sendSheet() {
       <button class="btn small ${sendSort === "fast" ? "" : "ghost"} grow" data-sort="fast" ${hasExt() ? "" : "disabled"}>⚡ לפי משלוח קרוב</button></div>
     ${!hasExt() && !inApp ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
     <div class="card">${(sendSort === "fast" && slots ? [...order].sort((a, b) => (slots[a]?.from || "9") .localeCompare(slots[b]?.from || "9")) : order).map(c => `<div class="result row" data-fill="${c}">
-      <div class="grow"><b>${CART_NAMES[c]}</b>${pickupTag(c)} ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
+      <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
       <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר${isEstimate(c) ? " (הערכה)" : ""}` : cartTotal(c) ? `🧾 בעגלה בפועל: ${money(cartTotal(c).total)} (${ago(cartTotal(c).at)})` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירים) – אחרי מילוי יוצג הסכום שבעגלה" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
       ${totals[c] ? cartTotalLine(c) : ""}${slotLine(c)}</div>
       <span>←</span></div>`).join("")}</div>
@@ -1786,6 +1786,7 @@ function requestSlots(force = false) {
   });
 }
 const slotLine = c => {
+  if (PICKUP_ONLY.has(c)) return `<div class="muted" style="font-size:12px">🏪 איסוף עצמי מהסניף (אין משלוח)</div>`;
   if (!hasExt()) return "";
   const r = slots?.[c];
   if (!r) return slotsLoading ? `<div class="muted" style="font-size:12px">⏳ בודק מועד משלוח…</div>` : "";
@@ -1804,13 +1805,15 @@ function altLine(chain) {
 // כרטיס "מועדי משלוח": המשלוח הקרוב בכל אחת מהרשתות (גם בלי השוואת מחירים), הקרוב ביותר למעלה
 function deliveryCard() {
   if (!hasExt() || !S.settings.address?.city) return "";
-  const list = [...CART_CHAINS, ...(selected().wolt ? ["wolt"] : [])];
+  // רשתות של איסוף עצמי בלבד לא מופיעות כאן (אין להן משלוח)
+  const list = [...CART_CHAINS, ...(selected().wolt ? ["wolt"] : [])].filter(c => !PICKUP_ONLY.has(c));
   if (!slots) return `<h2>🚚 מועדי משלוח</h2><div class="card muted">${slotsLoading ? "⏳ בודק מועדי משלוח בכל הרשתות…" : "אין עדיין מידע על מועדי משלוח."}</div>`;
   const key = c => slots[c]?.ok ? (slots[c].from || "0") : "9" + (slots[c] ? "0" : "1");
   const order = list.sort((a, b) => key(a).localeCompare(key(b)));
   return `<h2>🚚 מועדי משלוח</h2><div class="card">
     ${order.map(c => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)">
-      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}${PICKUP_ONLY.has(c) ? ` <span class="muted" style="font-size:12px;font-weight:400">(איסוף עצמי)</span>` : ""}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, PICKUP_ONLY.has(c) ? "איסוף: " : "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
+      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
+    <div class="muted" style="font-size:12px;margin-top:6px">🏪 ${[...PICKUP_ONLY].map(c => esc(CART_NAMES[c])).join(", ")} – איסוף עצמי מהסניף בלבד, בלי משלוח.</div>
     <div class="row" style="margin-top:6px"><span class="muted grow" style="font-size:12px">לפי הכתובת בהגדרות · ${slotsAt ? ago(slotsAt) : ""}</span>
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
