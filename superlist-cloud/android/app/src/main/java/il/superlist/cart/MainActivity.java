@@ -136,6 +136,11 @@ public class MainActivity extends Activity {
                 js("window.onCartTotals&&onCartTotals(" + totals + ")");
                 p.edit().remove("cartTotals").apply();
             }
+            String report = p.getString("cartReport", null);
+            if (report != null) {
+                js("window.onCartReport&&onCartReport(" + report + ")");
+                p.edit().remove("cartReport").apply();
+            }
         }
     }
 

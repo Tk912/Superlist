@@ -57,6 +57,9 @@
   const NOISE = new Set(["רמי", "לוי", "שופרסל", "יוחננוף", "קרפור", "ויקטורי", "חצי", "חינמ", "בדצ", "כשר", "גרמ", "גר", "ג", "קג", "ל", "ליטר", "מל", "יח"]);
   const wm = (q, n) => n === q || (q.length >= 4 && n.startsWith(q)) || (n.length >= 4 && q.startsWith(n) && q.length - n.length <= 1);
   const same = (a, b) => words(a).join(" ") === words(b).join(" ");
+  // מילים שהופכות מוצר למוצר אחר ("תות קפוא" מול "תות קפוא בציפוי שוקולד") – אם הן לא ברשימה, המוצר מאחור
+  const MODS = /^(ב?ציפוי|מצופ|ב?שוקולד|ב?טעמ|ממולא|ב?מילוי|ממותק|מסוכר|ב?קרמ|מטוגנ|בטמפורה|ב?רוטב|מרוכז|אבקת)$/;
+  const extraMods = (ns, qs) => ns.filter(n => MODS.test(n) && !qs.includes(n)).length;
   const less = (a, b) => { const i = a.findIndex((v, k) => v !== b[k]); return i >= 0 && a[i] < b[i]; };
   // product: השם המדויק מקובץ המחירים (מחמירים פחות – שמות באתר ובקובץ כתובים קצת אחרת); name: מה שכתוב ברשימה
   function pick(list, nameOf, { product, name, weighted, isWeighted }) {
@@ -73,7 +76,7 @@
         const hit = qs.filter(w => ns.some(n => wm(w, n))).length / qs.length;
         if (hit < need) continue;
         // אחרי ההתאמה עצמה – הסדר של האתר (הנפוץ קודם)
-        const key = [-hit, weighted && isWeighted && !isWeighted(p) ? 1 : 0, wm(qs[0], ns[0]) ? 0 : 1, rank];
+        const key = [-hit, extraMods(ns, qs), weighted && isWeighted && !isWeighted(p) ? 1 : 0, wm(qs[0], ns[0]) ? 0 : 1, rank];
         if (!best || less(key, best.key)) best = { key, p };
       }
       if (best) return { found: best.p };
@@ -193,22 +196,37 @@
         if (!found) { const m = await searchPick(async q => (await find(q)).filter(p => p.IsInStock !== false), p => p.Name, this.it, p => !!p.IsShakil); found = m.found; if (!found) return notFound(m); }
         const byKg = !!found.IsShakil;
         const quantity = byKg ? round05(kg) : units(this.it);
-        const res = await call("item/addItemToCart", { Object: { ItemId: found.Id, Quantity: quantity, Type: byKg ? 2 : 1, IsCalculateCart: true } });
+        // באתר הזה הוספה חוזרת של אותו מוצר מחליפה את הכמות (לא מוסיפה). שני פריטים ברשימה שהם אותו מוצר – מחברים
+        const tot = window.__slTot ||= {}, locks = window.__slLocks ||= {};
+        const run = (locks[found.Id] || Promise.resolve()).then(async () => {
+          const before = tot[found.Id] || 0, sum = Math.round((before + quantity) * 100) / 100;
+          const res = await call("item/addItemToCart", { Object: { ItemId: found.Id, Quantity: sum, Type: byKg ? 2 : 1, IsCalculateCart: true } });
+          if (res?.IsOK) tot[found.Id] = sum;
+          return { res, before, sum };
+        });
+        locks[found.Id] = run.catch(() => {});
+        const { res, before, sum } = await run;
         if (!res?.IsOK) return { ok: false, reason: res?.ErrorResponse?.ErrorDescription?.slice(0, 80) || "האתר דחה" };
-        return { ok: true, product: found.Name, note: byKg ? quantity + " ק\"ג" : "×" + quantity };
+        return { ok: true, product: found.Name, merged: before > 0, note: (byKg ? sum + " ק\"ג" : "×" + sum) + (before > 0 ? " (אוחד עם פריט קודם)" : "") };
       },
       done: () => { location.href = "/checkout/cart"; },
     },
     yochananof: {
       match: /yochananof\.co\.il$/,
       ready: () => document.readyState !== "loading",
-      logged: async () => !!localStorage.getItem("token"),
+      logged: async () => !!(localStorage.getItem("token") || localStorage.getItem("remember-me-token")),
+      async prepare() {
+        const token = localStorage.getItem("token"), store = localStorage.getItem("storeId");
+        const headers = { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(store ? { Store: store } : {}) };
+        const gql = async query => (await fetch("https://api.yochananof.co.il/graphql", { method: "POST", headers, body: JSON.stringify({ query }) })).json();
+        window.__slCart = token ? (await gql("{ customerCart { id } }")).data?.customerCart?.id
+          : (localStorage.getItem("cartId") || (await gql("mutation { createEmptyCart }")).data?.createEmptyCart);
+      },
       async add({ name, code, kg, weighted, product }) {
         const token = localStorage.getItem("token"), store = localStorage.getItem("storeId");
         const headers = { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(store ? { Store: store } : {}) };
         const gql = async (query, variables = {}) => (await fetch("https://api.yochananof.co.il/graphql", { method: "POST", headers, body: JSON.stringify({ query, variables }) })).json();
-        if (!window.__slCart) window.__slCart = token ? (await gql("{ customerCart { id } }")).data?.customerCart?.id
-          : (localStorage.getItem("cartId") || (await gql("mutation { createEmptyCart }")).data?.createEmptyCart);
+        if (!window.__slCart) await this.site?.prepare?.();
         if (!window.__slCart) return { ok: false, reason: "לא נמצאה עגלה" };
         const find = async q => (await gql("query($q:String!){ products(search:$q, pageSize:20){ items { sku name stock_status } } }", { q })).data?.products?.items || [];
         let found = null;
@@ -221,7 +239,11 @@
         if (err) return { ok: false, reason: err.slice(0, 80) };
         return { ok: true, product: found.name, note: weighted ? quantity + " ק\"ג" : "×" + quantity };
       },
-      done: () => { location.href = "/checkout"; },
+      // האתר שומר עותק של העגלה במטמון (Service Worker) ומציג אותו – בלי למחוק אותו, העגלה נראית ריקה
+      async done() {
+        try { for (const n of await caches.keys()) { const c = await caches.open(n); for (const r of await c.keys()) if (/operationName=(Cart|CustomerCart|MiniCart)/i.test(r.url)) await c.delete(r); } } catch {}
+        location.href = "/checkout";
+      },
     },
   };
 
@@ -251,17 +273,42 @@
   try { before = site.existing ? site.existing() : 0; } catch {}
   if (before) row(false, `בעגלה באתר כבר היו ${before} מוצרים מלפני (לא מהרשימה)`, "כדאי לבדוק ולהסיר בעגלה מה שלא צריך");
 
-  let ok = 0;
-  for (const [i, it] of job.items.entries()) {
-    head(`מוסיף לעגלה: ${i + 1} מתוך ${job.items.length}`);
-    let r;
-    try { r = await site.add.call({ it }, it); } catch (e) { r = { ok: false, reason: String(e.message || e).slice(0, 80) }; }
-    if (r.ok) ok++;
-    row(r.ok, it.name, r.ok ? `${r.product} · ${r.note}` : r.reason);
-  }
+  // 4 מוצרים במקביל (חיפוש והוספה) – הרבה יותר מהיר מאחד-אחד
+  const n = job.items.length, results = new Array(n);
+  let next = 0, doneCount = 0;
+  if (site.prepare) { try { await site.prepare(); } catch {} }
+  const worker = async () => {
+    while (next < n) {
+      const k = next++, it = job.items[k];
+      let r;
+      try { r = await site.add.call({ it, site }, it); } catch (e) { r = { ok: false, reason: String(e.message || e).slice(0, 80) }; }
+      results[k] = r;
+      head(`מוסיף לעגלה: ${++doneCount} מתוך ${n}`);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, n) }, worker));
+  // קודם מה שלא עבר, ואז מה שעבר (בסדר של הרשימה)
+  const failed = [], merged = [];
+  results.forEach((r, k) => { if (!r.ok) { failed.push({ name: job.items[k].name, reason: r.reason }); row(false, job.items[k].name, r.reason); } });
+  results.forEach((r, k) => { if (r.ok) { if (r.merged) merged.push(job.items[k].name); row(true, job.items[k].name, `${r.product} · ${r.note}`); } });
+  const ok = n - failed.length;
   sessionStorage.removeItem("__sl_job");
-  head(`✅ נוספו ${ok} מתוך ${job.items.length}. עוברים לעגלה – בדוק ושלם בעצמך.`);
-  await sleep(2500);
-  await site.done();
+  // הדוח חוזר לאפליקציה (מופיע בראש הרשימה): מה לא עבר, ומה אוחד
+  const report = { chain: job.chain || null, at: Date.now(), total: n, ok, failed, merged };
+  try { window.SuperlistCart?.report(JSON.stringify(report)); } catch {}
+  if (!failed.length) {
+    head(`✅ כל ${n} המוצרים נוספו${merged.length ? ` (${merged.length} אוחדו עם מוצר זהה)` : ""}. עוברים לעגלה – בדקו ושלמו בעצמכם.`);
+    await sleep(2500);
+    await site.done();
+    window.__slRunning = false;
+    return;
+  }
+  // יש מוצרים שלא עברו: לא עוברים לבד – שיהיה זמן לראות מה חסר
+  head(`⚠️ נוספו ${ok} מתוך ${n}. ${failed.length} לא עברו – מסומנים ב-✕ למטה (אפשר להוסיף אותם ידנית באתר).`);
+  const go = document.createElement("button");
+  go.textContent = "המשך לעגלה ←";
+  go.style.cssText = "display:block;width:100%;margin:8px 0;padding:10px;border:0;border-radius:10px;background:#0f7a4a;color:#fff;font:600 15px system-ui;cursor:pointer";
+  go.onclick = async () => { await site.done(); };
+  box.querySelector("#__sl_head").after(go);
   window.__slRunning = false;
 })();

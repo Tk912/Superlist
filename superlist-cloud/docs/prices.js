@@ -28,8 +28,11 @@ const PriceDB = (() => {
     const ok = (q, i) => ns.some(n => wm(q, n) || (typing && i === last && q.length >= 2 && n.startsWith(q)));
     if (!qs.every(ok)) return null;
     const exact = qs.filter(q => ns.includes(q)).length;
-    return [ns[0] === qs[0] ? 0 : wm(qs[0], ns[0]) ? 1 : 2, qs.length - exact, ns.length - qs.length];
+    return [ns[0] === qs[0] ? 0 : wm(qs[0], ns[0]) ? 1 : 2, qs.length - exact, ns.length - qs.length, extraMods(ns, qs)];
   }
+  // מילים שהופכות מוצר למוצר אחר ("תות קפוא" מול "תות קפוא בציפוי שוקולד"): אם לא כתבו אותן, המוצר מאחור
+  const MODS = /^(ב?ציפוי|מצופה?|ב?שוקולד|ב?טעמ|ממולא|ב?מילוי|ממותק|מסוכר|ב?קרמ|מטוגנ|בטמפורה|ב?רוטב|מרוכז|אבקת)$/;
+  const extraMods = (ns, qs) => ns.filter(n => MODS.test(n) && !qs.includes(n)).length;
   const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1; return 0; };
 
   // ---------- טעינה ----------
@@ -79,7 +82,7 @@ const PriceDB = (() => {
     for (const [chain, d] of Object.entries(data)) {
       for (const it of d.items) {
         const [code, name, price, w, ns] = it;
-        const score = digits ? (code === digits ? [0, 0, 0] : null) : nameScore(qs, ns, typing);
+        const score = digits ? (code === digits ? [0, 0, 0, 0] : null) : nameScore(qs, ns, typing);
         if (!score) continue;
         // מוצרים במשקל (ירקות, פירות) מקבלים קוד אחר בכל רשת, אז מקבצים אותם לפי שם
         const key = w ? "w:" + ns.join(" ") : code;
@@ -90,8 +93,8 @@ const PriceDB = (() => {
       }
     }
     return [...groups.values()]
-      .sort((a, b) => cmp([a.score[0], a.score[1], -Object.keys(a.prices).length, a.score[2], a.name.length],
-                          [b.score[0], b.score[1], -Object.keys(b.prices).length, b.score[2], b.name.length]))
+      .sort((a, b) => cmp([a.score[0], a.score[1], a.score[3], -Object.keys(a.prices).length, a.score[2], a.name.length],
+                          [b.score[0], b.score[1], b.score[3], -Object.keys(b.prices).length, b.score[2], b.name.length]))
       .slice(0, limit);
   }
 
@@ -353,7 +356,7 @@ const PriceDB = (() => {
   // האם המילה מופיעה בשמות המוצרים (לפיצול משפט מוקלט: "חלב ולחם" -> חלב, לחם)
   const isWord = w => getVocab().has(stem(w));
   // האם שם המוצר מתאים למה שכתוב ברשימה (לבדיקת התאמות אוטומטיות ישנות)
-  const matches = (name, product) => !!nameScore(stems(name), stems(product));
+  const matches = (name, product) => { const s = nameScore(stems(name), stems(product)); return !!s && !s[3]; };
 
   return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, history, split, ownBrand, images, compare, stores, info: () => ({ status, data, local }) };
 })();

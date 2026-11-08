@@ -16,6 +16,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -130,6 +131,18 @@ public class CartActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
         web.setWebChromeClient(new WebChromeClient()); // חלונות confirm/prompt של האתר ושל המילוי
+        // הדוח של המילוי (מה עבר, מה לא, מה אוחד) – נשמר, ובחזרה לרשימה מוצג בראשה
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface public void report(String json) {
+                getSharedPreferences("superlist", MODE_PRIVATE).edit().putString("cartReport", json).apply();
+                try {
+                    JSONObject r = new JSONObject(json);
+                    int failed = r.optJSONArray("failed") == null ? 0 : r.getJSONArray("failed").length();
+                    String msg = SITES.get(chain)[0] + ": " + (failed == 0 ? "✅ כל " + r.optInt("total") + " המוצרים נוספו" : "⚠️ " + failed + " מוצרים לא עברו – הם יופיעו בראש הרשימה");
+                    ui.post(() -> status.setText(msg));
+                } catch (Exception ignored) { }
+            }
+        }, "SuperlistCart");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {

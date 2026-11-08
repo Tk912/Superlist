@@ -218,6 +218,9 @@ const CATS = [
 ];
 // רשתות שאפשר למלא בהן עגלה אוטומטית (לויקטורי אין קובצי מחירים, רק מילוי עגלה)
 const CART_CHAINS = ["shufersal", "ramilevy", "carrefour", "hazihinam", "yochananof", "tivtaam", "victory"];
+// רשתות שבהן אין משלוח עד הבית – רק איסוף עצמי מהסניף (יוחננוף אונליין: "פיק אפ")
+const PICKUP_ONLY = new Set(["yochananof"]);
+const pickupTag = c => PICKUP_ONLY.has(c) ? ` <span class="who">🏪 איסוף עצמי</span>` : "";
 const CART_NAMES = { shufersal: "שופרסל", ramilevy: "רמי לוי", carrefour: "קרפור", hazihinam: "חצי חינם", yochananof: "יוחננוף", tivtaam: "טיב טעם", victory: "ויקטורי", wolt: "וולט מרקט" };
 const ME_KEY = "superlist-me";
 let me = (() => { try { return localStorage.getItem(ME_KEY) || ""; } catch { return ""; } })();
@@ -1032,6 +1035,7 @@ function renderList() {
     <button class="btn">הוסף</button>
     <div class="ac hidden" id="ac" role="listbox"></div>
   </form>
+  ${fillReportCard()}
   ${sn ? `<div class="warn" style="background:var(--accent-soft);color:var(--text)">🛍️ <b>${esc(sn.by)}</b> בסופר עכשיו${sn.chain ? ` (${esc(chains[sn.chain] || sn.chain)})` : ""} – מה שתוסיפו לרשימה יופיע מיד במסך הקנייה.</div>` : ""}
   ${updateBanner()}
   ${installBanner()}
@@ -1067,7 +1071,7 @@ function sendSheet() {
       <button class="btn small ${sendSort === "fast" ? "" : "ghost"} grow" data-sort="fast" ${hasExt() ? "" : "disabled"}>⚡ לפי משלוח קרוב</button></div>
     ${!hasExt() && !inApp ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
     <div class="card">${(sendSort === "fast" && slots ? [...order].sort((a, b) => (slots[a]?.from || "9") .localeCompare(slots[b]?.from || "9")) : order).map(c => `<div class="result row" data-fill="${c}">
-      <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
+      <div class="grow"><b>${CART_NAMES[c]}</b>${pickupTag(c)} ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
       <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר${isEstimate(c) ? " (הערכה)" : ""}` : cartTotal(c) ? `🧾 בעגלה בפועל: ${money(cartTotal(c).total)} (${ago(cartTotal(c).at)})` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירים) – אחרי מילוי יוצג הסכום שבעגלה" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
       ${totals[c] ? cartTotalLine(c) : ""}${slotLine(c)}</div>
       <span>←</span></div>`).join("")}</div>
@@ -1758,7 +1762,7 @@ function fmtSlot(r) {
 // הרשת עם המשלוח הקרוב ביותר (Wolt Market נחשבת רק אם נבחרה חנות שלה)
 function fastestChain(chainsList) {
   if (!slots) return null;
-  const cands = chainsList.filter(c => slots[c]?.ok && (c !== "wolt" || selected().wolt));
+  const cands = chainsList.filter(c => slots[c]?.ok && !PICKUP_ONLY.has(c) && (c !== "wolt" || selected().wolt));
   if (cands.includes("wolt")) return "wolt";
   return cands.filter(c => slots[c].from).sort((a, b) => slots[a].from.localeCompare(slots[b].from))[0] || null;
 }
@@ -1806,7 +1810,7 @@ function deliveryCard() {
   const order = list.sort((a, b) => key(a).localeCompare(key(b)));
   return `<h2>🚚 מועדי משלוח</h2><div class="card">
     ${order.map(c => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)">
-      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
+      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}${PICKUP_ONLY.has(c) ? ` <span class="muted" style="font-size:12px;font-weight:400">(איסוף עצמי)</span>` : ""}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, PICKUP_ONLY.has(c) ? "איסוף: " : "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
     <div class="row" style="margin-top:6px"><span class="muted grow" style="font-size:12px">לפי הכתובת בהגדרות · ${slotsAt ? ago(slotsAt) : ""}</span>
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
@@ -1930,7 +1934,7 @@ function basketCard() {
     </div>`;
   return `<h2>💰 מחיר הסל</h2><div class="card">${staleWarn()}${budgetWarn(best)}${summary}
     ${ranked.map(x => `<div class="chain-card">
-      <div class="grow"><div class="row"><b>${esc(x.name)}</b>${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
+      <div class="grow"><div class="row"><b>${esc(x.name)}</b>${pickupTag(x.chain)}${isEstimate(x.chain) ? `<span class="who">הערכה</span>` : ""}${x === best && x.found ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
         <div class="muted">${x.found === total ? "כל המוצרים" : `${x.found} מתוך ${total} מוצרים · חסר: ${esc(x.missing.slice(0, 2).join(", "))}${x.missing.length > 2 ? "…" : ""}`}${x.promos ? ` · 🏷️ ${x.promos} במבצע` : ""}${isEstimate(x.chain) ? ` · ${ESTIMATE_NOTE}` : ""}</div>
         ${altLine(x.chain)}
         ${cartTotalLine(x.chain)}</div>
@@ -2319,6 +2323,27 @@ const ONLINE_VERSION = 3;
 const NO_ONLINE_PRICES = {
   victory: "ויקטורי לא מפרסמת כרגע קובצי מחירים (גם לא באתר השקיפות שלה), לכן אין לה השוואה. מילוי עגלה עובד, ואחריו מוצג הסכום שבעגלה.",
 };
+// ---------- הדוח של מילוי העגלה: מה לא עבר לאתר הספק, ומה אוחד ----------
+// מגיע מהמילוי (cart.js דרך האפליקציה), נשמר ברשימה ומוצג בראשה עד "הבנתי"
+window.onCartReport = r => {
+  if (!r || !r.total) return;
+  S.settings.lastFill = { chain: r.chain, at: r.at || now(), total: r.total, ok: r.ok, failed: (r.failed || []).slice(0, 60), merged: (r.merged || []).slice(0, 60) };
+  S.settings.t = now(); commit();
+  if (r.failed?.length) toast(`⚠️ ${r.failed.length} מוצרים לא עברו ל${CART_NAMES[r.chain] || "אתר"} – מופיעים בראש הרשימה`);
+};
+function fillReportCard() {
+  const r = S.settings.lastFill;
+  if (!r || r.dismissed || now() - r.at > 3 * 864e5 || (!r.failed.length && !r.merged.length)) return "";
+  const place = CART_NAMES[r.chain] || "אתר הספק";
+  return `<div class="card" style="border:2px solid #b5470b;margin-bottom:10px">
+    <b>${r.failed.length ? `⚠️ ${r.failed.length} מתוך ${r.total} מוצרים לא עברו ל${esc(place)}` : `✅ כל המוצרים עברו ל${esc(place)}`}</b>
+    <span class="muted" style="font-size:12px"> · ${ago(r.at)}</span>
+    ${r.failed.map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">✕ <b>${esc(x.name)}</b>${x.reason ? `<div class="muted" style="font-size:12px">${esc(x.reason)}</div>` : ""}</div>`).join("")}
+    ${r.merged.length ? `<div class="muted" style="font-size:13px;margin-top:6px">🔗 אוחדו עם מוצר זהה שכבר היה בעגלה (שורה אחת באתר, הכמות חוברה): ${esc(r.merged.join(", "))}</div>` : ""}
+    ${r.failed.length ? `<div class="muted" style="font-size:12px;margin-top:6px">אפשר להוסיף אותם ידנית באתר, או לבחור להם מוצר אחר (🔗 באריח) ולמלא שוב.</div>` : ""}
+    <button class="btn small ghost" style="width:100%;margin-top:8px" data-act="fill-report-ok">הבנתי</button></div>`;
+}
+
 // ---------- "בעגלה בפועל": הסכום שהאתר הציג בעגלה אחרי מילוי באפליקציה ----------
 // נשמר ברשימה המשותפת (גם השותף רואה), תקף 3 ימים
 const CART_TOTAL_DAYS = 3;
@@ -2611,6 +2636,8 @@ function renderHelp() {
     <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
     <li><b>🔔 תזכורות בטלפון</b> (הגדרות, באפליקציית האנדרואיד): הודעה כשמוצר קבוע חוזר לרשימה, וכשמשהו כנראה נגמר – גם כשהאפליקציה סגורה.</li>
+    <li><b>🛒 אחרי מילוי עגלה:</b> אם מוצרים לא עברו לאתר הספק, הם מופיעים בראש הרשימה עם הסיבה. מוצרים שונים ברשימה שהתאימו לאותו מוצר באתר – אוחדו לשורה אחת עם הכמות הכוללת.</li>
+    <li><b>🏪 יוחננוף</b> – איסוף עצמי מהסניף בלבד (אין משלוח עד הבית).</li>
     <li><b>📱 ווידג'ט למסך הבית</b> (באפליקציית האנדרואיד): לחיצה ארוכה על מסך הבית ← ווידג'טים ← "הסל החכם". שלושה כפתורים: הוספה לרשימה, הוספה בקול, ומצב קנייה.</li>
     <li><b>📝 הערה למוצר:</b> לחיצה ארוכה על מוצר ← "הערה" (למשל "רק בלי גלוטן"). ההערה מופיעה באריח, וכל השותפים רואים אותה.</li>
     <li><b>🛍️ "אני בסופר":</b> כשמישהו נכנס למצב קנייה, השותפים ברשימה רואים הודעה – זה הזמן להוסיף מה שחסר.</li>
@@ -2825,6 +2852,7 @@ $("#view").addEventListener("click", e => {
     case "dept-order": return deptOrderSheet();
     case "recurring": return recurringSheet();
     case "cook-have": return cookHaveSheet();
+    case "fill-report-ok": if (S.settings.lastFill) { S.settings.lastFill.dismissed = true; S.settings.t = now(); commit(); } return;
     case "notif-on": return enableNotif();
     case "notif-off": try { localStorage.removeItem(NOTIF_KEY); } catch {} syncReminders(); toast("התזכורות כובו"); return render();
     case "notif-test": return window.SuperlistNative.testReminder();
