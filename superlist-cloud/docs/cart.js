@@ -334,6 +334,8 @@
   // הדוח חוזר לאפליקציה (מופיע בראש הרשימה): מה לא עבר, ומה אוחד
   const report = { chain: job.chain || null, at: Date.now(), total: n, ok, lines, failed, merged, substituted };
   try { window.SuperlistCart?.report(JSON.stringify(report)); } catch {}
+  // במחשב: הלשונית של הרשימה (שפתחה את הסופר) מקבלת את הדוח ומציגה אותו בראש הרשימה
+  try { window.opener?.postMessage({ type: "superlist-fill-report", report }, "https://tk912.github.io"); } catch {}
   const subNote = substituted.length ? ` · 🔄 ${substituted.length} לא נמצאו ונוסף במקומם תחליף (מסומנים למטה)` : "";
   if (!failed.length && !substituted.length) {
     head(`✅ כל ${n} המוצרים נוספו${mergedNote}. עוברים לעגלה – בדקו ושלמו בעצמכם.`);

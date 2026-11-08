@@ -306,7 +306,8 @@ def _promos_from_xml(root, today):
         f = _fields(el)
         # "0" / "0 - כלל הלקוחות" = לכולם; כל מועדון אחר – לא
         clubs = {(c.text or "").strip() for c in el.iter() if _local(c.tag) == "clubid"}
-        if any(c and not re.match(r"0(\D|$)", c) for c in clubs):
+        # קופון (למשל "קופון מתנה") אינו הנחה במחיר – לא נחשב
+        if any(c and not re.match(r"0(\D|$)", c) for c in clubs) or f.get("additionaliscoupon") == "1":
             continue
         start = (f.get("promotionstartdate") or f.get("promotionstartdatetime") or "")[:10]
         end = (f.get("promotionenddate") or f.get("promotionenddatetime") or "")[:10]

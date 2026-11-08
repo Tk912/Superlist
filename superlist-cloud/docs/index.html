@@ -1329,7 +1329,8 @@ async function fillCart(chain) {
   let copied = false;
   try { await navigator.clipboard.writeText(job); copied = true; } catch {}
   // הרשימה עוברת גם בכתובת (#sl=...), וגם בלוח – מה שהאתר ישאיר
-  window.open(CART_URLS[chain] + "#sl=" + b64url(job), "_blank", "noopener");
+  // בלי noopener: כך המילוי בלשונית של הסופר יכול להחזיר לכאן את הדוח (מה לא עבר) – ראו onFillMessage
+  window.open(CART_URLS[chain] + "#sl=" + b64url(job), "_blank");
   sheet(`<h2 style="margin-top:0">🛒 ${esc(CART_NAMES[chain])} נפתח בלשונית חדשה</h2>
     <div class="card">
       <div><b>1.</b> אם צריך, התחבר לחשבון שלך באתר.</div>
@@ -2351,6 +2352,13 @@ const NO_ONLINE_PRICES = {
 };
 // ---------- הדוח של מילוי העגלה: מה לא עבר לאתר הספק, ומה אוחד ----------
 // מגיע מהמילוי (cart.js דרך האפליקציה), נשמר ברשימה ומוצג בראשה עד "הבנתי"
+// במחשב: המילוי רץ בלשונית של הסופר ושולח את הדוח ללשונית הזו. מקבלים רק מהאתרים של הרשתות.
+const CART_HOSTS = /(^|\.)(shufersal|rami-levy|carrefour|tivtaam|victoryonline|hazi-hinam|yochananof)\.co\.il$/;
+window.addEventListener("message", e => {
+  if (e.data?.type !== "superlist-fill-report") return;
+  try { if (!CART_HOSTS.test(new URL(e.origin).hostname)) return; } catch { return; }
+  window.onCartReport(e.data.report);
+});
 window.onCartReport = r => {
   if (!r || !r.total) return;
   S.settings.lastFill = { chain: r.chain, at: r.at || now(), total: r.total, ok: r.ok, lines: r.lines ?? null, failed: (r.failed || []).slice(0, 60), merged: (r.merged || []).slice(0, 60), substituted: (r.substituted || []).slice(0, 60) };
@@ -2435,22 +2443,54 @@ async function parsePriceFile(buf) {
   }
   return items;
 }
-// הקישור לקובץ האחרון של הסניף
+// קובץ PromoFull (gz) -> {ברקוד: [מחיר ליחידה במבצע, כמות מינימום, תיאור, עד תאריך]} – אותו היגיון כמו ב-scripts/prices.py:
+// רק מבצעי מחיר פעילים ופתוחים לכולם (לא מועדון, לא קופון), והמחיר ליחידה = המחיר הכולל לכמות המינימום / הכמות
+async function parsePromoFile(buf, items) {
+  const xml = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  const regular = new Map(items.map(i => [i[0], i[2]]));
+  const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const field = (s, tag) => { const m = s.match(new RegExp(`<${tag}\\s*>([^<]*)<`, "i")); return m ? m[1].trim() : ""; };
+  const unitOf = s => {
+    const minq = parseFloat(field(s, "MinQty")) || 1, total = parseFloat(field(s, "DiscountedPrice"));
+    const unit = total > 0 ? total / minq : parseFloat(field(s, "DiscountedPricePerMida"));
+    return unit > 0 ? [unit, minq] : null;
+  };
+  const out = {};
+  for (const m of xml.matchAll(/<Promotion>([\s\S]*?)<\/Promotion>/g)) {
+    const p = m[1];
+    const clubs = [...p.matchAll(/<ClubID\s*>([^<]*)</gi)].map(x => x[1].trim());
+    if (clubs.some(c => c && !/^0(\D|$)/.test(c)) || field(p, "AdditionalIsCoupon") === "1") continue;
+    const start = (field(p, "PromotionStartDate") || field(p, "PromotionStartDateTime")).slice(0, 10);
+    const end = (field(p, "PromotionEndDate") || field(p, "PromotionEndDateTime")).slice(0, 10);
+    if ((start && start > today) || (end && end < today)) continue;
+    const desc = xmlText(field(p, "PromotionDescription")).replace(/\s+/g, " ").slice(0, 60);
+    const head = p.split(/<(?:PromotionItems|Groups)>/i)[0], base = unitOf(head);
+    for (const it of p.matchAll(/<(Item|PromotionItem)>([\s\S]*?)<\/\1>/g)) {
+      const code = field(it[2], "ItemCode").replace(/^0+/, "");
+      const own = /DiscountedPrice/i.test(it[2]) ? unitOf(it[2]) : null, u = own || base, reg = regular.get(code);
+      // הנחה של יותר מ-75% היא כמעט תמיד טעות בקובץ
+      if (!code || !u || reg == null || u[0] >= reg - 0.005 || u[0] < reg * 0.25) continue;
+      if (!out[code] || u[0] < out[code][0]) out[code] = [Math.round(u[0] * 100) / 100, Math.round(u[1] * 100) / 100, desc, end];
+    }
+  }
+  return out;
+}
+// הקישור לקובץ האחרון של הסניף. kind: "PriceFull" (מחירים) או "PromoFull" (מבצעים)
 const LOCAL_SOURCES = {
-  hazihinam: async store => {
-    const re = new RegExp(`https://hazihinamprod01[^"'\\s<>]*PriceFull\\d+-\\d+-${String(store).padStart(3, "0")}-[^"'\\s<>]+?\\.gz[^"'\\s<>]*`);
+  hazihinam: async (store, kind = "PriceFull") => {
+    const re = new RegExp(`https://hazihinamprod01[^"'\\s<>]*${kind}\\d+-\\d+-${String(store).padStart(3, "0")}-[^"'\\s<>]+?\\.gz[^"'\\s<>]*`);
     for (let p = 1; p <= 6; p++) {
-      const url = ((await fetchPage(`https://shop.hazi-hinam.co.il/Prices?p=${p}&s=&f=&t=1&d=`)).match(re) || [])[0];
+      const url = ((await fetchPage(`https://shop.hazi-hinam.co.il/Prices?p=${p}&s=&f=&t=${kind === "PromoFull" ? 2 : 1}&d=`)).match(re) || [])[0];
       if (url) return { url: url.replace(/&amp;/g, "&"), direct: true };
     }
     return null;
   },
-  carrefour: async store => {
+  carrefour: async (store, kind = "PriceFull") => {
     const html = await fetchPage("https://prices.carrefour.co.il/");
     const path = (html.match(/const path = '(\d+)'/) || [])[1];
     const files = JSON.parse((html.match(/const files = (\[.*?\]);/s) || [])[1] || "[]").map(f => f.name);
     const sid = String(store).padStart(3, "0");
-    const name = files.filter(n => new RegExp(`^PriceFull\\d+-\\d+-${sid}-`, "i").test(n)).sort().pop();
+    const name = files.filter(n => new RegExp(`^${kind}\\d+-\\d+-${sid}-`, "i").test(n)).sort().pop();
     return path && name ? { url: `https://prices.carrefour.co.il/${path}/${name}`, direct: false } : null;
   },
 };
@@ -2458,7 +2498,7 @@ async function localPrices(chain, store, force = false) {
   const key = `/local/${chain}-${store}.json`;
   let cached = null;
   try { const r = await (await caches.open(LOCAL_CACHE)).match(key); if (r) cached = await r.json(); } catch {}
-  if (cached && !force && Date.now() - cached.updated * 1000 < 12 * 36e5) return cached;
+  if (cached && cached.promos && !force && Date.now() - cached.updated * 1000 < 12 * 36e5) return cached;
   if (!canLocal(chain)) return cached;
   try {
     const src = await LOCAL_SOURCES[chain](store);
@@ -2466,7 +2506,13 @@ async function localPrices(chain, store, force = false) {
     const buf = src.direct ? await (await fetch(src.url)).arrayBuffer() : await fetchFile(src.url);
     const items = await parsePriceFile(buf);
     if (!items.length) return cached;
-    const json = { chain, store: String(store), updated: Date.now() / 1000, items, local: true };
+    // מבצעים: אם הקובץ לא זמין – ממשיכים בלי
+    let promos = {};
+    try {
+      const ps = await LOCAL_SOURCES[chain](store, "PromoFull");
+      if (ps) promos = await parsePromoFile(ps.direct ? await (await fetch(ps.url)).arrayBuffer() : await fetchFile(ps.url), items);
+    } catch (e) { console.warn("local promos", chain, e); }
+    const json = { chain, store: String(store), updated: Date.now() / 1000, items, promos, local: true };
     try { await (await caches.open(LOCAL_CACHE)).put(key, new Response(JSON.stringify(json))); } catch {}
     return json;
   } catch (e) { console.warn("local prices", chain, e); return cached; }
