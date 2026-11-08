@@ -96,7 +96,6 @@ public class CartActivity extends Activity {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        getWindow().setStatusBarColor(GREEN);
         chain = getIntent().getStringExtra("chain");
         job = getIntent().getStringExtra("job");
         if (chain == null || job == null || !SITES.containsKey(chain)) { toast("לא התקבלה רשימה"); finish(); return; }
@@ -160,6 +159,8 @@ public class CartActivity extends Activity {
             }
         });
         root.addView(web, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        Screen.fitBars(this, root, GREEN);
+        Screen.onBack(this, () -> { if (web != null && web.canGoBack()) web.goBack(); else finish(); });
         setContentView(root);
 
         loadCartJs();

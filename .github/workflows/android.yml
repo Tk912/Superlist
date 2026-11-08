@@ -27,7 +27,7 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.10.2"
+          gradle-version: "8.13"
       - name: מפתח חתימה
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -45,14 +45,16 @@ jobs:
         run: |
           mkdir -p app/src/main/assets
           cp ../docs/cart.js app/src/main/assets/cart.js
-          gradle --no-daemon assembleRelease
+          gradle --no-daemon assembleRelease bundleRelease
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/superlist.apk"
+          # לחנות Google Play: קובץ AAB (חתום באותו מפתח, שמשמש כ"מפתח העלאה")
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/superlist.aab"
       - name: פרסום להורדה
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete android --yes --cleanup-tag || true
-          gh release create android "$RUNNER_TEMP/superlist.apk" \
+          gh release create android "$RUNNER_TEMP/superlist.apk" "$RUNNER_TEMP/superlist.aab" \
             --title "הסל החכם לאנדרואיד" \
             --notes "גרסה 1.${{ github.run_number }}. מתקינים את הקובץ superlist.apk בטלפון." \
             --latest

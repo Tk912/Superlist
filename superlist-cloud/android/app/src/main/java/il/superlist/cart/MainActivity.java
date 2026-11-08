@@ -74,7 +74,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        getWindow().setStatusBarColor(Color.rgb(15, 122, 74));
 
         web = new WebView(this);
         WebSettings s = web.getSettings();
@@ -104,7 +103,12 @@ public class MainActivity extends Activity {
                 deliverWidget();
             }
         });
-        setContentView(web);
+        // מקצה לקצה (אנדרואיד 15+): הדף בתוך מסגרת עם ריווח בגודל הסרגלים והמקלדת
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.addView(web);
+        Screen.fitBars(this, frame, Color.rgb(15, 122, 74));
+        Screen.onBack(this, () -> { if (web.canGoBack()) web.goBack(); else finish(); });
+        setContentView(frame);
 
         if (saved != null) web.restoreState(saved);
         else web.loadUrl(APP_URL);

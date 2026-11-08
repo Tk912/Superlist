@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace 'il.superlist.cart'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId 'il.superlist.cart'
         minSdk 24
-        targetSdk 34
+        targetSdk 36
         // כל בנייה ב-GitHub מקבלת מספר גדול יותר, כדי שאפשר יהיה להתקין עדכון מעל הגרסה הקודמת
         versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
         versionName "1.${System.getenv('VERSION_CODE') ?: '0'}"
