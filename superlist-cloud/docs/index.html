@@ -133,6 +133,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .spark { width: 84px; height: 26px; flex: none; }
 .promo { font-size: 11px; color: #c2410c; font-weight: 600; line-height: 1.3; }
 .promo.hint { font-weight: 400; color: var(--muted); }
+.unit-price { font-size: 11px; color: var(--muted); font-weight: 400; }
 @media (prefers-color-scheme: dark) { .promo { color: #fb923c; } }
 .alt { font-size: 11px; color: var(--muted); max-width: 120px; white-space: normal; line-height: 1.25; }
 .chain-card { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -973,7 +974,8 @@ function priceFor(item) {
   e.sort((a, b) => a[1] - b[1]);
   const ck = e[0][0];
   return { price: e[0][1], chain: chains[ck] || ck, weighted: line.weighted,
-    promo: line.promo?.[ck] || null, regular: line.regular?.[ck] ?? null, hint: line.promoHint?.[ck] || null, trend: line.trend?.[ck] || null };
+    promo: line.promo?.[ck] || null, regular: line.regular?.[ck] ?? null, hint: line.promoHint?.[ck] || null, trend: line.trend?.[ck] || null,
+    unit: line.unit?.[ck] || null };
 }
 
 function renderList() {
@@ -985,7 +987,7 @@ function renderList() {
   const tile = i => {
     const p = priceFor(i);
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none">לא נמצא בסניפים</div>`
-      : p ? `<div class="tile-price">${p.promo ? `<s class="muted">${money(p.regular)}</s> ` : ""}${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${
+      : p ? `<div class="tile-price">${p.promo ? `<s class="muted">${money(p.regular)}</s> ` : ""}${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${unitTag(p.unit)}${
           p.promo ? `<div class="promo">🏷️ ${esc(p.promo)}</div>` : p.hint ? `<div class="promo hint">🏷️ ${esc(p.hint)}</div>` : ""}${trendTag(p.trend)}</div>` : "";
     const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
     const img = thumb(i.code, "tile-img", `data-act="toggle" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="toggle">${DEPT_ICON[i.cat] || "🛒"}</span>`;
@@ -1047,6 +1049,7 @@ function renderList() {
   ${done.length ? `<button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה (${done.length})</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center;font-size:14px">לחיצה על מוצר מסמנת שהוא בעגלה · לחיצה ארוכה מעבירה למחלקה אחרת</div>` : ""}
   ${basketCard()}
+  ${dealsCard()}
   ${deliveryCard()}
   ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-act="shop-enter">🛍️ אני בסופר – מצב קנייה</button>` : ""}
@@ -1881,6 +1884,58 @@ function swapsCard(c, best) {
       <button class="btn small" data-swap="${esc(l.code)}" data-to="${esc(s.code)}" data-to-name="${esc(s.name)}">החלף</button></div>`).join("")}</div>`;
 }
 
+// ---------- מחיר ליחידת מידה ----------
+// [מחיר ל-100 גרם / לליטר, "g"|"l"] -> "₪1.38 ל-100 גר׳"
+const unitLabel = u => u ? `${money(u[0])} ${u[1] === "g" ? "ל-100 גר׳" : "לליטר"}` : "";
+const unitTag = u => u ? `<div class="unit-price">${unitLabel(u)}</div>` : "";
+const sizeLabel = (n, kind) => kind === "g" ? (n >= 1000 ? `${fmtNum(n / 1000)} ק״ג` : `${n} גר׳`) : (n >= 1000 ? `${fmtNum(n / 1000)} ליטר` : `${n} מ״ל`);
+// אריזה גדולה יותר של אותו מוצר, זולה יותר ליחידת מידה (ברשת הזולה)
+function packsCard(c, best) {
+  if (!best?.chain) return "";
+  const rows = [];
+  for (const l of c.lines) {
+    const code = l.codes[best.chain];
+    if (!code || l.weighted || l.approx?.[best.chain]) continue;
+    const s = PriceDB.betterPack(best.chain, code);
+    if (!s) continue;
+    // כמה אריזות גדולות במקום הכמות שברשימה (לפחות אחת)
+    const qty = Math.max(1, Math.round(l.units * s.fromSize / s.size));
+    rows.push({ l, s, qty });
+  }
+  if (!rows.length) return "";
+  rows.sort((a, b) => b.s.save - a.s.save);
+  return `<h2>📦 אריזה משתלמת</h2><div class="card">
+    <div class="muted" style="margin-bottom:4px">אותו מוצר באריזה גדולה יותר – זול יותר לכל 100 גרם / ליטר ב${esc(chains[best.chain] || best.chain)}.</div>
+    ${rows.slice(0, 8).map(({ l, s, qty }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
+      <div class="grow" style="min-width:0;font-size:14px">${esc(s.fromName)} <span class="muted">${sizeLabel(s.fromSize, s.kind)} · ${unitLabel([s.fromPer, s.kind])}</span>
+        <div style="color:var(--accent)">← ${esc(s.name)} <b>${money(s.price)}</b> <span style="font-size:12px">(${sizeLabel(s.size, s.kind)} · ${unitLabel([s.per, s.kind])}, ${Math.round(s.save * 100)}% פחות ליחידה)</span></div></div>
+      <button class="btn small" data-swap="${esc(l.code)}" data-to="${esc(s.code)}" data-to-name="${esc(s.name)}" data-qty="${qty}">החלף</button></div>`).join("")}</div>`;
+}
+
+// ---------- מבצעים על מה שקונים בדרך כלל (מהיסטוריית הקניות), שעוד לא ברשימה ----------
+function dealsCard() {
+  if (!compareCache) return "";
+  const onList = new Set(live().filter(i => !i.done).map(i => norm(i.name)));
+  const byCode = new Map();
+  for (const [k, h] of Object.entries(S.history)) if (h.code && !onList.has(k)) byCode.set(String(h.code).replace(/^0+/, ""), k);
+  if (!byCode.size) return "";
+  const best = new Map();   // לכל מוצר: המבצע הכי זול מבין הרשתות
+  for (const d of PriceDB.deals([...byCode.keys()])) {
+    const k = byCode.get(d.code), h = S.history[k];
+    if (!best.has(k) || d.price < best.get(k).d.price) best.set(k, { k, h, d, score: ((h.buys?.length || 0) + 1) * d.save });
+  }
+  if (!best.size) return "";
+  const rows = [...best.values()].sort((a, b) => b.score - a.score);
+  const until = e => e && e.length >= 10 ? ` · עד ${e.slice(8, 10)}/${e.slice(5, 7)}` : "";
+  return `<h2>🏷️ מבצעים על מה שאתם קונים</h2><div class="card">
+    ${rows.slice(0, 6).map(({ k, h, d }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
+      <div class="grow" style="min-width:0;font-size:14px"><b>${esc(h.name)}</b> <span class="muted">${esc(chains[d.chain] || d.chain)}</span>
+        <div><s class="muted">${money(d.regular)}</s> <b style="color:var(--accent)">${money(d.price)}</b>${d.weighted ? " לק״ג" : ""} <span style="font-size:12px">(${Math.round(d.save * 100)}% הנחה)</span></div>
+        <div class="promo">${esc(d.desc)}${d.minq > 1 ? ` · בקניית ${fmtNum(d.minq)}` : ""}${until(d.end)}</div></div>
+      <button class="btn small" data-deal-add="${esc(k)}" data-qty="${d.minq > 1 && !d.weighted ? Math.round(d.minq) : 1}">➕ הוסף</button></div>`).join("")}
+    ${rows.length > 6 ? `<div class="muted" style="margin-top:4px">ועוד ${rows.length - 6} מבצעים על מוצרים שקניתם</div>` : ""}</div>`;
+}
+
 // ---------- היסטוריית מחירים: חץ למעלה/למטה, גרף קטן, והתרעה כשמוצר ברשימה מוזל ----------
 const trendTag = tr => !tr ? "" : tr.to < tr.from
   ? `<div class="trend down">📉 ירד מ-${money(tr.from)}</div>` : `<div class="trend up">📈 עלה מ-${money(tr.from)}</div>`;
@@ -2003,13 +2058,14 @@ function renderPrices() {
     </div>
     ${splitCard(c)}
     ${swapsCard(c, best)}
+    ${packsCard(c, best)}
     ${changesCard(c)}
     <h2>פירוט לפי מוצר</h2>
     <div class="card scroll-x"><table><tr><th>מוצר</th>${c.chains.map(x => `<th>${esc(x.name)}</th>`).join("")}</tr>
       ${c.lines.map(l => { const vals = Object.values(l.prices); const min = Math.min(...vals);
         return `<tr><td>${esc(l.name)}${l.weighted ? ` <span class="muted">${fmtNum(l.kg)} ק״ג</span>` : l.units > 1 ? ` ×${l.units}` : ""}</td>${c.chains.map(x => { const p = l.prices[x.chain], ap = l.approx?.[x.chain];
           const pm = l.promo?.[x.chain], ph = l.promoHint?.[x.chain];
-          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}${pm ? `<div class="promo">🏷️ ${esc(pm)}</div>` : ph ? `<div class="promo hint">🏷️ ${esc(ph)}</div>` : ""}${ap ? `<div class="alt">${esc(ap)}</div>` : ""}</td>`; }).join("")}</tr>`; }).join("")}
+          return `<td class="${p === min && vals.length > 1 ? "best" : ""}" ${ap ? `title="מוצר דומה: ${esc(ap)}"` : ""}>${p != null ? (ap ? "≈" : "") + money(p) : "—"}${unitTag(l.unit?.[x.chain])}${pm ? `<div class="promo">🏷️ ${esc(pm)}</div>` : ph ? `<div class="promo hint">🏷️ ${esc(ph)}</div>` : ""}${ap ? `<div class="alt">${esc(ap)}</div>` : ""}</td>`; }).join("")}</tr>`; }).join("")}
     </table></div>
     <div class="muted">≈ = המוצר הזה לא נמכר ברשת (למשל מותג פרטי של רשת אחרת), אז הושווה מוצר מקביל – שמו מופיע מתחת למחיר, וזה מה שיתווסף לעגלה. המחיר בטבלה הוא ליחידה או לק״ג, והסכום למעלה כבר מחושב לפי הכמות או המשקל שברשימה.</div>`;
   }
@@ -2432,15 +2488,31 @@ async function fetchFile(url) {
   return out.buffer;
 }
 // קובץ PriceFull (gz) -> [[ברקוד, שם, מחיר, במשקל]]
+// מחיר ליחידת מידה – כמו unit_info ב-scripts/update_prices.py: [מחיר ל-100 גרם / לליטר, "g"|"l", גודל בגרם/מ"ל]
+function unitInfo(qty, unit, price) {
+  const u = xmlText(unit).replace(/[\s'".]/g, "");
+  let kind, size;
+  if (["גרם", "גר", "ג"].includes(u)) [kind, size] = ["g", qty];
+  else if (["קג", "קילוגרם", "קילו"].includes(u)) [kind, size] = ["g", qty * 1000];
+  else if (["מל", "מיליליטר", "מיליליטרים"].includes(u)) [kind, size] = ["l", qty];
+  else if (["ליטר", "ל", "ליטרים"].includes(u)) [kind, size] = ["l", qty * 1000];
+  else return null;
+  if (!(size >= 5 && size <= 50000)) return null;
+  return [Math.round(price / size * (kind === "g" ? 100 : 1000) * 100) / 100, kind, Math.round(size)];
+}
 async function parsePriceFile(buf) {
   const xml = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-  const items = [];
+  const items = [], units = {};
   for (const m of xml.matchAll(/<Item>([\s\S]*?)<\/Item>/g)) {
     const f = t => (m[1].match(new RegExp(`<${t}\\s*>([^<]*)<`)) || [])[1];
     const code = (f("ItemCode") || "").trim().replace(/^0+/, ""), price = parseFloat(f("ItemPrice"));
     if (!code || isNaN(price)) continue;
-    items.push([code, xmlText(f("ItemName") || f("ManufactureItemDescription")), price, f("bIsWeighted") === "1" ? 1 : 0]);
+    const weighted = f("bIsWeighted") === "1" ? 1 : 0;
+    items.push([code, xmlText(f("ItemName") || f("ManufactureItemDescription")), price, weighted]);
+    const u = !weighted && unitInfo(parseFloat(f("Quantity")), f("UnitQty"), price);
+    if (u) units[code] = u;
   }
+  items.units = units;
   return items;
 }
 // קובץ PromoFull (gz) -> {ברקוד: [מחיר ליחידה במבצע, כמות מינימום, תיאור, עד תאריך]} – אותו היגיון כמו ב-scripts/prices.py:
@@ -2498,7 +2570,7 @@ async function localPrices(chain, store, force = false) {
   const key = `/local/${chain}-${store}.json`;
   let cached = null;
   try { const r = await (await caches.open(LOCAL_CACHE)).match(key); if (r) cached = await r.json(); } catch {}
-  if (cached && cached.promos && !force && Date.now() - cached.updated * 1000 < 12 * 36e5) return cached;
+  if (cached && cached.units && !force && Date.now() - cached.updated * 1000 < 12 * 36e5) return cached;
   if (!canLocal(chain)) return cached;
   try {
     const src = await LOCAL_SOURCES[chain](store);
@@ -2512,7 +2584,7 @@ async function localPrices(chain, store, force = false) {
       const ps = await LOCAL_SOURCES[chain](store, "PromoFull");
       if (ps) promos = await parsePromoFile(ps.direct ? await (await fetch(ps.url)).arrayBuffer() : await fetchFile(ps.url), items);
     } catch (e) { console.warn("local promos", chain, e); }
-    const json = { chain, store: String(store), updated: Date.now() / 1000, items, promos, local: true };
+    const json = { chain, store: String(store), updated: Date.now() / 1000, items, promos, units: items.units, local: true };
     try { await (await caches.open(LOCAL_CACHE)).put(key, new Response(JSON.stringify(json))); } catch {}
     return json;
   } catch (e) { console.warn("local prices", chain, e); return cached; }
@@ -2871,10 +2943,16 @@ $("#view").addEventListener("click", e => {
     S.plan.days[key] = (S.plan.days[key] || []).filter(x => x !== id); S.plan.t = now();
     return commit();
   }
+  const da = t.closest("[data-deal-add]");
+  if (da) {
+    const h = S.history[da.dataset.dealAdd];
+    if (h) { addItem(h.name, Number(da.dataset.qty) || 1); commit(); toast(`נוסף: ${h.name}`); refreshCompare().then(render); }
+    return;
+  }
   const sw = t.closest("[data-swap]");
   if (sw) {
     const it = live().find(i => i.code && String(i.code).replace(/^0+/, "") === sw.dataset.swap);
-    if (it) { Object.assign(it, { code: sw.dataset.to, product: sw.dataset.toName, auto: false, t: now() }); commit(); toast(`הוחלף: ${sw.dataset.toName}`); refreshCompare().then(render); }
+    if (it) { Object.assign(it, { code: sw.dataset.to, product: sw.dataset.toName, auto: false, t: now() }, sw.dataset.qty && it.unit !== "kg" ? { qty: Number(sw.dataset.qty) } : {}); commit(); toast(`הוחלף: ${sw.dataset.toName}`); refreshCompare().then(render); }
     return;
   }
   const go = t.closest("[data-tab-go]");

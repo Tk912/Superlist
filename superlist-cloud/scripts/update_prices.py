@@ -131,6 +131,29 @@ def update_history(chain, store, items, prev_file):
     return len(h)
 
 
+# ---------- מחיר ליחידת מידה ----------
+# מהגודל והיחידה שבקובץ (Quantity + UnitQty): מחיר ל-100 גרם (מוצקים) או לליטר (נוזלים), וגודל האריזה בגרם/מ"ל.
+# השדה המוכן UnitOfMeasurePrice לא אחיד בין הרשתות (לפעמים לגרם, לפעמים ל-100 גרם), ולכן מחשבים לבד.
+def unit_info(item):
+    if item["weighted"] or not item["qty"]:
+        return None
+    u = re.sub(r"[\s'\".]", "", item["unit"] or "")
+    if u in ("גרם", "גר", "ג"):
+        kind, size = "g", item["qty"]
+    elif u in ("קג", "קילוגרם", "קילו"):
+        kind, size = "g", item["qty"] * 1000
+    elif u in ("מל", "מיליליטר", "מיליליטרים"):
+        kind, size = "l", item["qty"]
+    elif u in ("ליטר", "ל", "ליטרים"):
+        kind, size = "l", item["qty"] * 1000
+    else:
+        return None
+    if not 5 <= size <= 50000:
+        return None
+    per = item["price"] / size * (100 if kind == "g" else 1000)
+    return [round(per, 2), kind, round(size)]
+
+
 def write_json(path, obj):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), "utf-8")
@@ -156,8 +179,10 @@ def main():
         cfg = prices.CHAINS[chain]
         try:
             raw = prices.chain_pricefull(chain, store)
-            items = [[i["code"], i["name"], i["price"], 1 if i["weighted"] else 0]
-                     for i in prices._items_from_xml(prices._parse_xml(raw))]
+            parsed = list(prices._items_from_xml(prices._parse_xml(raw)))
+            items = [[i["code"], i["name"], i["price"], 1 if i["weighted"] else 0] for i in parsed]
+            # {קוד: [מחיר ל-100 גרם / לליטר, "g"|"l", גודל האריזה בגרם/מ"ל]}
+            units = {i["code"]: u for i in parsed if (u := unit_info(i))}
             # מבצעים: רק למוצרים שבאמת יורדים במחיר; אם הקובץ לא זמין – ממשיכים בלי
             promos = {}
             try:
@@ -176,7 +201,7 @@ def main():
             except Exception as e:
                 status["errors"][f"history:{chain}:{store}"] = str(e)[:200]
             write_json(OUT / "prices" / f"{chain}-{store}.json",
-                       {"chain": chain, "store": store, "updated": time.time(), "items": items, "promos": promos})
+                       {"chain": chain, "store": store, "updated": time.time(), "items": items, "promos": promos, "units": units})
             status["stores"][f"{chain}:{store}"] = {"updated": time.time(), "items": len(items), "promos": len(promos), "history": changed}
             print(f"{cfg['name']} סניף {store}: {len(items):,} מוצרים, {len(promos):,} במבצע, {changed:,} עם שינויי מחיר")
         except Exception as e:

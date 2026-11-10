@@ -65,7 +65,7 @@ const PriceDB = (() => {
         // מבצעים: {קוד: [מחיר ליחידה/לק"ג במבצע, כמות מינימום, תיאור, עד תאריך]}
         // היסטוריה: {קוד: [[יום, מחיר], ...]} – רק מוצרים שהמחיר שלהם השתנה (אין קובץ = אין עדיין שינויים)
         const hist = local[chain]?.store === store ? {} : ((await getJSON(`data/history/${chain}-${store}.json`).catch(() => null))?.h || {});
-        data[chain] = { store, updated: j.updated, items: j.items, byCode, promos: j.promos || {}, hist };
+        data[chain] = { store, updated: j.updated, items: j.items, byCode, promos: j.promos || {}, units: j.units || {}, hist };
       } catch (e) {
         data[chain] = { store, missing: e.message, items: [], byCode: new Map() };
       }
@@ -302,7 +302,7 @@ const PriceDB = (() => {
       const weighted = ref ? !!ref[3] : (byKg ? true : null);
       const refName = (ref && ref[1]) || it.product || it.name || "";
       const line = { name: it.name, code, qty, kg: Math.round(kg * 100) / 100, units, weighted: !!weighted, prices: {}, approx: {}, codes: {}, names: {},
-                     regular: {}, promo: {}, promoHint: {}, trend: {}, cost: {} };
+                     regular: {}, promo: {}, promoHint: {}, trend: {}, cost: {}, unit: {} };
       for (const c of chains) {
         let r = exact[c];
         // אם אין מוצר מקביל לשם המלא, מנסים לפי מה שכתוב ברשימה ("טונה בשמן")
@@ -316,6 +316,8 @@ const PriceDB = (() => {
             else line.promoHint[c] = pr[2];
           }
           line.prices[c] = price; line.codes[c] = r[0]; line.names[c] = r[1];
+          const u = data[c].units?.[r[0]];
+          if (u && r[2] > 0) line.unit[c] = [u[0] * price / r[2], u[1]];   // ל-100 גרם / לליטר, אחרי מבצע
           const tr = trend(c, r[0]);
           if (tr) line.trend[c] = tr;
           result[c].total += price * need;
@@ -353,10 +355,53 @@ const PriceDB = (() => {
     return /^\d{8,14}$/.test(c) ? [`https://m.pricez.co.il/ProductPictures/${c}.jpg`, `https://img.rami-levy.co.il/product/${c}/small.jpg`] : [];
   }
 
+  // ---------- אריזה משתלמת: אותו מוצר באריזה גדולה יותר, זול יותר ליחידת מידה ----------
+  // units: {קוד: [מחיר ל-100 גרם / לליטר, "g"|"l", גודל בגרם/מ"ל]}
+  function betterPack(chain, code) {
+    const d = data[chain], cur = d?.byCode.get(code), cu = d?.units?.[code];
+    if (!cur || !cu) return null;
+    const qs = core(cur[4]);
+    if (!qs.length) return null;
+    const pct = s => (s.match(/\d+(\.\d+)?\s*%/g) || []).map(x => parseFloat(x)).sort().join(",");
+    const qp = pct(cur[1]), own = OWN[chain];
+    let best = null;
+    for (const it of d.items) {
+      const u = d.units[it[0]];
+      // גדול לפחות פי 1.2, זול לפחות ב-10% ליחידה, ולא יותר מפי 4 במחיר (לא "שק של 10 ק"ג" במקום חבילה)
+      if (!u || it[0] === code || u[1] !== cu[1] || u[2] < cu[2] * 1.2 || u[0] > cu[0] * 0.9 || it[2] > cur[2] * 4) continue;
+      const ns = core(it[4]);
+      if (!ns.length || !wm(qs[0], ns[0]) || pct(it[1]) !== qp || extraMods(ns, qs)) continue;
+      if (own && own.test(it[1]) && !own.test(cur[1])) continue;   // מותג הרשת = מוצר אחר (יש לו כרטיס משלו)
+      // כל המילים של המוצר הנוכחי מופיעות (אותו מותג וסוג), וכמעט כל המילים של החדש
+      if (!qs.every(q => ns.some(n => wm2(q, n)))) continue;
+      const hit = ns.filter(n => qs.some(q => wm2(q, n) || wm2(n, q))).length / ns.length;
+      if (hit < 0.7) continue;
+      const key = [-hit, u[0]];
+      if (!best || cmp(key, best.key) < 0) best = { key, it, u };
+    }
+    if (!best) return null;
+    return { code: best.it[0], name: best.it[1], price: best.it[2], size: best.u[2], per: best.u[0], kind: cu[1],
+             from: cur[2], fromName: cur[1], fromSize: cu[2], fromPer: cu[0], save: 1 - best.u[0] / cu[0] };
+  }
+
+  // ---------- מבצעים על מוצרים מסוימים (לפי ברקוד), בכל הרשתות שנטענו ----------
+  function deals(codes) {
+    const out = [];
+    for (const raw of codes) {
+      const code = String(raw || "").replace(/^0+/, "");
+      for (const [chain, d] of Object.entries(data)) {
+        const pr = d.promos?.[code], it = d.byCode?.get(code);
+        if (!pr || !it || pr[0] >= it[2]) continue;
+        out.push({ chain, code, name: it[1], regular: it[2], price: pr[0], minq: pr[1], desc: pr[2], end: pr[3], weighted: !!it[3], save: 1 - pr[0] / it[2] });
+      }
+    }
+    return out;
+  }
+
   // האם המילה מופיעה בשמות המוצרים (לפיצול משפט מוקלט: "חלב ולחם" -> חלב, לחם)
   const isWord = w => getVocab().has(stem(w));
   // האם שם המוצר מתאים למה שכתוב ברשימה (לבדיקת התאמות אוטומטיות ישנות)
   const matches = (name, product) => { const s = nameScore(stems(name), stems(product)); return !!s && !s[3]; };
 
-  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, history, split, ownBrand, images, compare, stores, info: () => ({ status, data, local }) };
+  return { CHAIN_NAMES, load, setLocal, search, suggest, lookup, isWord, matches, history, split, ownBrand, betterPack, deals, images, compare, stores, info: () => ({ status, data, local }) };
 })();
