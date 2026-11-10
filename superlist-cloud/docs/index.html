@@ -555,6 +555,8 @@ function recordOrder(chain, items) {
   }, ...(S.orders || [])].slice(0, 80);
 }
 const orderTotal = o => o.cart ?? o.est ?? null;
+// הזמנה "בתהליך": נשלחה לרשת בשבוע האחרון ועוד לא סומנה שהתקבלה – אפשר עוד לשנות אותה
+const orderOpen = o => o.chain !== "store" && !o.received && now() - o.at < 7 * 864e5;
 let ordersFilter = "all";
 function ordersSheet() {
   const all = (S.orders || []).filter(o => !o.deleted).sort((a, b) => b.at - a.at);
@@ -577,14 +579,17 @@ function ordersSheet() {
       const tot = orderTotal(o);
       return `${head}<details class="card" style="margin-bottom:8px"><summary class="row" style="cursor:pointer;gap:8px">
           <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
-            <div class="muted" style="font-size:12px">${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
-          <b>${tot != null ? money(tot) : ""}</b></summary>
+            <div class="muted" style="font-size:12px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
+          <b>${tot != null ? money(tot) : ""}</b>
+          <button class="btn small ghost" data-odel="${o.id}" title="מחיקת ההזמנה" aria-label="מחיקת ההזמנה">🗑</button></summary>
+        ${orderOpen(o) ? `<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="who" style="background:#fef3c7;color:#92400e">⏳ בתהליך</span>
+          <button class="btn small" data-oedit="${o.id}">✏️ עריכת ההזמנה</button>
+          <button class="btn small ghost" data-orecv="${o.id}">✓ ההזמנה התקבלה</button></div>` : ""}
         ${o.cart == null ? `<button class="btn small ghost" style="margin-top:6px" data-paid="${o.id}">₪ ${o.chain === "store" ? "כמה שילמת?" : "עדכן את הסכום ששילמת"}</button>` : ""}
         <div style="margin-top:6px">${o.items.map(i => `<div class="row" style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">
           <span class="grow">${esc(i.name)}${i.unit === "kg" ? ` <span class="muted">${fmtNum(i.qty)} ק״ג</span>` : i.qty > 1 ? ` ×${fmtNum(i.qty)}` : ""}${i.alt ? `<div class="alt">≈ ${esc(i.alt)}</div>` : ""}</span>
           <span class="muted">${i.price != null ? money(i.price) : ""}</span></div>`).join("")}</div>
-        <div class="row" style="margin-top:8px"><button class="btn small grow" data-reorder="${o.id}">↻ הוסף שוב לרשימה</button>
-          <button class="btn small ghost" data-odel="${o.id}">🗑 מחק</button></div></details>`;
+        <div class="row" style="margin-top:8px"><button class="btn small grow" data-reorder="${o.id}">↻ הוסף שוב לרשימה</button></div></details>`;
     }).join("")}
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   const root = $("#sheet-root");
@@ -616,12 +621,83 @@ function ordersSheet() {
     commit(); closeSheet(); refreshCompare().then(render);
     toast(n ? `נוספו ${n} פריטים מההזמנה` : "כל הפריטים כבר ברשימה");
   });
-  root.querySelectorAll("[data-odel]").forEach(el => el.onclick = () => {
-    if (!confirm("למחוק את ההזמנה מההיסטוריה?")) return;
+  root.querySelectorAll("[data-oedit]").forEach(el => el.onclick = () => orderEditSheet(el.dataset.oedit));
+  root.querySelectorAll("[data-orecv]").forEach(el => el.onclick = () => {
+    Object.assign(S.orders.find(x => x.id === el.dataset.orecv), { received: now(), t: now() });
+    commit(); ordersSheet();
+  });
+  root.querySelectorAll("[data-odel]").forEach(el => el.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    if (!confirm("למחוק את ההזמנה מההיסטוריה? (למשל אם נשלחה בטעות)")) return;
     const o = S.orders.find(x => x.id === el.dataset.odel);
     Object.assign(o, { deleted: true, t: now() });
     commit(); ordersSheet();
   });
+}
+
+// עריכת הזמנה שעוד בתהליך: משנים כמויות, מסירים ומוסיפים מוצרים. השינוי נשמר בהיסטוריה,
+// ואת התוספות אפשר לשלוח לעגלה באתר של הרשת (את ההזמנה עצמה מעדכנים באתר – "ההזמנות שלי" ← עריכה)
+function orderEditSheet(id) {
+  const o = S.orders.find(x => x.id === id);
+  if (!o) return;
+  const work = o.items.map(i => ({ ...i }));
+  const orig = new Map(o.items.map(i => [norm(i.name), i.qty || 1]));
+  const priceOf = code => { const r = code && PriceDB.info().data[o.chain]?.byCode.get(String(code).replace(/^0+/, "")); return r ? r[2] : null; };
+  const draw = () => {
+    $("#oe-list").innerHTML = work.length ? work.map((i, k) => `<div class="row" style="padding:4px 0;border-bottom:1px solid var(--line);gap:8px">
+        <span class="grow">${esc(i.name)}${i.price != null ? ` <span class="muted" style="font-size:12px">${money(i.price)}</span>` : ""}</span>
+        <button class="btn small ghost" data-oe-q="${k}" data-d="-1">−</button>
+        <span style="min-width:44px;text-align:center">${i.unit === "kg" ? `${fmtNum(i.qty)} ק״ג` : fmtNum(i.qty)}</span>
+        <button class="btn small ghost" data-oe-q="${k}" data-d="1">+</button>
+        <button class="btn small ghost" data-oe-del="${k}">✕</button></div>`).join("") : `<div class="muted">אין מוצרים בהזמנה</div>`;
+    $("#oe-list").querySelectorAll("[data-oe-q]").forEach(el => el.onclick = () => {
+      const i = work[el.dataset.oeQ], d = +el.dataset.d;
+      i.qty = i.unit === "kg" ? Math.max(0.1, roundKg((i.qty || 1) + d * 0.5)) : Math.max(1, (i.qty || 1) + d);
+      draw();
+    });
+    $("#oe-list").querySelectorAll("[data-oe-del]").forEach(el => el.onclick = () => { work.splice(+el.dataset.oeDel, 1); draw(); });
+  };
+  // מה נוסף לעומת ההזמנה המקורית (מוצר חדש, או כמות גדולה יותר) – זה מה שנשלח לעגלה
+  const added = () => work.map(i => {
+    const was = orig.get(norm(i.name)) || 0, extra = (i.qty || 1) - was;
+    return extra > 1e-9 ? { id: uid(), name: i.name, qty: i.unit === "kg" ? roundKg(extra) : extra, unit: i.unit, code: i.code, product: i.product } : null;
+  }).filter(Boolean);
+  const save = () => {
+    let est = 0, found = 0;
+    for (const i of work) if (i.price != null) { est += i.price * (i.qty || 1); found++; }
+    Object.assign(o, { items: work.map(i => ({ ...i })), est: found ? Math.round(est * 100) / 100 : o.est, found, edited: now(), t: now() });
+    commit();
+  };
+  sheet(`<h2 style="margin-top:0">✏️ עריכת הזמנה · ${esc(ORDER_PLACE(o.chain))}</h2>
+    <div class="muted" style="margin-bottom:6px">משנים כמויות, מסירים או מוסיפים מוצרים. השינויים נשמרים כאן בהיסטוריה.</div>
+    <div class="card" id="oe-list"></div>
+    <div class="row" style="margin-top:6px"><input type="text" id="oe-name" class="grow" placeholder="הוספת מוצר (למשל: 2 חלב)"><button class="btn" id="oe-add">הוסף</button></div>
+    <div class="warn" style="margin-top:10px">את ההזמנה עצמה מעדכנים באתר של ${esc(ORDER_PLACE(o.chain))} (בדרך כלל: "ההזמנות שלי" ← עריכת הזמנה), כל עוד הרשת עוד לא התחילה ללקט אותה.
+      הכפתור הירוק שומר ופותח את האתר – ומוסיף לעגלה את מה שהוספת. מוצרים שהסרת צריך להסיר שם.</div>
+    <button class="btn" style="width:100%;margin-top:8px" id="oe-site">💾 שמור ועדכן באתר של ${esc(ORDER_PLACE(o.chain))}</button>
+    <div class="row" style="margin-top:8px"><button class="btn ghost grow" id="oe-save">💾 שמור רק כאן</button><button class="btn ghost" id="oe-back">חזרה</button></div>`);
+  draw();
+  const addOne = () => {
+    const p = parseQty($("#oe-name").value);
+    if (!p.name.trim()) return;
+    const h = S.history[norm(p.name)], ex = work.find(i => norm(i.name) === norm(p.name));
+    const unit = p.unit || h?.unit || (soldByWeight(p.name) ? "kg" : "unit");
+    if (ex) ex.qty = (ex.qty || 1) + (p.qty || 1);
+    else work.push({ name: p.name, qty: p.qty || 1, unit, code: h?.code || null, product: h?.product || null, price: priceOf(h?.code), alt: null });
+    $("#oe-name").value = ""; draw();
+  };
+  $("#oe-add").onclick = addOne;
+  $("#oe-name").onkeydown = e => { if (e.key === "Enter") addOne(); };
+  $("#oe-save").onclick = () => { save(); toast("ההזמנה עודכנה"); ordersSheet(); };
+  $("#oe-back").onclick = () => ordersSheet();
+  $("#oe-site").onclick = () => {
+    save();
+    const extra = added();
+    if (extra.length) return fillCart(o.chain, extra);
+    // אין תוספות: רק פותחים את האתר, כדי להסיר/לשנות שם
+    window.open(CART_URLS[o.chain], "_blank");
+    ordersSheet();
+  };
 }
 
 // ================= תזכורות בטלפון (בלי שרת) =================
@@ -1048,9 +1124,7 @@ function renderList() {
   ${!open.length ? `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או להוסיף מצרכים ממתכון בלשונית מתכונים."}</div>` : ""}
   ${done.length ? `<button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה (${done.length})</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center;font-size:14px">לחיצה על מוצר מסמנת שהוא בעגלה · לחיצה ארוכה מעבירה למחלקה אחרת</div>` : ""}
-  ${basketCard()}
   ${dealsCard()}
-  ${deliveryCard()}
   ${open.length ? `<button class="btn" style="width:100%;margin-top:12px" data-act="send">🛒 שלח לסופר (${open.length} פריטים)</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-act="shop-enter">🛍️ אני בסופר – מצב קנייה</button>` : ""}
   <div class="row" style="margin-top:8px">
@@ -1068,23 +1142,20 @@ function sendSheet() {
   const best = order.find(c => totals[c]);
   const fast = fastestChain(CART_CHAINS);
   const others = [...new Set(live().filter(i => !i.done && i.by && i.by !== me).map(i => i.by))];
-  sheet(`<h2 style="margin-top:0">לאיזה סופר לשלוח?</h2>
+  sheet(`<h2 style="margin-top:0" id="send-sheet">לאיזה סופר לשלוח?</h2>
+    <div class="muted" style="margin-bottom:8px">המחיר וזמן האספקה הקרוב בכל רשת${fast ? ` · ⚡ הכי מהיר: <b>${esc(CART_NAMES[fast])}</b>` : ""}</div>
     ${others.length ? `<div class="muted" style="margin-bottom:8px">ברשימה יש גם פריטים ש${esc(others.join(" ו"))} הוסיפו. העגלה תכלול את כולם.</div>` : ""}
-    <div class="row" style="margin-bottom:8px"><button class="btn small ${sendSort === "price" ? "" : "ghost"} grow" data-sort="price">💰 לפי מחיר</button>
-      <button class="btn small ${sendSort === "fast" ? "" : "ghost"} grow" data-sort="fast" ${hasExt() ? "" : "disabled"}>⚡ לפי משלוח קרוב</button></div>
     ${!hasExt() && !inApp ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
-    <div class="card">${(sendSort === "fast" && slots ? [...order].sort((a, b) => (slots[a]?.from || "9") .localeCompare(slots[b]?.from || "9")) : order).map(c => `<div class="result row" data-fill="${c}">
-      <div class="grow"><b>${CART_NAMES[c]}</b> ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
+    <div class="card">${order.map(c => `<div class="result row" data-fill="${c}">
+      <div class="grow"><b>${CART_NAMES[c]}</b>${pickupTag(c)} ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
       <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר${isEstimate(c) ? " (הערכה)" : ""}` : cartTotal(c) ? `🧾 בעגלה בפועל: ${money(cartTotal(c).total)} (${ago(cartTotal(c).at)})` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירים) – אחרי מילוי יוצג הסכום שבעגלה" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
       ${totals[c] ? cartTotalLine(c) : ""}${slotLine(c)}</div>
       <span>←</span></div>`).join("")}</div>
     <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
   $("#sheet-root").querySelectorAll("[data-fill]").forEach(el => el.onclick = () => fillCart(el.dataset.fill));
-  $("#sheet-root").querySelectorAll("[data-sort]").forEach(el => el.onclick = () => { sendSort = el.dataset.sort; sendSheet(); });
   $("#sheet-root").querySelector("[data-act=ext-help]")?.addEventListener("click", e => { e.preventDefault(); extSheet(); });
-  if (hasExt() && !slots) requestSlots().then(() => { if ($("#sheet-root [data-sort]")) sendSheet(); });
+  if (hasExt() && !slots && !slotsLoading) requestSlots().then(() => { if ($("#send-sheet")) sendSheet(); });
 }
-let sendSort = "price";
 
 // הסבר התקנת התוסף
 function extSheet() {
@@ -1259,8 +1330,7 @@ const CART_URLS = {
 };
 
 // מה בדיוק לשים בעגלה: לכל פריט הקוד של אותה רשת (מההשוואה), כמות יחידות וק"ג
-function cartJob(chain) {
-  const items = live().filter(i => !i.done);
+function cartJob(chain, items = live().filter(i => !i.done)) {
   const linked = items.filter(i => i.code);
   const lines = PriceDB.info().data[chain] && linked.length
     ? PriceDB.compare(linked.map(i => ({ code: i.code, qty: i.qty, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }))).lines
@@ -1322,10 +1392,11 @@ function fillWithApp(chain, job) {
   $("#fc-old").onclick = () => { useBookmarkOnAndroid = true; closeSheet(); fillCart(chain).finally(() => { useBookmarkOnAndroid = false; }); };
 }
 
-async function fillCart(chain) {
-  if (!live().some(i => !i.done)) return toast("אין פריטים ברשימה");
-  const job = JSON.stringify(cartJob(chain));
-  recordOrder(chain, live().filter(i => !i.done));
+// only: מוצרים מסוימים (תוספות להזמנה שכבר נשלחה) – לא נרשמת הזמנה חדשה
+async function fillCart(chain, only = null) {
+  if (!only && !live().some(i => !i.done)) return toast("אין פריטים ברשימה");
+  const job = JSON.stringify(only ? cartJob(chain, only) : cartJob(chain));
+  if (!only) recordOrder(chain, live().filter(i => !i.done));
   commit();
   if (inApp) { closeSheet(); return window.SuperlistNative.fill(chain, job); }
   if (isAndroid() && !useBookmarkOnAndroid) return fillWithApp(chain, job);
@@ -1830,14 +1901,16 @@ function altLine(chain) {
 }
 
 // כרטיס "מועדי משלוח": המשלוח הקרוב בכל אחת מהרשתות (גם בלי השוואת מחירים), הקרוב ביותר למעלה
-function deliveryCard() {
-  if (!hasExt() || !S.settings.address?.city) return "";
+function deliveryCard(sub = false) {
+  if (!S.settings.address?.city) return sub ? `<div class="card muted">🚚 כדי לראות זמני אספקה, הוסף כתובת ב<a href="#" data-tab-go="settings">הגדרות</a>.</div>` : "";
+  if (!hasExt()) return sub && !inApp ? `<div class="card muted">🚚 כדי לראות זמני אספקה במחשב צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : "";
   // רשתות של איסוף עצמי בלבד לא מופיעות כאן (אין להן משלוח)
   const list = [...CART_CHAINS, ...(selected().wolt ? ["wolt"] : [])].filter(c => !PICKUP_ONLY.has(c));
-  if (!slots) return `<h2>🚚 מועדי משלוח</h2><div class="card muted">${slotsLoading ? "⏳ בודק מועדי משלוח בכל הרשתות…" : "אין עדיין מידע על מועדי משלוח."}</div>`;
+  const title = sub ? `<div class="cat-title" style="margin-top:10px">🚚 משלוח קרוב בכל הרשתות</div>` : `<h2>🚚 מועדי משלוח</h2>`;
+  if (!slots) return `${title}<div class="card muted">${slotsLoading ? "⏳ בודק מועדי משלוח בכל הרשתות…" : "אין עדיין מידע על מועדי משלוח."}</div>`;
   const key = c => slots[c]?.ok ? (slots[c].from || "0") : "9" + (slots[c] ? "0" : "1");
   const order = list.sort((a, b) => key(a).localeCompare(key(b)));
-  return `<h2>🚚 מועדי משלוח</h2><div class="card">
+  return `${title}<div class="card">
     ${order.map(c => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)">
       <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
     <div class="muted" style="font-size:12px;margin-top:6px">🏪 ${[...PICKUP_ONLY].map(c => esc(CART_NAMES[c])).join(", ")} – איסוף עצמי מהסניף בלבד, בלי משלוח.</div>
@@ -2041,21 +2114,24 @@ function renderPrices() {
   let html = staleWarn();
   const waiting = Object.entries(PriceDB.info().data).filter(([, d]) => d.missing).map(([ch]) => chains[ch] || ch);
   if (waiting.length) html += `<div class="warn">המחירים של ${esc(waiting.join(", "))} עוד לא הורדו. הם מתעדכנים אוטומטית כל שעה, כך שסניף שנבחר עכשיו יופיע תוך שעה בערך.</div>`;
-  if (!items.length) html += `<div class="card empty">הרשימה ריקה – אין מה להשוות עדיין</div>`;
+  if (!items.length) html += `<h2>🚚 זמני אספקה קרובים</h2>${deliveryCard(true)}<div class="card empty">הרשימה ריקה – אין מחירים להשוות עדיין</div>`;
   if (c && c.lines.length) {
     const ranked = c.chains.filter(x => x.found);
     const full = ranked.filter(x => x.found === c.lines.length);
     const best = ranked.slice().sort(byCoverage)[0];
     const max = Math.max(...ranked.map(x => x.total), 1);
-    html += `<h2>איפה הסל הכי זול?</h2><div class="card">
+    const fast = fastestChain(c.chains.map(x => x.chain));
+    html += `<h2>💰🚚 מחירים וזמני אספקה קרובים</h2>${budgetWarn(best)}<div class="card">
       ${c.chains.map(x => `<div class="chain-card">
-        <div class="grow"><div class="row"><b>${esc(x.name)}</b>${best && x.chain === best.chain ? `<span class="badge">הכי זול</span>` : ""}</div>
-        <div class="muted">${x.found} מתוך ${c.lines.length} מוצרים${x.missing.length ? " · חסר: " + esc(x.missing.slice(0, 3).join(", ")) + (x.missing.length > 3 ? "…" : "") : ""}</div>
+        <div class="grow"><div class="row"><b>${esc(x.name)}</b>${pickupTag(x.chain)}${best && x.chain === best.chain ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
+        <div class="muted">${x.found} מתוך ${c.lines.length} מוצרים${x.missing.length ? " · חסר: " + esc(x.missing.slice(0, 3).join(", ")) + (x.missing.length > 3 ? "…" : "") : ""}${x.promos ? ` · 🏷️ ${x.promos} במבצע` : ""}</div>
+        ${PICKUP_ONLY.has(x.chain) ? "" : slotLine(x.chain)}${cartTotalLine(x.chain)}
         <div class="bar"><i style="width:${(x.total / max) * 100}%"></i></div></div>
         <div style="text-align:center"><div class="total">${money(x.total)}</div>
         ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 מלא עגלה</button>` : ""}</div></div>`).join("")}
       ${best && full.length > 1 ? `<div class="muted" style="margin-top:6px">חיסכון לעומת היקרה ביותר: <b>${money(Math.max(...full.map(x => x.total)) - best.total)}</b></div>` : ""}
     </div>
+    ${deliveryCard(true)}
     ${splitCard(c)}
     ${swapsCard(c, best)}
     ${packsCard(c, best)}
@@ -2201,16 +2277,32 @@ function knownWord(w) {
   if (acNames().some(x => norm(x).split(/\s+/).includes(n))) return true;
   try { return PriceDB.isWord(w); } catch { return false; }
 }
+// רשימה שהוקראה בלי פסיקים ("חלב לחם עגבניות שרי קוטג'"): מתחילים מוצר חדש במספר ("2 לחם"),
+// או במילה מוכרת שלא יוצרת יחד עם מה שלפניה שם של מוצר קיים ("שמן זית" נשאר יחד, "חלב לחם" מתפצל)
+const QTY_WORD = /^(\d+([.,]\d+)?|ק"ג|ק״ג|קג|קילו|גרם|ליטר|יחידות|חבילות|אריזות)$/;
+function runOnBreak(cur, w, next) {
+  const last = cur[cur.length - 1];
+  if (QTY_WORD.test(last) || HEB_NUM[last] !== undefined) return false;          // "2 לחם", "קילו עגבניות"
+  if (/^\d/.test(w) || HEB_NUM[w] !== undefined) return true;                     // "חלב 2 לחם"
+  if (!Object.values(PriceDB.info().data).some(d => d.items?.length) || !knownWord(w)) return false;
+  const n = PriceDB.search([...cur, w].join(" "), 50).length;
+  if (n < 2) return true;
+  // "לחם עגבניות שרי": "עגבניות שרי" הוא שם מוצר חזק יותר מ"לחם עגבניות" – מפצלים לפני עגבניות
+  return !!next && !QTY_WORD.test(next) && HEB_NUM[next] === undefined && PriceDB.search(`${w} ${next}`, 50).length > n * 2;
+}
 function speechToItems(text) {
   let t = String(text || "").replace(/[.!?]/g, " ").replace(/\s+/g, " ").trim();
   t = t.replace(/^(?:(?:תוסיף|תוסיפי|תוסיפו|הוסף|הוסיפי|להוסיף|צריך|צריכים|צריכה|קנה|קני|לקנות|גם|לי|לרשימה)\s+)+/, "");
   const out = [];
   for (const part of t.split(/\s*,\s*|\s+וגם\s+|\s+ועוד\s+/)) {
     let cur = [];
-    for (const w of part.split(" ").filter(Boolean)) {
+    const words = part.split(" ").filter(Boolean);
+    for (const [k, w] of words.entries()) {
       // "חלב ולחם": מפצלים לפני ו' כשהמילה בלעדיה מוכרת (ולא "וניל", "וופלים"); "ו2 קוטג'" -> פריט חדש
       if (cur.length && (/^ו\d/.test(w) || (/^ו[^ו]/.test(w) && knownWord(w.slice(1)) && !knownWord(w)) || (/^ו/.test(w) && HEB_NUM[w.slice(1)] !== undefined))) {
         out.push(cur.join(" ")); cur = [w.slice(1)];
+      } else if (cur.length && runOnBreak(cur, w, words[k + 1])) {
+        out.push(cur.join(" ")); cur = [w];
       } else cur.push(w);
     }
     if (cur.length) out.push(cur.join(" "));
@@ -2219,33 +2311,92 @@ function speechToItems(text) {
   return out.map(s => s.replace(/^(\S+)\s+/, (m, w) => HEB_NUM[w] !== undefined ? HEB_NUM[w] + " " : m)
     .replace(/^(ק"ג|ק״ג|קילו)\s+/, "1 $1 ").trim()).filter(s => s.length > 1);
 }
+// הכתבה: אומרים את כל הרשימה ברצף ("חלב, 2 לחם, קילו עגבניות…"), כל מה שנשמע מצטבר בחלון,
+// ובסוף יש סיכום – אפשר לתקן כמויות, להוריד פריטים – וכפתור "הוסף" אחד לכל הרשימה
+let voiceBuf = [], voiceRec = null, voiceOn = false;
 function onVoiceText(text) {
   const items = speechToItems(text);
-  if (!items.length) return toast("לא שמעתי מוצר. נסה שוב");
-  if (items.length === 1) {
-    const p = parseQty(items[0]);
-    addItem(p.name, p.qty, "voice", p.unit);
-    commit(); refreshCompare().then(render);
-    return toast("🎤 נוסף: " + p.name);
+  if (!items.length) { toast("לא שמעתי מוצר. נסה שוב"); return voiceRender(); }
+  for (const s of items) {
+    const p = parseQty(s), ex = voiceBuf.find(x => norm(x.name) === norm(p.name));
+    if (ex) { ex.qty = ex.unit === "kg" ? roundKg(ex.qty + p.qty) : ex.qty + p.qty; ex.on = true; }
+    else voiceBuf.push({ ...p, on: true });
   }
-  importSheet(items.join("\n"), `🎤 שמעתי ${items.length} פריטים`); // לבדוק לפני ההוספה
+  voiceRender();
 }
 window.onNativeVoice = (text, err) => {
+  voiceOn = false;
   if (text) return onVoiceText(text);
   if (err === "no-recognizer") toast("בטלפון אין זיהוי דיבור. אפשר להתקין את אפליקציית Google");
+  voiceRender();
 };
 function voiceAdd() {
-  if (inApp && window.SuperlistNative.voice) return window.SuperlistNative.voice();
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return toast(inApp ? "עדכן את האפליקציה כדי להוסיף בקול (הגדרות ← עדכון גרסה)" : "הדפדפן הזה לא תומך בהוספה קולית. נסה בכרום");
-  const rec = new SR();
-  rec.lang = "he-IL"; rec.interimResults = false; rec.maxAlternatives = 1;
-  document.querySelector("[data-act=voice]")?.classList.add("on");
-  toast("🎤 מקשיב… אמור מה להוסיף");
-  rec.onresult = e => onVoiceText(e.results[0][0].transcript);
+  if (!(inApp && window.SuperlistNative.voice) && !SR) return toast(inApp ? "עדכן את האפליקציה כדי להוסיף בקול (הגדרות ← עדכון גרסה)" : "הדפדפן הזה לא תומך בהוספה קולית. נסה בכרום");
+  voiceBuf = [];
+  voiceRender();
+  voiceListen();
+}
+function voiceListen() {
+  if (voiceOn) return;
+  if (inApp && window.SuperlistNative.voice) { voiceOn = true; voiceRender(); return window.SuperlistNative.voice(); }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = voiceRec = new SR();
+  rec.lang = "he-IL"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.onresult = e => {
+    let live = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) onVoiceText(e.results[i][0].transcript);
+      else live += e.results[i][0].transcript;
+    }
+    const el = $("#vc-live"); if (el) el.textContent = live ? "🗣️ " + live : "";
+  };
   rec.onerror = e => { if (!["no-speech", "aborted"].includes(e.error)) toast(e.error === "not-allowed" ? "צריך לאשר גישה למיקרופון" : "זיהוי הדיבור נכשל: " + e.error); };
-  rec.onend = () => document.querySelector("[data-act=voice]")?.classList.remove("on");
+  rec.onend = () => { voiceOn = false; voiceRec = null; document.querySelector("[data-act=voice]")?.classList.remove("on"); voiceRender(); };
+  voiceOn = true;
+  document.querySelector("[data-act=voice]")?.classList.add("on");
   rec.start();
+  voiceRender();
+}
+function voiceStop() { try { voiceRec?.stop(); } catch {} }
+function voiceRender() {
+  if (!$("#vc-body")) {
+    sheet(`<h2 style="margin-top:0">🎤 הכתבת רשימה</h2><div id="vc-body"></div>`);
+    sheetCleanup = () => { try { voiceRec?.abort(); } catch {} voiceRec = null; voiceOn = false; document.querySelector("[data-act=voice]")?.classList.remove("on"); };
+  }
+  const on = voiceBuf.filter(x => x.on);
+  $("#vc-body").innerHTML = `
+    <div class="muted" style="margin-bottom:6px">${voiceOn ? `<b style="color:#dc2626">● מקשיב…</b> ` : ""}אפשר להגיד כמה מוצרים ברצף, למשל: "חלב, 2 לחם, קילו עגבניות וקוטג'".</div>
+    <div id="vc-live" class="muted" style="min-height:18px"></div>
+    <div class="card">${voiceBuf.length ? voiceBuf.map((x, k) => `<div class="row" style="padding:4px 0;border-bottom:1px solid var(--line);gap:8px;${x.on ? "" : "opacity:.45"}">
+        <input type="checkbox" data-vc-on="${k}" ${x.on ? "checked" : ""}>
+        <span class="grow">${esc(x.name)}</span>
+        <button class="btn small ghost" data-vc-q="${k}" data-d="-1">−</button>
+        <span style="min-width:44px;text-align:center">${x.unit === "kg" ? `${fmtNum(x.qty)} ק״ג` : fmtNum(x.qty)}</span>
+        <button class="btn small ghost" data-vc-q="${k}" data-d="1">+</button>
+        <button class="btn small ghost" data-vc-del="${k}">✕</button></div>`).join("")
+      : `<div class="muted">${voiceOn ? "עוד לא נשמע מוצר…" : "לא נשמע מוצר. לחץ על 🎤 כדי להקליט."}</div>`}</div>
+    <div class="row" style="margin-top:8px">${voiceOn && !inApp ? `<button class="btn ghost grow" id="vc-stop">⏹ סיימתי להקריא</button>` : !voiceOn ? `<button class="btn ghost grow" id="vc-more">🎤 ${voiceBuf.length ? "הקלט עוד מוצרים" : "הקלט"}</button>` : ""}</div>
+    ${voiceBuf.length ? `<div style="margin-top:10px;font-weight:600">סיכום: ${on.length} מוצרים${on.length ? ` – ${esc(on.map(previewQty).join(" · "))}` : ""}</div>` : ""}
+    <div class="row" style="margin-top:8px"><button class="btn grow" id="vc-add" ${on.length ? "" : "disabled"}>✓ הוסף ${on.length ? on.length + " מוצרים " : ""}לרשימה</button>
+      <button class="btn ghost" data-close>ביטול</button></div>`;
+  const b = $("#vc-body");
+  b.querySelectorAll("[data-vc-on]").forEach(el => el.onchange = () => { voiceBuf[el.dataset.vcOn].on = el.checked; voiceRender(); });
+  b.querySelectorAll("[data-vc-del]").forEach(el => el.onclick = () => { voiceBuf.splice(+el.dataset.vcDel, 1); voiceRender(); });
+  b.querySelectorAll("[data-vc-q]").forEach(el => el.onclick = () => {
+    const x = voiceBuf[el.dataset.vcQ], d = +el.dataset.d;
+    x.qty = x.unit === "kg" ? Math.max(0.1, roundKg(x.qty + d * 0.5)) : Math.max(1, x.qty + d);
+    voiceRender();
+  });
+  $("#vc-stop") && ($("#vc-stop").onclick = voiceStop);
+  $("#vc-more") && ($("#vc-more").onclick = voiceListen);
+  $("#vc-add").onclick = () => {
+    const add = voiceBuf.filter(x => x.on);
+    add.forEach(x => addItem(x.name, x.qty, "voice", x.unit));
+    voiceBuf = [];
+    closeSheet(); commit(); refreshCompare().then(render);
+    toast(`🎤 נוספו ${add.length} מוצרים`);
+  };
 }
 
 // ================= סריקת ברקוד =================
@@ -2765,7 +2916,7 @@ function renderHelp() {
   ${sec("📝 הרשימה: הוספת מוצרים", `<ul>
     <li><b>הקלדה:</b> כותבים בשדה למעלה ולוחצים "הוסף". אפשר עם כמות: "2 חלב", "1.5 ק״ג עגבניות", "לחם x3".</li>
     <li><b>השלמה חכמה:</b> תוך כדי הקלדה מופיעים מוצרים כמו שהם כתובים ברשתות, עם תמונה ומחיר. שגיאת כתיב? יופיע "האם התכוונת ל…".</li>
-    <li><b>🎤 בקול:</b> לוחצים על המיקרופון ואומרים, למשל "חלב, לחם ושתי עגבניות". כמה מוצרים – מופיע חלון לאישור.</li>
+    <li><b>🎤 בקול:</b> לוחצים על המיקרופון ומקריאים את כל הרשימה ברצף, למשל "חלב, לחם ושתי עגבניות". אפשר להקליט עוד, ובסוף מופיע סיכום – מתקנים כמויות או מורידים מוצרים, ולוחצים "הוסף".</li>
     <li><b>📷 סריקת ברקוד:</b> לוחצים על המצלמה ומכוונים לברקוד שעל המוצר. המוצר המדויק נכנס לרשימה, כבר מקושר למחיר.</li>
     <li><b>📥 ייבוא רשימת קניות:</b> מדביקים רשימה מוואטסאפ, פתקים, AddIt וכו' (כפתור מתחת לרשימה). באפליקציה אפשר גם <b>לשתף</b> רשימה מכל אפליקציה ← "הסל החכם".</li>
     <li>ירקות ופירות נכנסים בק״ג (בקפיצות של חצי ק״ג), כל השאר ביחידות. לחיצה על הכמות מחליפה בין ק״ג ליחידות.</li>
@@ -2792,7 +2943,7 @@ function renderHelp() {
     <li><b>🗓️ תכנון שבועי</b> (לשונית מתכונים): בוחרים מתכון לכל יום, ו"הוסף את מצרכי השבוע" מכניס הכל לרשימה – מצרכים זהים מתאחדים.</li>
     <li><b>🛍️ מצב קנייה בסופר</b> (כפתור מתחת לרשימה): אריחים גדולים, המסך לא נכבה, ובראש המסך כמה כבר בעגלה ובכמה כסף – לפי הסופר שבחרתם. "⇅ סדר המחלקות" מסדר את הרשימה לפי המעברים בסניף שלכם.</li>
     <li><b>💸 תקציב והוצאות</b> (בכפתור "הזמנות והוצאות"): קובעים תקציב חודשי, ורואים כמה הוצאתם החודש, גרף של חצי שנה, ופילוח לפי רשת ומחלקה. אם הסל יעבור את התקציב – תופיע אזהרה.</li>
-    <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת ולהוסיף הזמנה שוב לרשימה.</li>
+    <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת, להוסיף הזמנה שוב לרשימה, ולמחוק הזמנה (🗑) שנשלחה בטעות. הזמנה שעוד בתהליך (⏳) אפשר לערוך – לשנות כמויות, להסיר ולהוסיף מוצרים – ולשלוח את התוספות לעגלה באתר של הרשת.</li>
   </ul>`)}
 
   ${sec("📋 הרשימות שלי ושיתוף", `<ul>
@@ -2806,7 +2957,7 @@ function renderHelp() {
   ${sec("💰 השוואת מחירים", `<ul>
     <li>ההשוואה היא בין <b>סניפי האונליין</b> (המחירים של אתרי הקנייה): שופרסל, רמי לוי, קרפור, טיב טעם ו-Wolt Market. בוחרים רשתות ב⚙️ הגדרות.</li>
     <li><b>יוחננוף</b> מושווית לפי סניף רגיל שבוחרים, ומסומנת <b>הערכה</b> – באתר שלה המחיר יכול להיות קצת שונה. <b>חצי חינם</b> – האפליקציה (או תוסף הכרום) מורידה את קובץ המחירים הרשמי שלה מהחיבור שלך. <b>ויקטורי</b> לא מפרסמת מחירים, אז אחרי מילוי עגלה מוצג הסכום שבעגלה ("🧾 בעגלה בפועל").</li>
-    <li>מתחת לרשימה: "מחיר הסל" בכל רשת, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
+    <li>בלשונית <b>מחירים</b>: "מחירים וזמני אספקה קרובים" – הסל בכל רשת, המשלוח הקרוב, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
     <li>לשונית 💰 מחירים: טבלה מפורטת לכל מוצר, וחיפוש מוצר לפי שם או ברקוד.</li>
     <li>המחירים מתעדכנים אוטומטית כמה פעמים ביום, מקבצי שקיפות המחירים של הרשתות. ייתכנו הבדלים קטנים (מבצעי מועדון, דמי משלוח).</li>
   </ul>`)}
