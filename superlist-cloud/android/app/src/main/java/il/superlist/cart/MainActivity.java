@@ -14,6 +14,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
 import android.webkit.CookieManager;
+import android.webkit.ValueCallback;
+import android.content.IntentSender;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanner;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning;
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -85,7 +91,17 @@ public class MainActivity extends Activity {
         s.setUserAgentString(userAgent + " SuperlistApp/1");
         CookieManager.getInstance().setAcceptCookie(true);
         web.addJavascriptInterface(new Bridge(), "SuperlistNative");
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            // <input type="file"> בדף (למשל העלאת חשבונית PDF / תמונה): בוחר הקבצים של הטלפון
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> cb, FileChooserParams params) {
+                if (fileCb != null) fileCb.onReceiveValue(null);
+                fileCb = cb;
+                try { startActivityForResult(params.createIntent(), REQ_FILE); }
+                catch (Exception e) { fileCb = null; return false; }
+                return true;
+            }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
@@ -316,6 +332,41 @@ public class MainActivity extends Activity {
             .addOnFailureListener(e -> js("window.onNativeBarcode&&onNativeBarcode(null," + JSONObject.quote(String.valueOf(e.getMessage())) + ")"));
     }
 
+    // סריקת חשבונית: הסורק של Google (מצלם, מיישר וחותך את הדף). התמונות ל-window.onNativeDoc([dataURL...] | null, error)
+    static final int REQ_FILE = 42, REQ_DOC = 43;
+    ValueCallback<Uri[]> fileCb;
+    void scanDoc() {
+        GmsDocumentScannerOptions opts = new GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true).setPageLimit(4)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE).build();
+        GmsDocumentScanning.getClient(opts).getStartScanIntent(this)
+            .addOnSuccessListener(sender -> {
+                try { startIntentSenderForResult(sender, REQ_DOC, null, 0, 0, 0); }
+                catch (IntentSender.SendIntentException e) { js("window.onNativeDoc&&onNativeDoc(null," + JSONObject.quote(String.valueOf(e.getMessage())) + ")"); }
+            })
+            .addOnFailureListener(e -> js("window.onNativeDoc&&onNativeDoc(null," + JSONObject.quote(String.valueOf(e.getMessage())) + ")"));
+    }
+    void deliverDoc(Intent data) {
+        GmsDocumentScanningResult r = data == null ? null : GmsDocumentScanningResult.fromActivityResultIntent(data);
+        if (r == null || r.getPages() == null || r.getPages().isEmpty()) { js("window.onNativeDoc&&onNativeDoc(null,'cancelled')"); return; }
+        ExecutorService ex = Executors.newSingleThreadExecutor();
+        ex.execute(() -> {
+            StringBuilder arr = new StringBuilder("[");
+            for (GmsDocumentScanningResult.Page p : r.getPages()) {
+                try (InputStream in = getContentResolver().openInputStream(p.getImageUri())) {
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    byte[] buf = new byte[16384]; int n;
+                    while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                    if (arr.length() > 1) arr.append(',');
+                    arr.append(JSONObject.quote("data:image/jpeg;base64," + Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP)));
+                } catch (Exception ignored) { }
+            }
+            js("window.onNativeDoc&&onNativeDoc(" + arr.append(']') + ")");
+        });
+        ex.shutdown();
+    }
+
     // הוספה קולית: זיהוי הדיבור של הטלפון (עברית). התוצאה ל-window.onNativeVoice(text | null, error)
     static final int REQ_VOICE = 41;
     void voice() {
@@ -330,6 +381,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_FILE) {
+            if (fileCb != null) fileCb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
+            fileCb = null;
+            return;
+        }
+        if (req == REQ_DOC) {
+            if (res == RESULT_OK) deliverDoc(data); else js("window.onNativeDoc&&onNativeDoc(null,'cancelled')");
+            return;
+        }
         if (req != REQ_VOICE) return;
         ArrayList<String> r = data == null ? null : data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
         String t = res == RESULT_OK && r != null && !r.isEmpty() ? r.get(0) : null;
@@ -338,7 +398,8 @@ public class MainActivity extends Activity {
 
     // מה שהדף יכול לבקש מהאפליקציה
     class Bridge {
-        @JavascriptInterface public String version() { return "6"; }
+        @JavascriptInterface public String version() { return "7"; }
+        @JavascriptInterface public void scanDoc() { ui.post(MainActivity.this::scanDoc); }
         // מספר הגרסה המותקנת (מספר הבנייה ב-GitHub) – הדף משווה לגרסה האחרונה ומציג "יש עדכון זמין"
         @SuppressWarnings("deprecation")
         @JavascriptInterface public int appVersion() {

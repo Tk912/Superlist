@@ -579,12 +579,14 @@ function ordersSheet() {
       const tot = orderTotal(o);
       return `${head}<details class="card" style="margin-bottom:8px"><summary class="row" style="cursor:pointer;gap:8px">
           <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
-            <div class="muted" style="font-size:12px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
+            <div class="muted" style="font-size:12px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${checkTag(o)}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
           <b>${tot != null ? money(tot) : ""}</b>
           <button class="btn small ghost" data-odel="${o.id}" title="מחיקת ההזמנה" aria-label="מחיקת ההזמנה">🗑</button></summary>
         ${orderOpen(o) ? `<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="who" style="background:#fef3c7;color:#92400e">⏳ בתהליך</span>
           <button class="btn small" data-oedit="${o.id}">✏️ עריכת ההזמנה</button>
           <button class="btn small ghost" data-orecv="${o.id}">✓ ההזמנה התקבלה</button></div>` : ""}
+        ${o.chain !== "store" ? `<button class="btn small ${o.check ? "ghost" : ""}" style="margin-top:6px" data-oinv="${o.id}">🧾 ${o.check ? "בדיקה חוזרת מול החשבונית" : "סריקת חשבונית – האם הכל הגיע?"}</button>` : ""}
+        ${o.check?.missing?.length ? `<div class="warn" style="margin-top:6px">⚠️ לא הגיעו לפי החשבונית: ${esc(o.check.missing.join(", "))}</div>` : ""}
         ${o.cart == null ? `<button class="btn small ghost" style="margin-top:6px" data-paid="${o.id}">₪ ${o.chain === "store" ? "כמה שילמת?" : "עדכן את הסכום ששילמת"}</button>` : ""}
         <div style="margin-top:6px">${o.items.map(i => `<div class="row" style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">
           <span class="grow">${esc(i.name)}${i.unit === "kg" ? ` <span class="muted">${fmtNum(i.qty)} ק״ג</span>` : i.qty > 1 ? ` ×${fmtNum(i.qty)}` : ""}${i.alt ? `<div class="alt">≈ ${esc(i.alt)}</div>` : ""}</span>
@@ -621,6 +623,7 @@ function ordersSheet() {
     commit(); closeSheet(); refreshCompare().then(render);
     toast(n ? `נוספו ${n} פריטים מההזמנה` : "כל הפריטים כבר ברשימה");
   });
+  root.querySelectorAll("[data-oinv]").forEach(el => el.onclick = () => invoiceSheet(el.dataset.oinv));
   root.querySelectorAll("[data-oedit]").forEach(el => el.onclick = () => orderEditSheet(el.dataset.oedit));
   root.querySelectorAll("[data-orecv]").forEach(el => el.onclick = () => {
     Object.assign(S.orders.find(x => x.id === el.dataset.orecv), { received: now(), t: now() });
@@ -633,6 +636,177 @@ function ordersSheet() {
     Object.assign(o, { deleted: true, t: now() });
     commit(); ordersSheet();
   });
+}
+
+// ================= בדיקת חשבונית =================
+// מצלמים / סורקים את החשבונית (או מעלים PDF, או מדביקים טקסט), קוראים את הטקסט שבה (OCR בעברית, בטלפון עצמו),
+// ובודקים לכל מוצר בהזמנה אם הוא מופיע בחשבונית. בסוף: מה לא הגיע, והסכום ששולם.
+const checkTag = o => !o.check ? "" : o.check.missing?.length ? `⚠️ חסרים ${o.check.missing.length} · ` : "✅ הכל הגיע · ";
+const OCR_LIB = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const PDF_LIB = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDF_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+let invoiceOrder = null;
+// תמונה (קובץ / dataURL) -> קנבס מוקטן באפור, שמתאים ל-OCR
+async function invoiceCanvas(src) {
+  const img = new Image();
+  img.src = typeof src === "string" ? src : URL.createObjectURL(src);
+  await img.decode();
+  const k = Math.min(1, 2200 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  const g = c.getContext("2d");
+  g.filter = "grayscale(1) contrast(1.4)";
+  g.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+async function ocrCanvases(canvases, progress) {
+  await loadScript(OCR_LIB);
+  const w = await window.Tesseract.createWorker("heb+eng", 1, {
+    logger: m => { if (m.status === "recognizing text") progress(`🔎 קורא את החשבונית… ${Math.round(m.progress * 100)}%`); else if (/load/.test(m.status)) progress("⏳ טוען את קורא הטקסט (פעם ראשונה לוקח רגע)…"); },
+  });
+  let text = "";
+  try { for (const c of canvases) text += (await w.recognize(c)).data.text + "\n"; } finally { await w.terminate(); }
+  return text;
+}
+// PDF: קודם הטקסט שבקובץ (חשבונית דיגיטלית); אם אין בו טקסט (סריקה) – מציירים את העמודים וקוראים ב-OCR
+async function pdfText(file, progress) {
+  await loadScript(PDF_LIB);
+  const lib = window.pdfjsLib;
+  lib.GlobalWorkerOptions.workerSrc = PDF_WORKER;
+  const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  let text = "";
+  const pages = Math.min(pdf.numPages, 6), canvases = [];
+  for (let p = 1; p <= pages; p++) {
+    const page = await pdf.getPage(p);
+    const items = (await page.getTextContent()).items.filter(i => i.str.trim());
+    // שורות לפי הגובה בעמוד
+    const rows = new Map();
+    for (const i of items) { const y = Math.round(i.transform[5] / 3); (rows.get(y) || rows.set(y, []).get(y)).push(i); }
+    text += [...rows.entries()].sort((a, b) => b[0] - a[0]).map(([, r]) => r.sort((a, b) => b.transform[4] - a.transform[4]).map(i => i.str).join(" ")).join("\n") + "\n";
+    if (items.length < 5) {
+      const vp = page.getViewport({ scale: 2 }), c = document.createElement("canvas");
+      c.width = vp.width; c.height = vp.height;
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      canvases.push(c);
+    }
+  }
+  if (text.replace(/\s/g, "").length < 40 && canvases.length) text += await ocrCanvases(canvases, progress);
+  return text;
+}
+// השוואה: לכל מוצר בהזמנה – האם הוא בחשבונית (לפי ברקוד, או לפי רוב המילים בשם באותה שורה, עם סובלנות לשגיאות קריאה)
+const INV_NOISE = new Set(["גרמ", "גר", "קג", "ליטר", "מל", "יח", "יחידות", "מארז", "רמי", "לוי", "שופרסל", "יוחננוף", "קרפור", "חצי", "חינמ", "טיב", "טעמ", "ויקטורי", "בדצ", "כשר"]);
+const invNorm = s => String(s || "").replace(/[ךםןףץ]/g, c => ({ "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" })[c]).replace(/["'׳״`.,:;()\[\]\/\\*+-]/g, " ").replace(/\s+/g, " ").trim();
+const invWords = s => invNorm(s).split(" ").filter(w => w.length >= 2 && !/\d/.test(w) && !INV_NOISE.has(w));
+function near(a, b) {
+  if (a === b) return true;
+  if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return true;
+  if (Math.abs(a.length - b.length) > 1 || a.length < 4) return false;
+  let i = 0, j = 0, e = 0;   // מרחק עריכה עד 1
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++e > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return e + (a.length - i) + (b.length - j) <= 1;
+}
+function matchInvoice(text, items) {
+  const lines = String(text).split(/\n/).map(invNorm).filter(Boolean);
+  // ב-PDF בעברית הטקסט לפעמים שמור הפוך (משמאל לימין) – בודקים גם את השורה ההפוכה
+  const cands = lines.flatMap(l => [l.split(" "), [...l].reverse().join("").split(" ")]);
+  const digits = new Set((String(text).match(/\d{7,14}/g) || []).map(d => d.replace(/^0+/, "")));
+  return items.map(i => {
+    if (i.code && digits.has(String(i.code).replace(/^0+/, ""))) return { ...i, ok: true, how: "ברקוד" };
+    let best = 0;
+    for (const name of [i.product, i.alt, i.name].filter(Boolean)) {
+      const ws = invWords(name);
+      if (!ws.length) continue;
+      for (const toks of cands) {
+        const hit = ws.filter(w => toks.some(tk => near(w, tk))).length / ws.length;
+        if (hit > best) best = hit;
+      }
+    }
+    return { ...i, ok: best >= 0.6, score: best };
+  });
+}
+// הסכום לתשלום: המספר הגדול בשורות של "סה"כ" / "לתשלום"
+function invoiceTotal(text) {
+  let best = null;
+  for (const l of String(text).split(/\n/)) {
+    if (!/סה.?כ|לתשלום|סך הכל|total/i.test(l) && !/לכ.?הס|םולשתל/.test(l)) continue;
+    for (const n of l.match(/\d{1,4}[.,]\d{2}/g) || []) { const v = parseFloat(n.replace(",", ".")); if (v > 5 && (best == null || v > best)) best = v; }
+  }
+  return best;
+}
+window.onNativeDoc = async (pages, err) => {
+  if (!pages?.length) { if (err && err !== "cancelled") toast("הסריקה נכשלה: " + err); return; }
+  invoiceRun(async progress => ocrCanvases(await Promise.all(pages.map(invoiceCanvas)), progress));
+};
+function invoiceSheet(id) {
+  const o = S.orders.find(x => x.id === id);
+  if (!o) return;
+  invoiceOrder = o;
+  const nativeScan = !!window.SuperlistNative?.scanDoc;
+  const oldApp = inApp && !nativeScan;
+  sheet(`<h2 style="margin-top:0">🧾 בדיקת חשבונית · ${esc(ORDER_PLACE(o.chain))}</h2>
+    <div class="muted" style="margin-bottom:8px">מצלמים את החשבונית שהגיעה עם ההזמנה (או מעלים את קובץ ה-PDF שהרשת שלחה), והאפליקציה בודקת לכל אחד מ-${o.items.length} המוצרים אם הוא מופיע בה.</div>
+    ${oldApp ? `<div class="warn">כדי לצלם חשבונית צריך לעדכן את האפליקציה (⚙️ הגדרות ← עדכון גרסה). בינתיים אפשר להדביק את הטקסט של החשבונית.</div>` : `
+    ${nativeScan ? `<button class="btn" style="width:100%" id="inv-scan">📷 צילום / סריקה של החשבונית</button>`
+      : `<label class="btn" style="width:100%;display:block;text-align:center;cursor:pointer">📷 צילום החשבונית<input type="file" id="inv-cam" accept="image/*" capture="environment" hidden></label>`}
+    <label class="btn ghost" style="width:100%;display:block;text-align:center;cursor:pointer;margin-top:8px">📄 קובץ PDF או תמונה<input type="file" id="inv-file" accept="image/*,application/pdf" hidden></label>`}
+    <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">📋 או הדבקת הטקסט של החשבונית (ממייל / SMS)</summary>
+      <textarea id="inv-text" rows="5" placeholder="מדביקים כאן את פירוט החשבונית"></textarea>
+      <button class="btn small" id="inv-text-go" style="margin-top:6px">בדוק</button></details>
+    <div id="inv-out" style="margin-top:10px"></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" id="inv-back">חזרה להזמנות</button>`);
+  $("#inv-back").onclick = () => ordersSheet();
+  if ($("#inv-scan")) $("#inv-scan").onclick = () => window.SuperlistNative.scanDoc();
+  const onFile = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    invoiceRun(async progress => /pdf/i.test(file.type) || /\.pdf$/i.test(file.name) ? pdfText(file, progress) : ocrCanvases([await invoiceCanvas(file)], progress));
+  };
+  $("#inv-cam") && ($("#inv-cam").onchange = onFile);
+  $("#inv-file") && ($("#inv-file").onchange = onFile);
+  $("#inv-text-go").onclick = () => { const v = $("#inv-text").value; if (v.trim()) invoiceRun(async () => v); };
+}
+async function invoiceRun(getText) {
+  const o = invoiceOrder, out = $("#inv-out");
+  if (!o || !out) return;
+  const progress = m => { const el = $("#inv-out"); if (el) el.innerHTML = `<div class="card muted">${esc(m)}</div>`; };
+  progress("⏳ קורא את החשבונית…");
+  let text = "";
+  try { text = await getText(progress); }
+  catch (e) { console.warn("invoice", e); return progress("לא הצלחתי לקרוא את החשבונית. נסו לצלם שוב, ישר ובאור טוב, או להעלות את ה-PDF."); }
+  if (text.replace(/\s/g, "").length < 15) return progress("לא נמצא טקסט בחשבונית. נסו לצלם שוב, קרוב יותר ובאור טוב.");
+  invoiceResult(o, matchInvoice(text, o.items), invoiceTotal(text));
+}
+function invoiceResult(o, rows, total) {
+  const draw = () => {
+    const miss = rows.filter(r => !r.ok);
+    $("#inv-out").innerHTML = `<div class="card">
+      <div style="font-weight:600;margin-bottom:4px">${miss.length ? `⚠️ ${miss.length} מתוך ${rows.length} מוצרים לא נמצאו בחשבונית` : `✅ כל ${rows.length} המוצרים נמצאו בחשבונית`}</div>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">הקריאה האוטומטית לא תמיד מדויקת: לחיצה על מוצר מחליפה בין "הגיע" ל"לא הגיע".</div>
+      ${rows.map((r, k) => `<div class="row" data-inv-t="${k}" style="cursor:pointer;padding:5px 0;border-bottom:1px solid var(--line);gap:8px">
+        <span>${r.ok ? "✅" : "❌"}</span><span class="grow">${esc(r.name)}${r.unit === "kg" ? ` <span class="muted">${fmtNum(r.qty)} ק״ג</span>` : r.qty > 1 ? ` ×${fmtNum(r.qty)}` : ""}
+          ${r.product ? `<div class="muted" style="font-size:12px">${esc(r.product)}</div>` : ""}</span>
+        <span class="muted" style="font-size:12px">${r.ok ? "הגיע" : "לא הגיע"}</span></div>`).join("")}
+      ${total ? `<label class="row" style="margin-top:8px;gap:6px"><input type="checkbox" id="inv-total" ${o.cart == null ? "checked" : ""}> הסכום בחשבונית: <b>${money(total)}</b> – לשמור כסכום ששולם</label>` : ""}
+      <div class="row" style="margin-top:8px;gap:6px">
+        <button class="btn grow" id="inv-save">💾 שמור את הבדיקה</button>
+        ${miss.length ? `<button class="btn ghost" id="inv-copy">📋 העתק את החסרים</button>` : ""}</div></div>`;
+    $("#inv-out").querySelectorAll("[data-inv-t]").forEach(el => el.onclick = () => { const r = rows[el.dataset.invT]; r.ok = !r.ok; draw(); });
+    $("#inv-save").onclick = () => {
+      Object.assign(o, { check: { at: now(), missing: rows.filter(r => !r.ok).map(r => r.name) }, received: o.received || now(), t: now() },
+        total && $("#inv-total")?.checked ? { cart: total } : {});
+      commit(); toast(miss.length ? `נשמר: ${miss.length} מוצרים לא הגיעו` : "נשמר: הכל הגיע ✅"); ordersSheet();
+    };
+    $("#inv-copy") && ($("#inv-copy").onclick = async () => {
+      const d = new Date(o.at).toLocaleDateString("he-IL");
+      await copyText(`שלום, בהזמנה מ${ORDER_PLACE(o.chain)} מתאריך ${d} לא הגיעו המוצרים הבאים:\n${miss.map(r => "• " + (r.product || r.name) + (r.qty > 1 ? ` ×${fmtNum(r.qty)}` : "")).join("\n")}\nאשמח לזיכוי. תודה`);
+      toast("הרשימה הועתקה – אפשר להדביק בפנייה לשירות הלקוחות");
+    });
+  };
+  draw();
 }
 
 // עריכת הזמנה שעוד בתהליך: משנים כמויות, מסירים ומוסיפים מוצרים. השינוי נשמר בהיסטוריה,
@@ -2943,6 +3117,7 @@ function renderHelp() {
     <li><b>🗓️ תכנון שבועי</b> (לשונית מתכונים): בוחרים מתכון לכל יום, ו"הוסף את מצרכי השבוע" מכניס הכל לרשימה – מצרכים זהים מתאחדים.</li>
     <li><b>🛍️ מצב קנייה בסופר</b> (כפתור מתחת לרשימה): אריחים גדולים, המסך לא נכבה, ובראש המסך כמה כבר בעגלה ובכמה כסף – לפי הסופר שבחרתם. "⇅ סדר המחלקות" מסדר את הרשימה לפי המעברים בסניף שלכם.</li>
     <li><b>💸 תקציב והוצאות</b> (בכפתור "הזמנות והוצאות"): קובעים תקציב חודשי, ורואים כמה הוצאתם החודש, גרף של חצי שנה, ופילוח לפי רשת ומחלקה. אם הסל יעבור את התקציב – תופיע אזהרה.</li>
+    <li><b>🧾 בדיקת חשבונית:</b> בהזמנה בהיסטוריה לוחצים "סריקת חשבונית", מצלמים את החשבונית שהגיעה (או מעלים PDF / מדביקים טקסט), ורואים מה לא הגיע – עם העתקה של החסרים לפנייה לשירות הלקוחות.</li>
     <li><b>🧾 היסטוריית הזמנות</b> (כפתור מתחת לרשימה): כל "שלח לסופר" ו"סיימתי קנייה" נשמרים לפי רשת ותאריך, עם המוצרים והסכום (לפי העגלה, אם התקבל). אפשר לסנן לפי רשת, להוסיף הזמנה שוב לרשימה, ולמחוק הזמנה (🗑) שנשלחה בטעות. הזמנה שעוד בתהליך (⏳) אפשר לערוך – לשנות כמויות, להסיר ולהוסיף מוצרים – ולשלוח את התוספות לעגלה באתר של הרשת.</li>
   </ul>`)}
 
