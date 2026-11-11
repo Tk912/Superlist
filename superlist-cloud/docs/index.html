@@ -14,6 +14,8 @@
 <title>הסל החכם</title>
 <style>
 :root {
+  /* שולי מסך (סרגלי המערכת). באפליקציה האנדרואיד כבר משאירה להם מקום, אז כאן 0 – אחרת המרווח כפול */
+  --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
   --bg: #f4f6f3; --card: #ffffff; --text: #1b2620; --muted: #6b7a71; --line: #e3e8e4;
   --accent: #0f7a4a; --accent-soft: #e2f3ea; --warn: #b5470b; --warn-soft: #fdeee4;
   --chip: #eef2ef; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
@@ -30,17 +32,17 @@ html, body { margin: 0; background: var(--bg); color: var(--text);
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Rubik, Arial, sans-serif; }
 button, input, select, textarea { font: inherit; color: inherit; }
 header { position: sticky; top: 0; z-index: 5; background: var(--bg);
-  padding: calc(10px + env(safe-area-inset-top)) 16px 8px; display: flex; align-items: center; gap: 10px; }
+  padding: calc(10px + var(--sat)) 16px 8px; display: flex; align-items: center; gap: 10px; }
 header h1 { font-size: 20px; margin: 0; flex: 1; }
 #sync { font-size: 12px; color: var(--muted); }
 #sync.off { color: var(--warn); }
 .hdr-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 #lang-slot .lang-pick { padding: 0 8px; font-size: 12px; min-height: 0; }
 #lang-slot .lang-pick select { font-size: 12px; padding: 1px 0; }
-main { padding: 0 16px calc(76px + env(safe-area-inset-bottom)); max-width: 680px; margin: 0 auto; }
+main { padding: 0 16px calc(76px + var(--sab)); max-width: 680px; margin: 0 auto; }
 nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 6; display: flex; background: var(--card);
-  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-nav button { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 4px 2px 4px; font-size: 11px; line-height: 1.2; color: var(--muted);
+  border-top: 1px solid var(--line); padding-bottom: var(--sab); }
+nav button { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 3px 2px 2px; font-size: 11px; line-height: 1.2; color: var(--muted);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; cursor: pointer; }
 nav button .i { display: grid; place-items: center; height: 28px; }
 nav button .i .ic { width: 23px; height: 23px; }
@@ -125,7 +127,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   .tile .tile-check { color: #0b1a12; }
 }
 .tile-note { font-size: 12px; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
-.shop-bar { position: sticky; top: calc(48px + env(safe-area-inset-top)); z-index: 4; background: var(--card); border-radius: 14px; padding: 10px 12px;
+.shop-bar { position: sticky; top: calc(48px + var(--sat)); z-index: 4; background: var(--card); border-radius: 14px; padding: 10px 12px;
   margin-bottom: 10px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .shop-bar select { width: auto; padding: 4px 8px; font-size: 14px; }
 .shop .tile-name { font-size: 16px; font-weight: 600; }
@@ -160,7 +162,7 @@ td.best { color: var(--accent); font-weight: 700; }
 .warn { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
 .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
 .sheet { background: var(--bg); width: 100%; max-width: 680px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0;
-  padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+  padding: 16px 16px calc(16px + var(--sab)); }
 .result { padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
 .result:hover { background: var(--chip); }
 .result .prices { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; margin-top: 2px; }
@@ -187,18 +189,18 @@ td.best { color: var(--accent); font-weight: 700; }
 .ac-row .sub { font-size: 12px; color: var(--muted); }
 .ac-fix { padding: 8px 4px; font-size: 14px; cursor: pointer; color: var(--accent); }
 .big-img { width: 100%; max-height: 62vh; min-height: 200px; object-fit: contain; background: #fff; border-radius: 12px; cursor: zoom-in; }
-.big-img.full { position: fixed; inset: 0; z-index: 2147483000; width: 100vw; height: 100vh; max-height: none; border-radius: 0; cursor: zoom-out; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); box-sizing: border-box; }
+.big-img.full { position: fixed; inset: 0; z-index: 2147483000; width: 100vw; height: 100vh; max-height: none; border-radius: 0; cursor: zoom-out; padding: var(--sat) 0 var(--sab); box-sizing: border-box; }
 .hidden { display: none !important; }
 .ic { display: block; flex: none; }
 /* פס "שלח לסופר" קבוע מעל התפריט התחתון: מחיר הסל והמשלוח הקרוב תמיד גלויים */
-#sendbar { position: fixed; inset-inline: 0; bottom: calc(49px + env(safe-area-inset-bottom)); z-index: 6; padding: 6px 12px;
+#sendbar { position: fixed; inset-inline: 0; bottom: calc(46px + var(--sab)); z-index: 6; padding: 6px 12px;
   background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -4px 14px rgba(0,0,0,.06); }
 #sendbar .in { max-width: 680px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
 #sendbar .sum { flex: 1; min-width: 0; cursor: pointer; line-height: 1.25; }
 #sendbar .sum b { font-size: 16px; font-variant-numeric: tabular-nums; }
 #sendbar .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sendbar .btn { display: flex; align-items: center; gap: 6px; padding: 10px 14px; }
-body.has-sendbar main { padding-bottom: calc(136px + env(safe-area-inset-bottom)); }
+body.has-sendbar main { padding-bottom: calc(136px + var(--sab)); }
 /* הודעות לפי סוג: מידע (כחול), אזהרה (כתום), שגיאה (אדום) */
 .note-info { background: #e8f0fd; color: #1d4b8f; border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
 .warn.err { background: #fde8e8; color: #b42318; }
@@ -217,9 +219,11 @@ body.has-sendbar main { padding-bottom: calc(136px + env(safe-area-inset-bottom)
 @media (prefers-color-scheme: dark) { .tag.promo-t { background: #3a2414; color: #fb923c; } .tag.down { background: #15301f; color: #4ade80; } .tag.up { background: #3a1818; color: #f87171; } }
 .menu-list button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: var(--card); padding: 14px; border-radius: 12px;
   margin-bottom: 8px; font-size: 16px; text-align: start; cursor: pointer; box-shadow: var(--shadow); }
-.toast { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom)); inset-inline: 16px; margin: auto; max-width: 420px;
+.toast { position: fixed; bottom: calc(80px + var(--sab)); inset-inline: 16px; margin: auto; max-width: 420px;
   background: #1b2620; color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 30; text-align: center; font-size: 14px; }
+html.in-app { --sat: 0px; --sab: 0px; }
 </style>
+<script>if (/SuperlistApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");</script>
 </head>
 <body>
 <header>

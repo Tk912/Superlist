@@ -122,7 +122,9 @@ public class MainActivity extends Activity {
         // מקצה לקצה (אנדרואיד 15+): הדף בתוך מסגרת עם ריווח בגודל הסרגלים והמקלדת
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
         frame.addView(web);
-        Screen.fitBars(this, frame, Color.rgb(15, 122, 74));
+        // מתחת לתפריט התחתון: אותו צבע כמו התפריט (לבן, או כהה במצב כהה) – כדי שהתפריט ייראה צמוד לתחתית
+        boolean night = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        Screen.fitBars(this, frame, Color.rgb(15, 122, 74), night ? Color.rgb(26, 33, 29) : Color.WHITE);
         Screen.onBack(this, () -> { if (web.canGoBack()) web.goBack(); else finish(); });
         setContentView(frame);
 
