@@ -350,9 +350,12 @@ const PriceDB = (() => {
   }
 
   // תמונת מוצר לפי ברקוד (אין תמונות בקובצי המחירים). ירקות ופירות במשקל הם בלי ברקוד אמיתי.
-  function images(code) {
+  function images(code, big = false) {
     const c = String(code || "").replace(/^0+/, "");
-    return /^\d{8,14}$/.test(c) ? [`https://m.pricez.co.il/ProductPictures/${c}.jpg`, `https://img.rami-levy.co.il/product/${c}/small.jpg`] : [];
+    if (!/^\d{8,14}$/.test(c)) return [];
+    // big: לתצוגה מוגדלת – קודם התמונה הגדולה של רמי לוי
+    return big ? [`https://img.rami-levy.co.il/product/${c}/large.jpg`, `https://m.pricez.co.il/ProductPictures/${c}.jpg`, `https://img.rami-levy.co.il/product/${c}/medium.jpg`]
+      : [`https://m.pricez.co.il/ProductPictures/${c}.jpg`, `https://img.rami-levy.co.il/product/${c}/small.jpg`];
   }
 
   // ---------- אריזה משתלמת: אותו מוצר באריזה גדולה יותר, זול יותר ליחידת מידה ----------

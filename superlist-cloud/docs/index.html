@@ -185,7 +185,8 @@ td.best { color: var(--accent); font-weight: 700; }
 .ac-row .nm { font-size: 15px; }
 .ac-row .sub { font-size: 12px; color: var(--muted); }
 .ac-fix { padding: 8px 4px; font-size: 14px; cursor: pointer; color: var(--accent); }
-.big-img { width: 100%; max-height: 50vh; object-fit: contain; background: #fff; border-radius: 12px; }
+.big-img { width: 100%; max-height: 62vh; min-height: 200px; object-fit: contain; background: #fff; border-radius: 12px; cursor: zoom-in; }
+.big-img.full { position: fixed; inset: 0; z-index: 2147483000; width: 100vw; height: 100vh; max-height: none; border-radius: 0; cursor: zoom-out; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); box-sizing: border-box; }
 .hidden { display: none !important; }
 .toast { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom)); inset-inline: 16px; margin: auto; max-width: 420px;
   background: #1b2620; color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 30; text-align: center; font-size: 14px; }
@@ -1249,7 +1250,7 @@ function renderList() {
       : p ? `<div class="tile-price">${p.promo ? `<s class="muted">${money(p.regular)}</s> ` : ""}${money(p.price)}${p.weighted ? " לק״ג" : ""} ב${esc(p.chain)}${unitTag(p.unit)}${
           p.promo ? `<div class="promo">🏷️ ${esc(p.promo)}</div>` : p.hint ? `<div class="promo hint">🏷️ ${esc(p.hint)}</div>` : ""}${trendTag(p.trend)}</div>` : "";
     const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
-    const img = thumb(i.code, "tile-img", `data-act="toggle" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="toggle">${DEPT_ICON[i.cat] || "🛒"}</span>`;
+    const img = thumb(i.code, "tile-img", `data-act="img" title="הגדלת התמונה" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="toggle">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
       <div class="tile-top">${img}<div class="tile-name" data-act="toggle">${esc(i.name)} ${who}</div>
@@ -2384,24 +2385,28 @@ function resultRow(p) {
 
 // תמונת מוצר; אם אין במקור הראשון מנסים את השני, ואם אין בכלל התמונה נעלמת
 function thumb(code, cls = "thumb", attrs = "") {
-  const [a, b] = PriceDB.images(code);
+  const [a, ...rest] = PriceDB.images(code, cls === "big-img");
   if (!a) return "";
-  return `<img class="${cls}" ${attrs} src="${a}" data-alt="${b}" data-code="${esc(code)}" alt="" loading="lazy" referrerpolicy="no-referrer"
+  return `<img class="${cls}" ${attrs} src="${a}" data-alt="${rest.join("|")}" data-code="${esc(code)}" alt="" loading="${cls === "big-img" ? "eager" : "lazy"}" referrerpolicy="no-referrer"
     onerror="imgFail(this)">`;
 }
 // אין תמונה: ברשימה פשוט לא מציגים, ברשימת חיפוש משאירים ריבוע כדי שהשורות יישארו מיושרות
 function imgFail(el) {
-  if (el.dataset.alt) { el.src = el.dataset.alt; el.dataset.alt = ""; return; }
+  if (el.dataset.alt) { const [next, ...rest] = el.dataset.alt.split("|"); el.dataset.alt = rest.join("|"); el.src = next; return; }
   if (el.classList.contains("sm") || el.classList.contains("big-img")) return el.remove();
   if (el.classList.contains("tile-img")) { el.outerHTML = `<span class="tile-ph" data-act="toggle">${el.dataset.ph || "🛒"}</span>`; return; }
   el.outerHTML = `<div class="thumb-ph">🛒</div>`;
 }
 function imageSheet(item) {
   sheet(`<h2 style="margin-top:0">${esc(item.product || item.name)}</h2>
-    ${thumb(item.code, "big-img")}
+    <div class="big-wrap">${thumb(item.code, "big-img", 'title="מסך מלא"') || `<div class="muted">אין תמונה למוצר הזה</div>`}</div>
+    <div class="muted" style="font-size:12px;text-align:center">לחיצה על התמונה – מסך מלא</div>
     <div class="muted" style="margin:8px 0">ברקוד ${esc(item.code)}. אם זה לא המוצר הנכון, אפשר להחליף.</div>
     <div class="row"><button class="btn grow" id="img-change">🔗 החלף מוצר</button><button class="btn ghost grow" data-close>סגור</button></div>`);
   $("#img-change").onclick = () => linkSheet(item);
+  // לחיצה: מסך מלא (ולחיצה נוספת סוגרת)
+  const im = $("#sheet-root .big-img");
+  if (im) im.onclick = () => im.classList.toggle("full");
 }
 
 // ================= השלמה אוטומטית בהוספת פריט =================
