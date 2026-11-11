@@ -512,7 +512,7 @@ function budgetWarn(best) {
 }
 function spendingCard() {
   const now0 = monthKey(Date.now()), b = S.settings.budget, spent = monthSpent(now0);
-  const months = [5, 4, 3, 2, 1, 0].map(k => { const key = now0 - k; return { key, total: monthSpent(key), name: new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString("he-IL", { month: "short" }) }; });
+  const months = [5, 4, 3, 2, 1, 0].map(k => { const key = now0 - k; return { key, total: monthSpent(key), name: new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString(LOC(), { month: "short" }) }; });
   const max = Math.max(b || 0, ...months.map(m => m.total), 1);
   const bars = months.map((m, i) => { const h = Math.round(m.total / max * 70), x = 8 + i * 50;
     return `<rect x="${x}" y="${80 - h}" width="34" height="${h}" rx="4" fill="${b && m.total > b ? "#dc2626" : "var(--accent)"}" opacity="${m.key === now0 ? 1 : .55}"/>
@@ -576,8 +576,8 @@ function ordersSheet() {
   if (ordersFilter !== "all" && !places.includes(ordersFilter)) ordersFilter = "all";
   const shown = all.filter(o => ordersFilter === "all" || o.chain === ordersFilter);
   const sum = shown.reduce((s, o) => s + (orderTotal(o) || 0), 0);
-  const month = o => new Date(o.at).toLocaleDateString("he-IL", { month: "long", year: "numeric" });
-  const date = o => new Date(o.at).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(o.at).toTimeString().slice(0, 5);
+  const month = o => new Date(o.at).toLocaleDateString(LOC(), { month: "long", year: "numeric" });
+  const date = o => new Date(o.at).toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(o.at).toTimeString().slice(0, 5);
   let last = "";
   sheet(`<h2 style="margin-top:0">🧾 הזמנות והוצאות</h2>
     ${spendingCard()}
@@ -810,7 +810,7 @@ function invoiceResult(o, rows, total) {
       commit(); toast(miss.length ? `נשמר: ${miss.length} מוצרים לא הגיעו` : "נשמר: הכל הגיע ✅"); ordersSheet();
     };
     $("#inv-copy") && ($("#inv-copy").onclick = async () => {
-      const d = new Date(o.at).toLocaleDateString("he-IL");
+      const d = new Date(o.at).toLocaleDateString(LOC());
       await copyText(`שלום, בהזמנה מ${ORDER_PLACE(o.chain)} מתאריך ${d} לא הגיעו המוצרים הבאים:\n${miss.map(r => "• " + (r.product || r.name) + (r.qty > 1 ? ` ×${fmtNum(r.qty)}` : "")).join("\n")}\nאשמח לזיכוי. תודה`);
       toast("הרשימה הועתקה – אפשר להדביק בפנייה לשירות הלקוחות");
     });
@@ -934,7 +934,7 @@ function notifCard() {
   if (!inApp) return "";
   if (!canNotify()) return `<h2>🔔 תזכורות בטלפון</h2><div class="card muted">צריך לעדכן את האפליקציה לגרסה החדשה כדי לקבל תזכורות. <a href="${APK_URL}">עדכון</a></div>`;
   const plan = notifOn() ? reminderPlan() : [];
-  const when = at => new Date(at).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(at).toTimeString().slice(0, 5);
+  const when = at => new Date(at).toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(at).toTimeString().slice(0, 5);
   return `<h2>🔔 תזכורות בטלפון</h2><div class="card">
     <div class="muted" style="margin-bottom:8px">הודעה בטלפון כשמוצר קבוע חוזר לרשימה, וכשמשהו כנראה נגמר (לפי הקניות הקודמות) – גם כשהאפליקציה סגורה.</div>
     ${notifOn() ? `<div style="margin-bottom:6px">✅ פעיל${plan.length ? ` · ${plan.length} תזכורות בחודש הקרוב` : " · אין עדיין תזכורות קרובות"}</div>
@@ -1033,7 +1033,7 @@ function recurringSheet() {
     <div class="muted" style="margin-bottom:8px">חוזרים לרשימה לבד בזמן שקבעתם. מוסיפים מוצר קבוע בלחיצה ארוכה עליו ברשימה.</div>
     <div class="card">${list.length ? list.map((r, k) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)">
       <div class="grow">${esc(r.name)} <span class="muted" style="font-size:13px">${r.unit === "kg" ? fmtNum(r.qty) + " ק״ג" : "×" + r.qty}</span>
-        <div class="muted" style="font-size:12px">${label(r.every)} · בפעם הבאה ${new Date((r.last || 0) + r.every * 864e5).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" })}</div></div>
+        <div class="muted" style="font-size:12px">${label(r.every)} · בפעם הבאה ${new Date((r.last || 0) + r.every * 864e5).toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "numeric" })}</div></div>
       <button class="icon-btn" data-rdel="${k}" aria-label="הסר">✕</button></div>`).join("") : `<div class="muted">אין מוצרים קבועים.</div>`}</div>
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   $("#sheet-root").querySelectorAll("[data-rdel]").forEach(el => el.onclick = () => {
@@ -1051,7 +1051,7 @@ function weekPlanCard(recipes) {
   const days = weekDays(), planned = days.flatMap(d => (S.plan.days[dayKey(d)] || []).filter(id => byId[id]));
   return `<h2>🗓️ תכנון שבועי</h2><div class="card">
     ${days.map((d, k) => { const key = dayKey(d), ids = (S.plan.days[key] || []).filter(id => byId[id]);
-      return `<div class="day row" style="gap:6px;flex-wrap:wrap"><b>${k === 0 ? "היום" : k === 1 ? "מחר" : d.toLocaleDateString("he-IL", { weekday: "short" })}</b>
+      return `<div class="day row" style="gap:6px;flex-wrap:wrap"><b>${k === 0 ? "היום" : k === 1 ? "מחר" : d.toLocaleDateString(LOC(), { weekday: "short" })}</b>
         ${ids.map(id => `<button class="meal-chip" data-unplan="${key}|${id}">${esc(byId[id].name)}</button>`).join("")}
         <button class="chip add" data-plan="${key}" style="font-size:13px">מתכון</button></div>`; }).join("")}
     ${planned.length ? `<button class="btn" style="width:100%;margin-top:8px" data-act="plan-to-list">🛒 מצרכי השבוע לרשימה (${planned.length})</button>` : `<div class="muted" style="margin-top:6px">בחרו מתכון לכל יום – ואז כל המצרכים נכנסים לרשימה בלחיצה אחת.</div>`}
@@ -1060,7 +1060,7 @@ function weekPlanCard(recipes) {
 function planPickSheet(key) {
   const recipes = recipeList();
   if (!recipes.length) return toast("קודם הוסיפו מתכונים (מהספרייה או בייבוא)");
-  sheet(`<h2 style="margin-top:0">מה מבשלים ${new Date(key + "T12:00").toLocaleDateString("he-IL", { weekday: "long" })}?</h2>
+  sheet(`<h2 style="margin-top:0">מה מבשלים ${new Date(key + "T12:00").toLocaleDateString(LOC(), { weekday: "long" })}?</h2>
     <div class="card">${recipes.map(r => `<div class="result" data-pick-recipe="${r.id}">${esc(r.name)} <span class="muted" style="font-size:13px">· ${r.ingredients.length} מצרכים</span></div>`).join("")}</div>
     <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
   $("#sheet-root").querySelectorAll("[data-pick-recipe]").forEach(el => el.onclick = () => {
@@ -1999,13 +1999,20 @@ function recipeSheet(id) {
 }
 
 // ================= מחירים =================
+// תאריכים בשפה שנבחרה (ספרות רגילות גם בערבית)
+const LOC = () => ({ en: "en-GB", ru: "ru-RU", fr: "fr-FR", ar: "ar-u-nu-latn" })[typeof I18N !== "undefined" && I18N.lang] || "he-IL";
 function selected() { return Object.fromEntries(Object.entries(S.settings.stores).filter(([, v]) => v)); }
+// הרשתות שאפשר לטעון להן מחירים כאן: קרפור, חצי חינם וויקטורי נטענות מהחיבור שלך – רק באפליקציה או עם תוסף הכרום
+// (בלי זה הן פשוט לא נכללות בהשוואה, במקום אזהרה קבועה ש"המחירים עוד לא הורדו")
+const localOnly = c => !!ONLINE[c]?.local;
+const canPrice = c => !localOnly(c) || (c === "victory" ? canFetchPages() : canLocal(c)) || !!PriceDB.info().local[c];
+const priceStores = () => Object.fromEntries(Object.entries(selected()).filter(([c]) => canPrice(c)));
 
 async function refreshCompare() {
   if (!Object.keys(selected()).length) { compareCache = null; return; }
   try {
     await loadLocalPrices();
-    await PriceDB.load(selected());
+    await PriceDB.load(priceStores());
     // פריט חדש מקבל מוצר אוטומטית (אפשר להחליף ב-🔗), כדי שמחיר הסל יופיע מיד
     let linked = 0;
     // התאמה אוטומטית ישנה שלא מתאימה לשם (למשל "חלב" שהותאם בטעות ל"חלבה") – מבטלים ומתאימים מחדש
@@ -2264,7 +2271,7 @@ function staleWarn() {
   const at = (PriceDB.info().status?.updated || 0) * 1000;
   if (!at || !Object.keys(publicStores()).length || Date.now() - at < STALE_HOURS * 36e5) return "";
   const d = new Date(at);
-  return `<div class="warn">⚠️ המחירים לא התעדכנו מאז ${d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" })} ${d.toTimeString().slice(0, 5)} (${ago(at)}), ולכן ייתכן שהם לא מדויקים. העדכון האוטומטי כנראה תקוע – נשלחה על כך התרעה.</div>`;
+  return `<div class="warn">⚠️ המחירים לא התעדכנו מאז ${d.toLocaleDateString(LOC(), { day: "numeric", month: "numeric" })} ${d.toTimeString().slice(0, 5)} (${ago(at)}), ולכן ייתכן שהם לא מדויקים. העדכון האוטומטי כנראה תקוע – נשלחה על כך התרעה.</div>`;
 }
 
 // "הכי זול" רק מבין הרשתות שיש בהן הכי הרבה מהמוצרים: רשת עם מוצר אחד מתוך 10 לא תיחשב זולה רק כי הסכום שלה קטן
@@ -2317,6 +2324,8 @@ function renderPrices() {
   const c = compareCache;
   let html = staleWarn();
   const waiting = Object.entries(PriceDB.info().data).filter(([, d]) => d.missing).map(([ch]) => chains[ch] || ch);
+  const noLocal = Object.keys(sel).filter(c => !canPrice(c)).map(c => chains[c] || CART_NAMES[c] || c);
+  if (noLocal.length) html += `<div class="card muted" style="font-size:13px">ℹ️ ${esc(noLocal.join(", "))}: המחירים שלהן נטענים מהחיבור שלך – באפליקציה לאנדרואיד או במחשב עם תוסף הכרום. כאן הן לא נכללות בהשוואה.</div>`;
   if (waiting.length) html += `<div class="warn">המחירים של ${esc(waiting.join(", "))} עוד לא הורדו. הם מתעדכנים אוטומטית כל שעה, כך שסניף שנבחר עכשיו יופיע תוך שעה בערך.</div>`;
   if (!items.length) html += `<h2>🚚 זמני אספקה קרובים</h2>${deliveryCard(true)}<div class="card empty">הרשימה ריקה – אין מחירים להשוות עדיין</div>`;
   if (c && c.lines.length) {
@@ -2360,7 +2369,7 @@ function renderPrices() {
 
 async function searchProducts(q) {
   if (!q.trim()) return [];
-  await PriceDB.load(selected());
+  await PriceDB.load(priceStores());
   const r = PriceDB.search(q);
   // לא נמצא כלום? אולי שגיאת כתיב
   return r.length ? r : PriceDB.suggest(q, 30).results;
@@ -2417,7 +2426,7 @@ async function acShow() {
   const mine = acNames().filter(n => norm(n).includes(nq) && norm(n) !== nq).slice(0, 3);
   let sug = { results: [], fixed: null };
   if (Object.keys(selected()).length) {
-    try { await PriceDB.load(selected()); sug = PriceDB.suggest(q, 8); } catch {}
+    try { await PriceDB.load(priceStores()); sug = PriceDB.suggest(q, 8); } catch {}
   }
   if (seq !== acSeq || document.activeElement !== inp) return;
   acRows = [...mine.map(n => ({ kind: "name", name: n })), ...sug.results.map(r => ({ kind: "product", r }))];
@@ -2659,7 +2668,7 @@ async function addByBarcode(raw) {
   const code = String(raw || "").replace(/\D/g, "");
   if (code.length < 6) return toast("ברקוד לא תקין");
   let p = null;
-  if (Object.keys(selected()).length) { try { await PriceDB.load(selected()); p = PriceDB.lookup(code); } catch {} }
+  if (Object.keys(selected()).length) { try { await PriceDB.load(priceStores()); p = PriceDB.lookup(code); } catch {} }
   if (p) {
     addItem(p.name, 1, "scan", p.weighted ? "kg" : "unit");
     const it = live().find(i => norm(i.name) === norm(p.name) && !i.done);
@@ -2966,7 +2975,7 @@ function victoryHits(html) {
 function victorySale(h) {
   for (const s of h.sales || []) {
     if (s.isMaxSale) continue;
-    const m = String(s.name || "").match(/(\d+)\s*ב-?\s*₪?\s*(\d+(?:\.\d+)?)/), one = String(s.name || "").match(/^₪?\s*(\d+(?:\.\d+)?)\s*₪?$/);
+    const m = String(s.name || "").match(/(\d+)\s*ב-?\s*₪?\s*(\d+(?:\.\d+)?)/), one = String(s.name || "").match(/^₪?\s*(\d+(?:\.\d+)?)\s*₪?\s*(ליחידה|ליח'?)?$/);
     const unit = m ? +m[2] / +m[1] : one ? +one[1] : null, minq = m ? +m[1] : 1;
     if (unit && unit < h.price - 0.005 && unit >= h.price * 0.25) {
       const e = String(s.expiresAt || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -3102,7 +3111,7 @@ const langPicker = () => { try { I18N.LANGS; } catch { return ""; } return `<lab
   <select class="lang-sel" aria-label="שפה / Language">${Object.entries(I18N.LANGS).map(([k, v]) => `<option value="${k}" ${k === I18N.lang ? "selected" : ""}>${v}</option>`).join("")}</select></label>`; };
 function renderSettings() {
   const sel = S.settings.stores;
-  const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
+  const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString(LOC(), { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
   return `${installCard()}
   <div class="row" style="margin:8px 0"><b class="grow">🌐 שפה</b>${langPicker()}</div>
   ${inApp ? `<div class="muted" style="margin:8px 0">📱 אפליקציית אנדרואיד${installedVersion() ? ` · גרסה 1.${installedVersion()}` : ""} ·
@@ -3148,7 +3157,7 @@ function renderSettings() {
 
 async function loadChains() {
   chains = PriceDB.CHAIN_NAMES;
-  try { await loadLocalPrices(); await PriceDB.load(selected()); chainUpdates = { ...chainUpdates, ...(PriceDB.info().status?.stores || {}) }; } catch {}
+  try { await loadLocalPrices(); await PriceDB.load(priceStores()); chainUpdates = { ...chainUpdates, ...(PriceDB.info().status?.stores || {}) }; } catch {}
 }
 
 async function storeSheet(chain) {

@@ -52,6 +52,7 @@ Grow → Store presence → **Main store listing**: מעתיקים מהקובץ 
     - Personal info → **Address** (optional – לבדיקת מועדי משלוח)
     - App activity → **Other user-generated content** (רשימות, מתכונים, הזמנות)
   - Not collected: Location, Financial info, Contacts, Photos, Audio, Device IDs.
+    (צילומי חשבוניות נקראים במכשיר בלבד ולא נשלחים – לכן Photos = Not collected. גם הוספה בקול נעשית בשירות של הטלפון.)
 - **Account deletion URL:** `https://tk912.github.io/Superlist/privacy.html#delete`
 
 ## 7. אחרי 14 יום של בדיקה
