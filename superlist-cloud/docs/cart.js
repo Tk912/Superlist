@@ -168,8 +168,8 @@
         location.href = "/he/dashboard/checkout";
       },
     },
-    sp: {  // טיב טעם, ויקטורי, קרפור (אותה פלטפורמה)
-      match: /(tivtaam\.co\.il|victoryonline\.co\.il|carrefour\.co\.il)$/,
+    sp: {  // טיב טעם, קרפור (אותה פלטפורמה)
+      match: /(tivtaam\.co\.il|carrefour\.co\.il)$/,
       ready: () => { try { return !!angular.element(document.body).injector().get("Config").branch; } catch { return false; } },
       logged: async () => { const U = angular.element(document.body).injector().get("User"); return !!((U.session && U.session.token) || (U.data && U.data.id)); },
       existing: () => Object.keys(angular.element(document.body).injector().get("Cart").lines || {}).length,
@@ -188,6 +188,71 @@
         return { ok: true, product: found.localName, note: found.isWeighable ? quantity + " ק\"ג" : "×" + quantity };
       },
       done: async () => { await sleep(2500); },
+    },
+    victory: {  // ויקטורי – האתר החדש (נובמבר 2026): מוצרים מעמוד החיפוש, עגלה ב-api.victoryonline.co.il
+      match: /victoryonline\.co\.il$/,
+      ready: () => document.readyState !== "loading",
+      logged: async () => !/שלום אורח/.test(document.body.innerText),
+      async prepare() {
+        // העגלה של האתר מזוהה במספר ששמור בדפדפן; אם עוד אין – מבקשים חדש (כמו שהאתר עושה)
+        let sid = localStorage.getItem("cart-session-id");
+        if (!sid) {
+          sid = (await (await fetch("https://api.victoryonline.co.il/api/web/cart/session")).json())?.data?.sessionId;
+          if (sid) localStorage.setItem("cart-session-id", sid);
+        }
+        window.__slVic = sid;
+        const j = await (await fetch("https://api.victoryonline.co.il/api/web/cart", { headers: { "Cart-Session-Id": sid } })).json();
+        window.__slVicHave = Object.fromEntries((j?.data?.items || []).map(i => [i.id, i.quantity]));
+      },
+      existing: () => Object.keys(window.__slVicHave || {}).length,
+      async add({ name, code, kg, weighted, product }) {
+        if (!window.__slVic) await this.site?.prepare?.();
+        const sid = window.__slVic;
+        if (!sid) return { ok: false, reason: "לא נמצאה עגלה באתר" };
+        // תוצאות החיפוש נמצאות בתוך הדף (Next.js): {"hits":[{id, sku, name, price, isWeight, inStock, pricePerUnit}]}
+        const find = async q => {
+          const html = await (await fetch("/search?q=" + encodeURIComponent(q))).text();
+          const chunks = [...html.matchAll(/self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g)].map(m => { try { return JSON.parse('"' + m[1] + '"'); } catch { return ""; } }).join("");
+          const i = chunks.indexOf('"hits":[');
+          if (i < 0) return [];
+          let d = 0, k = i + 7;
+          for (; k < chunks.length; k++) {
+            const c = chunks[k];
+            if (c === "[") d++;
+            else if (c === "]") { if (!--d) break; }
+            else if (c === '"') { for (k++; k < chunks.length && chunks[k] !== '"'; k++) if (chunks[k] === "\\") k++; }
+          }
+          try { return JSON.parse(chunks.slice(i + 7, k + 1)).filter(p => p.id && p.inStock !== false); } catch { return []; }
+        };
+        let found = null;
+        if (code) found = (await find(code)).find(p => String(p.sku).replace(/^0+/, "") === code);
+        if (!found) { const m = await searchPick(find, p => p.name, this.it, p => !!p.isWeight); found = m.found; if (!found) return notFound(m); }
+        // מוצר במשקל נמכר בקפיצות (למשל "₪15 ל500 גרם" = קפיצה של חצי ק"ג); הכמות באתר = מספר הקפיצות
+        const g = +((String(found.pricePerUnit || "").match(/ל\s*(\d+)\s*גרם/) || [])[1] || 0);
+        const step = found.isWeight ? (g ? g / 1000 : 0.1) : 1;
+        const add = found.isWeight ? Math.max(1, Math.round((kg || 1) / step)) : units(this.it);
+        // PUT קובע את הכמות (לא מוסיף): מחברים למה שכבר בעגלה ולפריטים קודמים ברשימה שהם אותו מוצר
+        const have = window.__slVicHave ||= {}, locks = window.__slLocks ||= {};
+        const run = (locks[found.id] || Promise.resolve()).then(async () => {
+          const added = window.__slVicAdded ||= new Set(), again = added.has(found.id);
+          const before = have[found.id] || 0, sum = before + add;
+          const res = await (await fetch("https://api.victoryonline.co.il/api/web/cart", { method: "PUT",
+            headers: { "Content-Type": "application/json", "Cart-Session-Id": sid }, body: JSON.stringify([{ id: String(found.id), quantity: sum }]) })).json();
+          if (res?.status === "success") { have[found.id] = sum; added.add(found.id); }
+          return { res, before, sum, again };
+        });
+        locks[found.id] = run.catch(() => {});
+        const { res, sum, again } = await run;
+        if (res?.status !== "success") return { ok: false, reason: String(res?.error || "האתר דחה").slice(0, 80) };
+        const kgNote = found.isWeight ? `${Math.round(sum * step * 100) / 100} ק"ג` : "×" + sum;
+        return { ok: true, id: String(found.id), product: found.name, merged: again, note: kgNote + (again ? " (אוחד עם פריט קודם)" : "") };
+      },
+      async inCart() {
+        const j = await (await fetch("https://api.victoryonline.co.il/api/web/cart", { headers: { "Cart-Session-Id": window.__slVic } })).json();
+        return new Set((j?.data?.items || []).map(i => String(i.id)));
+      },
+      // האתר קורא את העגלה כשהדף נטען – עוברים לתשלום
+      done: () => { location.href = "/checkout"; },
     },
     hazihinam: {  // חצי חינם: ה-API של האתר עצמו (proxy/api), Type 1 = יחידות, Type 2 = ק"ג
       match: /hazi-hinam\.co\.il$/,

@@ -2044,6 +2044,22 @@ function fastestChain(chainsList) {
   if (cands.includes("wolt")) return "wolt";
   return cands.filter(c => slots[c].from).sort((a, b) => slots[a].from.localeCompare(slots[b].from))[0] || null;
 }
+// מועדי המשלוח של ויקטורי (האתר החדש) – דרך האפליקציה או תוסף הכרום (fetchPage), לפי עיר + רחוב
+async function victorySlotWeb(addr) {
+  if (!addr.city) return { ok: false, reason: "חסרה עיר בהגדרות" };
+  const street = String(addr.street || "").replace(/^\s*(רחוב|רח'|רח)\s+/, "").trim();
+  const q = new URLSearchParams({ city: String(addr.city).trim() });
+  if (street) { q.set("street", street); q.set("houseNumber", String(addr.num || "").trim()); q.set("address", `${street} ${addr.num || ""}`.trim()); }
+  const j = JSON.parse(await fetchPage(`https://api.victoryonline.co.il/api/web/delivery-slots?${q}`));
+  if (j.status !== "success") return { ok: false, reason: j.error || "אין מידע" };
+  const now = new Date(), p = n => String(n).padStart(2, "0");
+  const nowL = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}`;
+  const slotsList = Object.entries(j.data || {}).flatMap(([date, list]) => (list || []).map(s => {
+    const [a, b] = String(s.hours || "").split("-").map(x => x.trim());
+    return a ? { from: `${date}T${a.padStart(5, "0")}`, to: b ? `${date}T${b.padStart(5, "0")}` : "", price: s.fee ?? null } : null;
+  })).filter(s => s && s.from > nowL).sort((x, y) => x.from.localeCompare(y.from));
+  return slotsList[0] ? { ok: true, ...slotsList[0] } : { ok: false, reason: "אין משלוחים לכתובת" };
+}
 function requestSlots(force = false) {
   if (!hasExt() || slotsLoading || (!force && slots && Date.now() - slotsAt < 10 * 60 * 1000)) return Promise.resolve(slots);
   slotsLoading = true;
@@ -2056,7 +2072,12 @@ function requestSlots(force = false) {
       .then(() => { slotsLoading = false; render(); return slots; });
   }
   return new Promise(resolve => {
-    const done = (res) => { window.removeEventListener("message", onMsg); slotsLoading = false; if (res) { slots = res; slotsAt = Date.now(); } resolve(slots); render(); };
+    const done = async (res) => {
+      window.removeEventListener("message", onMsg);
+      // ויקטורי עברה לאתר חדש: תוסף ישן (עד 1.2.4) עוד פונה לכתובת הישנה (HTTP 404) – לכן ויקטורי נבדקת מכאן
+      if (res && chainsList.includes("victory")) { try { res.victory = await victorySlotWeb(S.settings.address || {}); } catch (e) { res.victory = { ok: false, reason: "אין מידע" }; } }
+      slotsLoading = false; if (res) { slots = res; slotsAt = Date.now(); } resolve(slots); render();
+    };
     const onMsg = ev => { if (ev.source === window && ev.data?.type === "superlist-slots" && ev.data.id === id) done(ev.data.results); };
     window.addEventListener("message", onMsg);
     window.postMessage({ type: "superlist-slots-request", id, address: S.settings.address || {}, chains: chainsList, force }, "*");
