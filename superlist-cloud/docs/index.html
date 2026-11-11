@@ -37,9 +37,11 @@ header h1 { font-size: 20px; margin: 0; flex: 1; }
 main { padding: 0 16px calc(90px + env(safe-area-inset-bottom)); max-width: 680px; margin: 0 auto; }
 nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 6; display: flex; background: var(--card);
   border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-nav button { flex: 1; border: 0; background: none; padding: 9px 0 8px; font-size: 12px; color: var(--muted);
-  display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
-nav button .i { font-size: 21px; line-height: 1; }
+nav button { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 7px 2px 7px; font-size: 11.5px; line-height: 1.25; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; cursor: pointer; }
+/* האימוג'י בגובה קבוע ועם מרווח – בלי line-height:1 שחותך אותו בטלפון */
+nav button .i { display: flex; align-items: center; justify-content: center; height: 28px; width: 32px; font-size: 22px; line-height: 28px; overflow: visible; }
+nav button .t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-width: 100%; overflow: hidden; text-align: center; line-height: 1.15; overflow-wrap: anywhere; }
 nav button.on { color: var(--accent); font-weight: 600; }
 .card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; margin: 0 0 12px; }
 .row { display: flex; align-items: center; gap: 8px; }
@@ -133,6 +135,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .spark { width: 84px; height: 26px; flex: none; }
 .promo { font-size: 11px; color: #c2410c; font-weight: 600; line-height: 1.3; }
 .promo.hint { font-weight: 400; color: var(--muted); }
+.lang-pick { display: inline-flex; align-items: center; gap: 4px; padding-block: 2px; }
+.lang-pick select { border: 0; background: none; font-size: 13px; padding: 2px 0; cursor: pointer; }
 .unit-price { font-size: 11px; color: var(--muted); font-weight: 400; }
 @media (prefers-color-scheme: dark) { .promo { color: #fb923c; } }
 .alt { font-size: 11px; color: var(--muted); max-width: 120px; white-space: normal; line-height: 1.25; }
@@ -190,14 +194,15 @@ td.best { color: var(--accent); font-weight: 700; }
 </header>
 <main id="view"></main>
 <nav>
-  <button data-tab="list" class="on"><span class="i">📝</span>רשימה</button>
-  <button data-tab="meals"><span class="i">📖</span>מתכונים</button>
-  <button data-tab="prices"><span class="i">💰</span>מחירים</button>
-  <button data-tab="settings"><span class="i">⚙️</span>הגדרות</button>
-  <button data-tab="help"><span class="i">❓</span>הוראות</button>
+  <button data-tab="list" class="on"><span class="i">📝</span><span class="t">רשימה</span></button>
+  <button data-tab="meals"><span class="i">📖</span><span class="t">מתכונים</span></button>
+  <button data-tab="prices"><span class="i">💰</span><span class="t">מחירים וזמנים</span></button>
+  <button data-tab="settings"><span class="i">⚙️</span><span class="t">הגדרות</span></button>
+  <button data-tab="help"><span class="i">❓</span><span class="t">הוראות</span></button>
 </nav>
 <div id="sheet-root"></div>
 
+<script src="i18n.js"></script>
 <script src="prices.js"></script>
 <script src="recipes.js"></script>
 <script src="slots.js"></script>
@@ -1277,9 +1282,10 @@ function renderList() {
   <div class="row" style="margin-top:8px"><button class="btn ghost grow" data-act="dept-order">⇅ סדר המחלקות</button>
     <button class="btn ghost grow" data-act="shop-exit">יציאה ממצב קנייה</button></div>`;
   return `
-  ${cl ? `<div class="row" style="margin:0 0 8px;gap:6px">
-    <button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
-    ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}</div>` : ""}
+  <div class="row" style="margin:0 0 8px;gap:6px;flex-wrap:wrap">
+    ${cl ? `<button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
+    ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}` : ""}
+    ${langPicker()}</div>
   <form class="card row" id="add-form" autocomplete="off">
     <input type="text" id="add-input" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
     <button type="button" class="icon-btn add-tool" data-act="voice" title="הוספה קולית" aria-label="הוספה קולית">🎤</button>
@@ -2996,10 +3002,14 @@ async function doInstall() {
   render();
 }
 
+// בורר שפה: עברית, אנגלית, רוסית, צרפתית, ערבית (התרגום עצמו ב-i18n.js)
+const langPicker = () => { try { I18N.LANGS; } catch { return ""; } return `<label class="chip lang-pick" style="margin-inline-start:auto" data-notr>🌐
+  <select class="lang-sel" aria-label="שפה / Language">${Object.entries(I18N.LANGS).map(([k, v]) => `<option value="${k}" ${k === I18N.lang ? "selected" : ""}>${v}</option>`).join("")}</select></label>`; };
 function renderSettings() {
   const sel = S.settings.stores;
   const when = u => u ? ` · עודכן ${new Date(u.updated * 1000).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} · ${u.items.toLocaleString()} מוצרים` : " · המחירים יורדים (עד שעה)";
   return `${installCard()}
+  <div class="row" style="margin:8px 0"><b class="grow">🌐 שפה</b>${langPicker()}</div>
   ${inApp ? `<div class="muted" style="margin:8px 0">📱 אפליקציית אנדרואיד${installedVersion() ? ` · גרסה 1.${installedVersion()}` : ""} ·
     ${appUpdate ? `<b style="color:var(--accent)">יש עדכון (1.${appUpdate.latest})</b> · <a href="${APK_URL}">עדכן עכשיו</a>` : `<a href="app.html">עדכון גרסה</a>`}</div>` : ""}
   ${notifCard()}
@@ -3087,6 +3097,11 @@ function renderHelp() {
   <h2>❓ הוראות הפעלה</h2>
   <div class="card">הסל החכם עושה בשבילך את הקניות בסופר אונליין: בונים רשימה (גם יחד עם בן/בת הזוג), רואים כמה עולה הסל בכל רשת ומתי המשלוח הכי קרוב, ובלחיצה אחת העגלה באתר הסופר מתמלאת. <b>התשלום תמיד נשאר אצלך.</b></div>
 
+  ${sec("🌐 שפה", `<ul>
+    <li>בורר השפה נמצא למעלה ברשימה (ליד שם הרשימה) וגם ב⚙️ הגדרות: עברית, English, Русский, Français, العربية.</li>
+    <li>הממשק מתורגם; שמות המוצרים נשארים כמו שהרשתות כותבות אותם. השפה נשמרת במכשיר הזה.</li>
+  </ul>`)}
+
   ${sec("📝 הרשימה: הוספת מוצרים", `<ul>
     <li><b>הקלדה:</b> כותבים בשדה למעלה ולוחצים "הוסף". אפשר עם כמות: "2 חלב", "1.5 ק״ג עגבניות", "לחם x3".</li>
     <li><b>השלמה חכמה:</b> תוך כדי הקלדה מופיעים מוצרים כמו שהם כתובים ברשתות, עם תמונה ומחיר. שגיאת כתיב? יופיע "האם התכוונת ל…".</li>
@@ -3102,8 +3117,8 @@ function renderHelp() {
     <li>לחיצה ארוכה על מוצר מעבירה אותו למחלקה אחרת – והאפליקציה זוכרת את זה לפעם הבאה.</li>
     <li>🔗 ליד פריט = בחירת המוצר המדויק (מותג, גודל). התמונה הקטנה מראה מה נבחר – לחיצה מגדילה.</li>
     <li>"✔ סיימתי קנייה" שומר את מה שקנית בהיסטוריה. מזה האפליקציה לומדת ומציעה "⏰ כנראה נגמר לך".</li>
-    <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית המחירים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
-    <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית המחירים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
+    <li><b>✂️ פיצול סל ו💡 מותג הבית</b> (לשונית מחירים וזמנים): אם קנייה בשתי רשתות זולה יותר גם אחרי משלוח נוסף – מוצג הפיצול. ולמוצרי מותג מוצע המוצר המקביל של הרשת, בלחיצה על "החלף".</li>
+    <li><b>📊 היסטוריית מחירים:</b> באריח מופיע 📉 אם המחיר ירד לאחרונה (או 📈 אם עלה). בלשונית מחירים וזמנים יש גרף לכל שינוי, וכשמוצר ברשימה מוזל מופיעה הודעה.</li>
     <li><b>🏷️ מבצעים:</b> מחירי המבצעים של הרשתות (לכל הלקוחות, בלי מועדון) נכנסים להשוואה כשהכמות ברשימה מספיקה למבצע. אם חסרה כמות, מופיע רמז כמו "4 ב-10".</li>
     <li><b>🔒 פרטיות ומחיקת חשבון:</b> <a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a>. מחיקת החשבון וכל הנתונים – ב"👥 שיתוף הרשימה".</li>
     <li><b>🔔 תזכורות בטלפון</b> (הגדרות, באפליקציית האנדרואיד): הודעה כשמוצר קבוע חוזר לרשימה, וכשמשהו כנראה נגמר – גם כשהאפליקציה סגורה.</li>
@@ -3132,8 +3147,11 @@ function renderHelp() {
   ${sec("💰 השוואת מחירים", `<ul>
     <li>ההשוואה היא בין <b>סניפי האונליין</b> (המחירים של אתרי הקנייה): שופרסל, רמי לוי, קרפור, טיב טעם ו-Wolt Market. בוחרים רשתות ב⚙️ הגדרות.</li>
     <li><b>יוחננוף</b> מושווית לפי סניף רגיל שבוחרים, ומסומנת <b>הערכה</b> – באתר שלה המחיר יכול להיות קצת שונה. <b>חצי חינם</b> – האפליקציה (או תוסף הכרום) מורידה את קובץ המחירים הרשמי שלה מהחיבור שלך. <b>ויקטורי</b> לא מפרסמת מחירים, אז אחרי מילוי עגלה מוצג הסכום שבעגלה ("🧾 בעגלה בפועל").</li>
-    <li>בלשונית <b>מחירים</b>: "מחירים וזמני אספקה קרובים" – הסל בכל רשת, המשלוח הקרוב, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
-    <li>לשונית 💰 מחירים: טבלה מפורטת לכל מוצר, וחיפוש מוצר לפי שם או ברקוד.</li>
+    <li>בלשונית <b>💰 מחירים וזמנים</b>: "מחירים וזמני אספקה קרובים" – הסל בכל רשת, המשלוח הקרוב, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
+    <li>לשונית 💰 מחירים וזמנים: טבלה מפורטת לכל מוצר, וחיפוש מוצר לפי שם או ברקוד.</li>
+    <li><b>⚖️ מחיר ל-100 גרם / לליטר:</b> מתחת למחיר באריח ובטבלה, כדי להשוות בין אריזות בגדלים שונים.</li>
+    <li><b>📦 אריזה משתלמת:</b> אם אותו מוצר באריזה גדולה יותר זול יותר ליחידה – מוצעת החלפה (והכמות מתעדכנת).</li>
+    <li><b>🏷️ מבצעים על מה שאתם קונים:</b> מתחת לרשימה – מבצעים השבוע על מוצרים שקניתם בעבר ועוד לא ברשימה, עם כפתור הוספה.</li>
     <li>המחירים מתעדכנים אוטומטית כמה פעמים ביום, מקבצי שקיפות המחירים של הרשתות. ייתכנו הבדלים קטנים (מבצעי מועדון, דמי משלוח).</li>
   </ul>`)}
 
@@ -3177,6 +3195,7 @@ function render() {
   view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings, help: renderHelp }[tab]();
   if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
   if (focus === "add-input" && val) acShow();
+  view.querySelectorAll(".lang-sel").forEach(s => s.onchange = () => I18N.set(s.value));
   const fs = $("#free-search");
   if (fs) { let t; fs.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
     const res = await searchProducts(fs.value).catch(() => []);
