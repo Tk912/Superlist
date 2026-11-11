@@ -55,7 +55,6 @@ const Slots = (() => {
     carrefour: { base: "https://www.carrefour.co.il", rid: 1540 },
     // לאתר של טיב טעם חסרה תעודת ביניים (אנדרואיד דוחה); אותה פלטפורמה עונה לכל רשת גם מהכתובת של קרפור
     tivtaam: { base: "https://www.carrefour.co.il", rid: 1062 },
-    victory: { base: "https://www.victoryonline.co.il", rid: 1470 },
   };
   // רוב אזורי המשלוח שם מוגדרים כשטח על המפה (ולא כשם עיר), אז מאתרים את הכתובת על המפה (OpenStreetMap)
   // ובודקים באיזה אזור היא נמצאת. נשמר במכשיר לכל כתובת, כדי לא לשאול שוב.
@@ -100,6 +99,22 @@ const Slots = (() => {
       .map(t => ({ from: t.newFrom.slice(0, 16), to: (t.newTo || "").slice(0, 16), price: t.deliveryTimePrice ?? null }));
     const s = first(slots);
     return s ? { ok: true, ...s, area: area.name } : { ok: false, reason: "אין חלונות פנויים" };
+  }
+
+  // ויקטורי עברה לאתר חדש (נובמבר 2026): מועדי המשלוח לפי עיר (+ רחוב ומספר – בערים הגדולות זה חובה)
+  async function victorySlot(addr) {
+    if (!addr.city) return { ok: false, reason: "חסרה עיר בהגדרות" };
+    const street = String(addr.street || "").replace(/^\s*(רחוב|רח'|רח)\s+/, "").trim();
+    const q = new URLSearchParams({ city: String(addr.city).trim() });
+    if (street) { q.set("street", street); q.set("houseNumber", String(addr.num || "").trim()); q.set("address", `${street} ${addr.num || ""}`.trim()); }
+    const j = await json(`https://api.victoryonline.co.il/api/web/delivery-slots?${q}`);
+    if (j.status !== "success") return { ok: false, reason: j.error || "אין מידע" };
+    const slots = Object.entries(j.data || {}).flatMap(([date, list]) => (list || []).map(s => {
+      const [a, b] = String(s.hours || "").split("-").map(x => x.trim());
+      return a ? { from: `${date}T${a.padStart(5, "0")}`, to: b ? `${date}T${b.padStart(5, "0")}` : "", price: s.fee ?? null } : null;
+    })).filter(Boolean);
+    const s = first(slots);
+    return s ? { ok: true, ...s } : { ok: false, reason: slots.length ? "אין חלונות פנויים" : "אין משלוחים לכתובת" };
   }
 
   // ---------- רמי לוי (ציבורי, לפי כתובת מלאה) ----------
@@ -251,7 +266,7 @@ const Slots = (() => {
   const FETCHERS = {
     carrefour: a => spSlot(SP.carrefour, a),
     tivtaam: a => spSlot(SP.tivtaam, a),
-    victory: a => spSlot(SP.victory, a),
+    victory: victorySlot,
     ramilevy: ramiSlot,
     yochananof: yochananofSlot,
     hazihinam: haziSlot,

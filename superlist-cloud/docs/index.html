@@ -2730,12 +2730,13 @@ const ONLINE = {
   yochananof: { match: /./, estimate: true, hint: "סניף יוחננוף קרוב (הערכה: מחירי הסניף, באתר עשויים להיות שונים)" },
   // חצי חינם חוסמת את השרתים של GitHub, אז האפליקציה (או תוסף הכרום) מורידה את הקובץ הרשמי שלה מהחיבור שלך (local)
   hazihinam: { fixed: "103", label: "חצי חינם משלוחים (הקובץ הרשמי, מהחיבור שלך)", v: 3, local: true },
+  // ויקטורי לא מפרסמת קובץ מחירים: המחירים נלקחים מהחיפוש באתר שלה, רק למוצרים שברשימה (דרך האפליקציה או תוסף הכרום)
+  victory: { fixed: "1", label: "ויקטורי אונליין (מחירי האתר, למוצרים שברשימה)", v: 4, local: true, site: true },
 };
 const isEstimate = c => !!ONLINE[c]?.estimate;
 const ESTIMATE_NOTE = "הערכה לפי מחירי סניף";
-const ONLINE_VERSION = 3;
+const ONLINE_VERSION = 4;
 const NO_ONLINE_PRICES = {
-  victory: "ויקטורי לא מפרסמת כרגע קובצי מחירים (גם לא באתר השקיפות שלה), לכן אין לה השוואה. מילוי עגלה עובד, ואחריו מוצג הסכום שבעגלה.",
 };
 // ---------- הדוח של מילוי העגלה: מה לא עבר לאתר הספק, ומה אוחד ----------
 // מגיע מהמילוי (cart.js דרך האפליקציה), נשמר ברשימה ומוצג בראשה עד "הבנתי"
@@ -2920,9 +2921,79 @@ async function localPrices(chain, store, force = false) {
     return json;
   } catch (e) { console.warn("local prices", chain, e); return cached; }
 }
+// ---------- ויקטורי: מחירים מעמוד החיפוש באתר ----------
+// לכל מוצר ברשימה מחפשים באתר שלה (לפי ברקוד, ולפי השם) וקוראים מהתוצאות: ברקוד, שם, מחיר, במשקל, מבצעים.
+// כל חיפוש נשמר במכשיר ל-12 שעות, כדי לא לחפש שוב בכל שינוי ברשימה.
+const VIC_KEY = "superlist-victory-q", VIC_TTL = 12 * 36e5;
+function victoryHits(html) {
+  const chunks = [...String(html).matchAll(/self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g)].map(m => { try { return JSON.parse('"' + m[1] + '"'); } catch { return ""; } }).join("");
+  const i = chunks.indexOf('"hits":[');
+  if (i < 0) return [];
+  let d = 0, j = i + 7;
+  for (; j < chunks.length; j++) {
+    const c = chunks[j];
+    if (c === "[") d++;
+    else if (c === "]") { if (!--d) break; }
+    else if (c === '"') { for (j++; j < chunks.length && chunks[j] !== '"'; j++) if (chunks[j] === "\\") j++; }
+  }
+  try { return JSON.parse(chunks.slice(i + 7, j + 1)); } catch { return []; }
+}
+// "9 ב-₪30" -> [מחיר ליחידה, כמות]; מבצעי מועדון (MAX) לא נחשבים
+function victorySale(h) {
+  for (const s of h.sales || []) {
+    if (s.isMaxSale) continue;
+    const m = String(s.name || "").match(/(\d+)\s*ב-?\s*₪?\s*(\d+(?:\.\d+)?)/), one = String(s.name || "").match(/^₪?\s*(\d+(?:\.\d+)?)\s*₪?$/);
+    const unit = m ? +m[2] / +m[1] : one ? +one[1] : null, minq = m ? +m[1] : 1;
+    if (unit && unit < h.price - 0.005 && unit >= h.price * 0.25) {
+      const e = String(s.expiresAt || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      return [Math.round(unit * 100) / 100, minq, String(s.name || s.description || "").slice(0, 60), e ? `${e[3]}-${e[2].padStart(2, "0")}-${e[1].padStart(2, "0")}` : ""];
+    }
+  }
+  return null;
+}
+async function victoryPrices() {
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(VIC_KEY) || "{}"); } catch {}
+  const queries = new Set();
+  for (const i of live().filter(i => !i.done)) {
+    const code = String(i.code || "").replace(/^0+/, "");
+    if (/^\d{8,14}$/.test(code)) queries.add(code);
+    const name = String(i.product || i.name || "").replace(/\d+(\.\d+)?\s*(%|גרם|גר|ג'|מ"ל|מ״ל|מל|ליטר|ל'|ק"ג|ק״ג|יח'?)/g, " ").split(/\s+/).filter(Boolean).slice(0, 3).join(" ");
+    if (name.length > 1) queries.add(name);
+  }
+  const todo = [...queries].filter(q => !(cache[q] && Date.now() - cache[q].at < VIC_TTL)).slice(0, 40);
+  for (let k = 0; k < todo.length; k += 4) await Promise.all(todo.slice(k, k + 4).map(async q => {
+    try {
+      const hits = victoryHits(await fetchPage("https://www.victoryonline.co.il/search?q=" + encodeURIComponent(q)));
+      cache[q] = { at: Date.now(), h: hits.filter(h => h.sku && h.price > 0 && h.inStock !== false).slice(0, 24)
+        .map(h => [String(h.sku).replace(/^0+/, ""), h.name, h.price, h.isWeight ? 1 : 0, victorySale(h), h.weightText || ""]) };
+    } catch (e) { console.warn("victory", q, e); }
+  }));
+  for (const q of Object.keys(cache)) if (Date.now() - cache[q].at > 2 * 864e5) delete cache[q];
+  try { localStorage.setItem(VIC_KEY, JSON.stringify(cache)); } catch {}
+  const items = [], promos = {}, units = {}, seen = new Set();
+  for (const q of queries) for (const [code, name, price, w, sale, wt] of cache[q]?.h || []) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    items.push([code, name, price, w]);
+    if (sale) promos[code] = sale;
+    const m = !w && String(wt).match(/^(\d+(?:\.\d+)?)\s*(\S+)/);
+    const u = m && unitInfo(parseFloat(m[1]), m[2], price);
+    if (u) units[code] = u;
+  }
+  const at = Math.max(0, ...[...queries].map(q => cache[q]?.at || 0));
+  return items.length ? { chain: "victory", store: "1", updated: (at || Date.now()) / 1000, items, promos, units, local: true } : null;
+}
+
 // לפני השוואה: מחירים שהאפליקציה מורידה בעצמה
 async function loadLocalPrices(force = false) {
   const sel = selected();
+  if (sel.victory && canFetchPages()) {
+    try {
+      const j = await victoryPrices();
+      if (j) { PriceDB.setLocal("victory", j); chainUpdates[`victory:${sel.victory}`] = { updated: j.updated, items: j.items.length }; }
+    } catch (e) { console.warn("victory prices", e); }
+  }
   await Promise.all(Object.keys(LOCAL_SOURCES).filter(c => sel[c] && ONLINE[c]?.local).map(async c => {
     const j = await localPrices(c, sel[c], force);
     if (j) { PriceDB.setLocal(c, j); chainUpdates[`${c}:${sel[c]}`] = { updated: j.updated, items: j.items.length }; }
@@ -3146,7 +3217,7 @@ function renderHelp() {
 
   ${sec("💰 השוואת מחירים", `<ul>
     <li>ההשוואה היא בין <b>סניפי האונליין</b> (המחירים של אתרי הקנייה): שופרסל, רמי לוי, קרפור, טיב טעם ו-Wolt Market. בוחרים רשתות ב⚙️ הגדרות.</li>
-    <li><b>יוחננוף</b> מושווית לפי סניף רגיל שבוחרים, ומסומנת <b>הערכה</b> – באתר שלה המחיר יכול להיות קצת שונה. <b>חצי חינם</b> – האפליקציה (או תוסף הכרום) מורידה את קובץ המחירים הרשמי שלה מהחיבור שלך. <b>ויקטורי</b> לא מפרסמת מחירים, אז אחרי מילוי עגלה מוצג הסכום שבעגלה ("🧾 בעגלה בפועל").</li>
+    <li><b>יוחננוף</b> מושווית לפי סניף רגיל שבוחרים, ומסומנת <b>הערכה</b> – באתר שלה המחיר יכול להיות קצת שונה. <b>חצי חינם</b> – האפליקציה (או תוסף הכרום) מורידה את קובץ המחירים הרשמי שלה מהחיבור שלך. <b>ויקטורי</b> לא מפרסמת קובץ מחירים, אז המחירים והמבצעים נלקחים מהחיפוש באתר שלה – רק למוצרים שברשימה (דרך האפליקציה או תוסף הכרום).</li>
     <li>בלשונית <b>💰 מחירים וזמנים</b>: "מחירים וזמני אספקה קרובים" – הסל בכל רשת, המשלוח הקרוב, ו<b>💰 הכי זול</b> / <b>⚡ הכי מהיר</b>.</li>
     <li>לשונית 💰 מחירים וזמנים: טבלה מפורטת לכל מוצר, וחיפוש מוצר לפי שם או ברקוד.</li>
     <li><b>⚖️ מחיר ל-100 גרם / לליטר:</b> מתחת למחיר באריח ובטבלה, כדי להשוות בין אריזות בגדלים שונים.</li>

@@ -19,7 +19,6 @@ async function json(url, opts = {}) {
 const SP = {
   carrefour: { base: "https://www.carrefour.co.il", rid: 1540 },
   tivtaam: { base: "https://www.tivtaam.co.il", rid: 1062 },
-  victory: { base: "https://www.victoryonline.co.il", rid: 1470 },
 };
 // רוב אזורי המשלוח שם מוגדרים כשטח על המפה (ולא כשם עיר), אז מאתרים את הכתובת על המפה (OpenStreetMap)
 // ובודקים באיזה אזור היא נמצאת. נשמר לכל כתובת, כדי לא לשאול שוב.
@@ -46,6 +45,22 @@ const inRing = (ring, y, x) => {
   return ins;
 };
 const cityName = s => clean(String(s || "").replace(/(^|\s)ת["״]?א(?=\s|$)/g, "$1תל אביב").replace(/תל אביב\s*יפו/g, "תל אביב"));
+// ויקטורי עברה לאתר חדש (נובמבר 2026): מועדי המשלוח לפי עיר (+ רחוב ומספר – בערים הגדולות זה חובה)
+async function victorySlot(addr) {
+  if (!addr.city) return { ok: false, reason: "חסרה עיר בהגדרות" };
+  const street = String(addr.street || "").replace(/^\s*(רחוב|רח'|רח)\s+/, "").trim();
+  const q = new URLSearchParams({ city: String(addr.city).trim() });
+  if (street) { q.set("street", street); q.set("houseNumber", String(addr.num || "").trim()); q.set("address", `${street} ${addr.num || ""}`.trim()); }
+  const j = await json(`https://api.victoryonline.co.il/api/web/delivery-slots?${q}`);
+  if (j.status !== "success") return { ok: false, reason: j.error || "אין מידע" };
+  const slots = Object.entries(j.data || {}).flatMap(([date, list]) => (list || []).map(s => {
+    const [a, b] = String(s.hours || "").split("-").map(x => x.trim());
+    return a ? { from: `${date}T${a.padStart(5, "0")}`, to: b ? `${date}T${b.padStart(5, "0")}` : "", price: s.fee ?? null } : null;
+  })).filter(Boolean);
+  const s = first(slots);
+  return s ? { ok: true, ...s } : { ok: false, reason: slots.length ? "אין חלונות פנויים" : "אין משלוחים לכתובת" };
+}
+
 async function spSlot({ base, rid }, addr) {
   if (!addr.city) return { ok: false, reason: "חסרה עיר בהגדרות" };
   const j = await json(`${base}/v2/retailers/${rid}/areas?appId=4&deliveryTypeId=1`);
@@ -216,7 +231,7 @@ async function shufersalSlot() {
 const FETCHERS = {
   carrefour: a => spSlot(SP.carrefour, a),
   tivtaam: a => spSlot(SP.tivtaam, a),
-  victory: a => spSlot(SP.victory, a),
+  victory: victorySlot,
   ramilevy: ramiSlot,
   yochananof: yochananofSlot,
   hazihinam: haziSlot,
