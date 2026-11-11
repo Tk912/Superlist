@@ -34,14 +34,18 @@ header { position: sticky; top: 0; z-index: 5; background: var(--bg);
 header h1 { font-size: 20px; margin: 0; flex: 1; }
 #sync { font-size: 12px; color: var(--muted); }
 #sync.off { color: var(--warn); }
-main { padding: 0 16px calc(90px + env(safe-area-inset-bottom)); max-width: 680px; margin: 0 auto; }
+.hdr-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#lang-slot .lang-pick { padding: 0 8px; font-size: 12px; min-height: 0; }
+#lang-slot .lang-pick select { font-size: 12px; padding: 1px 0; }
+main { padding: 0 16px calc(76px + env(safe-area-inset-bottom)); max-width: 680px; margin: 0 auto; }
 nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 6; display: flex; background: var(--card);
   border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-nav button { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 7px 2px 7px; font-size: 11.5px; line-height: 1.25; color: var(--muted);
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; cursor: pointer; }
+nav button { flex: 1 1 0; min-width: 0; border: 0; background: none; padding: 4px 2px 4px; font-size: 11px; line-height: 1.2; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; cursor: pointer; }
 /* האימוג'י בגובה קבוע ועם מרווח – בלי line-height:1 שחותך אותו בטלפון */
-nav button .i { display: flex; align-items: center; justify-content: center; height: 28px; width: 32px; font-size: 22px; line-height: 28px; overflow: visible; }
-nav button .t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-width: 100%; overflow: hidden; text-align: center; line-height: 1.15; overflow-wrap: anywhere; }
+/* האימוג'י בלי גובה קבוע: גובה שורה 1.35 משאיר מקום לחלק העליון של הציור (📖 נחתך עם line-height:1) */
+nav button .i { display: block; font-size: 20px; line-height: 1.35; padding-top: 1px; }
+nav button .t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-width: 100%; overflow: hidden; text-align: center; line-height: 1.12; overflow-wrap: anywhere; }
 nav button.on { color: var(--accent); font-weight: 600; }
 .card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 14px; margin: 0 0 12px; }
 .row { display: flex; align-items: center; gap: 8px; }
@@ -190,7 +194,7 @@ td.best { color: var(--accent); font-weight: 700; }
 <body>
 <header>
   <h1>🛒 הסל החכם</h1>
-  <span id="sync"></span>
+  <div class="hdr-side"><span id="lang-slot"></span><span id="sync"></span></div>
 </header>
 <main id="view"></main>
 <nav>
@@ -1282,10 +1286,9 @@ function renderList() {
   <div class="row" style="margin-top:8px"><button class="btn ghost grow" data-act="dept-order">⇅ סדר המחלקות</button>
     <button class="btn ghost grow" data-act="shop-exit">יציאה ממצב קנייה</button></div>`;
   return `
-  <div class="row" style="margin:0 0 8px;gap:6px;flex-wrap:wrap">
-    ${cl ? `<button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
-    ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}` : ""}
-    ${langPicker()}</div>
+  ${cl ? `<div class="row" style="margin:0 0 8px;gap:6px;flex-wrap:wrap">
+    <button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
+    ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}</div>` : ""}
   <form class="card row" id="add-form" autocomplete="off">
     <input type="text" id="add-input" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
     <button type="button" class="icon-btn add-tool" data-act="voice" title="הוספה קולית" aria-label="הוספה קולית">🎤</button>
@@ -3190,7 +3193,7 @@ function renderHelp() {
   <div class="card">הסל החכם עושה בשבילך את הקניות בסופר אונליין: בונים רשימה (גם יחד עם בן/בת הזוג), רואים כמה עולה הסל בכל רשת ומתי המשלוח הכי קרוב, ובלחיצה אחת העגלה באתר הסופר מתמלאת. <b>התשלום תמיד נשאר אצלך.</b></div>
 
   ${sec("🌐 שפה", `<ul>
-    <li>בורר השפה נמצא למעלה ברשימה (ליד שם הרשימה) וגם ב⚙️ הגדרות: עברית, English, Русский, Français, العربية.</li>
+    <li>בורר השפה נמצא בראש המסך (מעל "מסונכרן") וגם ב⚙️ הגדרות: עברית, English, Русский, Français, العربية.</li>
     <li>הממשק מתורגם; שמות המוצרים נשארים כמו שהרשתות כותבות אותם. השפה נשמרת במכשיר הזה.</li>
   </ul>`)}
 
@@ -3288,6 +3291,9 @@ function render() {
   if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
   if (focus === "add-input" && val) acShow();
   view.querySelectorAll(".lang-sel").forEach(s => s.onchange = () => I18N.set(s.value));
+  // בורר השפה בכותרת (מעל "מסונכרן") – נבנה פעם אחת
+  const ls = $("#lang-slot");
+  if (ls && !ls.firstChild) { ls.innerHTML = langPicker(); ls.querySelector(".lang-sel")?.addEventListener("change", e => I18N.set(e.target.value)); }
   const fs = $("#free-search");
   if (fs) { let t; fs.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
     const res = await searchProducts(fs.value).catch(() => []);
