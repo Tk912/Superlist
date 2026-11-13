@@ -483,7 +483,7 @@ function notifyOthers(before) {
 function setOnline(v) {
   online = v;
   const el = $("#sync");
-  el.textContent = v ? "● מסונכרן" : window.Cloud?.configured === false ? "● מצב מקומי" : "● לא מסונכרן";
+  el.textContent = v ? "● מסונכרן" : isGuest() ? "● מצב אורח" : window.Cloud?.configured === false ? "● מצב מקומי" : "● לא מסונכרן";
   el.className = v ? "" : "off";
 }
 
@@ -1434,6 +1434,10 @@ function nameSheet(then) {
 
 // שיתוף: מוסיפים את כתובת ה-Gmail של השותף. הוא נכנס לאותו אתר עם Google ורואה את אותה רשימה.
 function shareSheet() {
+  if (isGuest() && window.Cloud?.configured) return sheet(`<h2 style="margin-top:0">👥 שיתוף הרשימה</h2>
+    <div class="card">כדי לשתף את הרשימה צריך להתחבר עם Google. הרשימה שכבר בנית במכשיר תעבור לחשבון.</div>
+    <button class="btn" style="width:100%" data-act="guest-login">התחברות עם Google</button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>לא עכשיו</button>`);
   if (!window.Cloud?.user) return toast("צריך להתחבר עם Google כדי לשתף");
   const link = location.origin + location.pathname;
   const mine = Cloud.email();
@@ -3233,8 +3237,10 @@ function renderSettings() {
   <div class="card"><div class="muted" style="margin-bottom:8px">סימנייה שממלאת את העגלה באתר הסופר מתוך הרשימה. מוסיפים אותה פעם אחת.</div>
     <button class="btn ghost" style="width:100%" data-act="bookmark">🛒 איך מוסיפים את כפתור המילוי</button></div>`}
   <h2>החשבון</h2>
-  <div class="card row"><div class="grow">${window.Cloud?.user ? esc(Cloud.user.email) : "מצב מקומי (בלי Firebase)"}</div>
-    <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>
+  ${isGuest() && window.Cloud?.configured ? `<div class="card"><div style="margin-bottom:8px">מצב אורח: הרשימה נשמרת רק במכשיר הזה.</div>
+    <button class="btn" style="width:100%" data-act="guest-login">התחברות עם Google – לשמירה בענן ולשיתוף</button></div>`
+  : `<div class="card row"><div class="grow">${window.Cloud?.user ? esc(Cloud.user.email) : "מצב מקומי (בלי Firebase)"}</div>
+    <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>`}
   ${window.Cloud?.user ? `<button class="btn ghost" style="width:100%" data-act="lists">📋 הרשימות שלי (${myLists.length}) – יצירה, מעבר, שינוי שם ומחיקה</button>` : ""}`;
 }
 
@@ -3283,6 +3289,11 @@ function renderHelp() {
   return `<div class="help">
   <h2>❓ הוראות הפעלה</h2>
   <div class="card">הסל החכם עושה בשבילך את הקניות בסופר אונליין: בונים רשימה (גם יחד עם בן/בת הזוג), רואים כמה עולה הסל בכל רשת ומתי המשלוח הכי קרוב, ובלחיצה אחת העגלה באתר הסופר מתמלאת. <b>התשלום תמיד נשאר אצלך.</b></div>
+
+  ${sec("👤 בלי חשבון (מצב אורח)", `<ul>
+    <li>במסך הכניסה אפשר ללחוץ <b>"לנסות בלי חשבון"</b>: כל האפליקציה עובדת, והרשימה נשמרת רק במכשיר הזה.</li>
+    <li>שיתוף ושמירה בענן דורשים חשבון Google. מתחברים מ⚙️ הגדרות ← "התחברות עם Google", והרשימה שבמכשיר עוברת לחשבון.</li>
+  </ul>`)}
 
   ${sec("🌐 שפה", `<ul>
     <li>בורר השפה נמצא בראש המסך (מעל "מסונכרן") וגם ב⚙️ הגדרות: עברית, English, Русский, Français, العربية.</li>
@@ -3460,6 +3471,7 @@ $("#view").addEventListener("contextmenu", e => { if (e.target.closest(".tile"))
 
 // הפס הקבוע למטה: אותו טיפול בלחיצות כמו ברשימה (שלח לסופר, מעבר ללשונית המחירים)
 $("#sendbar").addEventListener("click", e => onViewClick(e));
+$("#sheet-root").addEventListener("click", e => { if (e.target.closest('[data-act="guest-login"]')) { closeSheet(); onViewClick(e); } });
 $("#view").addEventListener("click", e => onViewClick(e));
 function onViewClick(e) {
   if (Date.now() - pressedAt < 700) return; // הלחיצה הארוכה כבר פתחה את בחירת המחלקה
@@ -3556,6 +3568,14 @@ function onViewClick(e) {
     case "slots-refresh": slots = null; return requestSlots(true);
     case "login": return Cloud.signIn().catch(e => { if (e.code !== "native/cancelled") toast("ההתחברות נכשלה: " + (e.code || e.message)); });
     case "logout": return Cloud.signOut();
+    case "guest": try { localStorage.setItem(GUEST_KEY, "1"); } catch {} return startCloud();
+    case "guest-login": {
+      // יציאה ממצב אורח: התחברות עם Google; הרשימה שבמכשיר עוברת לחשבון אם עוד אין בו רשימות
+      try { localStorage.removeItem(GUEST_KEY); } catch {}
+      guestCarry = live().length > 0 || S.recipes.length > 0;
+      startCloud();
+      return Cloud.signIn().catch(e => { if (e.code !== "native/cancelled") toast("ההתחברות נכשלה: " + (e.code || e.message)); });
+    }
   }
 }
 
@@ -3567,7 +3587,9 @@ function renderGate() {
   if (gate === "login") return `<div class="card" style="text-align:center;padding:28px 16px">
       <div style="font-size:42px">🛒</div><h2 style="color:var(--text);font-size:20px">ברוך הבא לסל החכם</h2>
       <div class="muted" style="margin-bottom:16px">נכנסים עם חשבון Google – ומקבלים מיד רשימה משלך. אפשר ליצור עוד רשימות ולשתף אותן עם מי שתבחר.</div>
-      <button class="btn" data-act="login" style="width:100%">התחברות עם Google</button></div>`;
+      <button class="btn" data-act="login" style="width:100%">התחברות עם Google</button>
+      <button class="btn ghost" data-act="guest" style="width:100%;margin-top:8px">לנסות בלי חשבון</button>
+      <div class="muted" style="font-size:12px;margin-top:6px">בלי חשבון הרשימה נשמרת רק במכשיר הזה, ואי אפשר לשתף אותה. אפשר להתחבר בכל זמן מההגדרות – והרשימה תעבור לחשבון.</div></div>`;
   return `<div class="card" style="text-align:center;padding:24px 16px">
       <div style="font-size:36px">⚠️</div><h2 style="color:var(--text)">לא הצלחתי לטעון את הרשימות</h2>
       <div class="muted">אתה מחובר בתור <b dir="ltr">${esc(window.Cloud?.email() || "")}</b>. בדוק את החיבור לאינטרנט ונסה שוב.</div>
@@ -3595,7 +3617,7 @@ function watchLists() {
       // משתמש חדש (גם מי שכבר צירפו אותו לרשימה של מישהו), או שמחק את כל הרשימות שלו: רשימה משלו
       if (!creatingList) {
         creatingList = true;
-        try { await Cloud.createList("הרשימה שלי", freshState()); if (!lists.length) toast("ברוך הבא! נוצרה לך רשימה חדשה 🛒"); }
+        try { await Cloud.createList("הרשימה שלי", guestCarry ? JSON.parse(JSON.stringify(S)) : freshState()); if (!lists.length) toast(guestCarry ? "הרשימה מהמכשיר עברה לחשבון שלך 🛒" : "ברוך הבא! נוצרה לך רשימה חדשה 🛒"); guestCarry = false; }
         catch (e) { console.warn(e); if (!lists.length) { gate = "error"; render(); } }
         creatingList = false;
       }
@@ -3695,8 +3717,12 @@ function listsSheet() {
   });
 }
 
+// מצב אורח: כל האפליקציה בלי חשבון (נשמר רק במכשיר; בלי שיתוף). גם לבודקים של Google Play, שלא יכולים להתחבר עם חשבון משלהם
+const GUEST_KEY = "superlist-guest";
+const isGuest = () => { try { return localStorage.getItem(GUEST_KEY) === "1"; } catch { return false; } };
+let guestCarry = false;   // התחברות אחרי מצב אורח: הרשימה מהמכשיר עוברת לחשבון החדש
 function startCloud() {
-  if (!window.Cloud || !Cloud.configured) {
+  if (!window.Cloud || !Cloud.configured || isGuest()) {
     // בלי Firebase (למשל בבדיקה): הכל נשמר רק בדפדפן הזה
     gate = "ok"; setOnline(false); render();
     setTimeout(() => { applyRecurring(); syncReminders(); }, 1500);
