@@ -1289,12 +1289,14 @@ function renderList() {
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none" data-act="img">לא נמצא בסניפים</div>`
       : p ? `<div class="tile-price" data-act="img"><b>${money(p.price)}</b>${p.weighted ? " לק״ג" : ""} · ${esc(p.chain)}</div>${tags ? `<div class="tags" data-act="img">${tags}</div>` : ""}` : "";
     const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
+    const miss = i.miss && !i.done && !shop ? `<div class="tile-note" style="color:#b5470b">⚠️ לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
+      <div class="row" style="gap:4px;margin:4px 0"><button class="btn small ghost grow" data-act="link">🔍 חלופה</button><button class="btn small ghost grow" data-act="unmiss">✓ הסר מחוסרים</button></div>` : "";
     const img = thumb(i.code, "tile-img", `data-act="img" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
       <div class="tile-top">${img}<div class="tile-name" data-act="toggle">${esc(i.name)} ${who}</div>
         ${i.done || shop ? "" : `<div class="tile-tools"><button class="icon-btn" data-act="del" title="מחק" aria-label="מחק">${icon("x", 18)}</button></div>`}</div>
-      ${shop ? shopPriceTag(i) : ptag}
+      ${shop ? shopPriceTag(i) : ptag}${miss}
       <div class="tile-bottom">${i.done ? `<span class="muted" style="font-size:13px">${fmtQty(i)}</span>`
         : `<div class="qty ${i.unit === "kg" ? "kg" : ""}"><button data-act="dec" aria-label="פחות">−</button>
           <span data-act="unit" title="${i.unit === "kg" ? "נמכר במשקל. לחיצה: להחליף ליחידות" : "כמות יחידות/אריזות. לחיצה: להחליף לק״ג"}">${fmtQty(i)}</span>
@@ -1308,7 +1310,12 @@ function renderList() {
     return s;
   };
   const byDept = {};
-  for (const i of [...open, ...done]) (byDept[CAT_ORDER.includes(i.cat) ? i.cat : "אחר"] ||= []).push(i);
+  // חוסרים (לא עברו לאתר בהעברה האחרונה) – בחלק נפרד בראש הרשימה
+  const missing = shop ? [] : open.filter(i => i.miss);
+  for (const i of [...open, ...done]) if (!missing.includes(i)) (byDept[CAT_ORDER.includes(i.cat) ? i.cat : "אחר"] ||= []).push(i);
+  const missBlock = !missing.length ? "" : `<section class="dept" style="border:2px solid #b5470b"><div class="dept-head"><span>⚠️</span><span class="grow">חוסרים / לא זמינים</span><span class="dept-sum">${missing.length}</span></div>
+      <div class="muted" style="font-size:13px;margin:0 4px 6px">לא נמצאו באתר בהעברת הסל. בחרו להם חלופה (🔍), או השאירו לקנייה הבאה.</div>
+      <div class="tiles">${missing.map(tile).join("")}</div></section>`;
   const deptBlock = c => {
     const list = byDept[c], left = list.filter(i => !i.done).length, s = deptSum(list.filter(i => !i.done));
     return `<section class="dept d${CAT_ORDER.indexOf(c)}"><div class="dept-head"><span>${DEPT_ICON[c] || "🛒"}</span><span class="grow">${esc(c)}</span>
@@ -1342,6 +1349,7 @@ function renderList() {
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   <h2>${items.length ? `ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})` : ""}</h2>
+  ${missBlock}
   ${items.length ? deptOrder().filter(c => byDept[c]).map(deptBlock).join("") : ""}
   ${!open.length ? `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או להוסיף מצרכים ממתכון בלשונית מתכונים."}</div>` : ""}
   ${done.length ? `<button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה (${done.length})</button>` : ""}
@@ -1349,6 +1357,7 @@ function renderList() {
   ${dealsCard()}
   <div class="row" style="margin-top:12px">
     ${open.length ? `<button class="btn ghost grow" data-act="shop-enter" style="display:flex;align-items:center;justify-content:center;gap:6px">${icon("store", 18)} אני בסופר – מצב קנייה</button>` : ""}
+    ${items.length ? `<button class="btn ghost" data-act="clear-list" title="ניקוי הרשימה" aria-label="ניקוי הרשימה">🧹 ניקוי</button>` : ""}
     <button class="btn ghost ${open.length ? "" : "grow"}" data-act="more" style="display:flex;align-items:center;justify-content:center;gap:6px" aria-label="עוד">${icon("more", 18)} עוד</button>
   </div>`;
 }
@@ -1375,7 +1384,7 @@ function renderSendBar() {
   document.body.classList.toggle("has-sendbar", show);
   if (!show) return;
   const c = compareCache, best = c?.chains?.filter(x => x.found).slice().sort(byCoverage)[0];
-  const fast = typeof fastestChain === "function" ? fastestChain(CART_CHAINS) : null;
+  const fast = typeof fastestChain === "function" ? fastestChain(cartChains()) : null;
   const line1 = best ? `<b>${money(best.total)}</b> · הכי זול ב${esc(chains[best.chain] || best.name)}` : `<b>${open.length}</b> פריטים ברשימה`;
   const line2 = fast && slots?.[fast]?.ok ? `⚡ משלוח קרוב: ${esc(CART_NAMES[fast] || fast)} · ${esc(fmtSlot(slots[fast]))}` : best ? `${best.found} מתוך ${c.lines.length} מוצרים · לחיצה לפירוט` : "";
   bar.innerHTML = `<div class="in"><div class="sum" data-tab-go="prices">${line1}${line2 ? `<div class="sub">${line2}</div>` : ""}</div>
@@ -1385,14 +1394,15 @@ function renderSendBar() {
 // בחירת רשת למילוי עגלה; הזולה ביותר (לפי ההשוואה) למעלה
 function sendSheet() {
   const totals = Object.fromEntries((compareCache?.chains || []).filter(c => c.found).map(c => [c.chain, c]));
-  const order = [...CART_CHAINS].sort((a, b) => (totals[b]?.found || 0) - (totals[a]?.found || 0) || (totals[a]?.total ?? 1e9) - (totals[b]?.total ?? 1e9));
+  const order = cartChains().sort((a, b) => (totals[b]?.found || 0) - (totals[a]?.found || 0) || (totals[a]?.total ?? 1e9) - (totals[b]?.total ?? 1e9));
   const best = order.find(c => totals[c]);
-  const fast = fastestChain(CART_CHAINS);
+  const fast = fastestChain(cartChains());
   const others = [...new Set(live().filter(i => !i.done && i.by && i.by !== me).map(i => i.by))];
   sheet(`<h2 style="margin-top:0" id="send-sheet">לאיזה סופר לשלוח?</h2>
     <div class="muted" style="margin-bottom:8px">המחיר וזמן האספקה הקרוב בכל רשת${fast ? ` · ⚡ הכי מהיר: <b>${esc(CART_NAMES[fast])}</b>` : ""}</div>
     ${others.length ? `<div class="muted" style="margin-bottom:8px">ברשימה יש גם פריטים ש${esc(others.join(" ו"))} הוסיפו. העגלה תכלול את כולם.</div>` : ""}
     ${!hasExt() && !inApp ? `<div class="muted" style="margin-bottom:8px">כדי לראות מועדי משלוח צריך את התוסף לכרום. <a href="#" data-act="ext-help">איך מתקינים</a></div>` : ""}
+    <div class="muted" style="margin-bottom:8px">ℹ️ ${CLUB_NOTE}</div>
     <div class="card">${order.map(c => `<div class="result row" data-fill="${c}">
       <div class="grow"><b>${CART_NAMES[c]}</b>${pickupTag(c)} ${c === best ? `<span class="badge">הכי זול</span>` : ""} ${c === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}
       <div class="muted">${totals[c] ? `${money(totals[c].total)} · ${totals[c].found} מוצרים עם מחיר${isEstimate(c) ? " (הערכה)" : ""}` : cartTotal(c) ? `🧾 בעגלה בפועל: ${money(cartTotal(c).total)} (${ago(cartTotal(c).at)})` : NO_ONLINE_PRICES[c] ? "בלי השוואת מחירים (הרשת לא מפרסמת מחירים) – אחרי מילוי יוצג הסכום שבעגלה" : "בלי השוואה (לא נכלל בהגדרות)"}</div>
@@ -1587,8 +1597,9 @@ function cartJob(chain, items = live().filter(i => !i.done)) {
     ? PriceDB.compare(linked.map(i => ({ code: i.code, qty: i.qty, unit: i.unit, kg: itemKg(i), name: i.name, product: i.product }))).lines
     : [];
   const byName = Object.fromEntries(linked.map((i, k) => [i.id, lines[k]]));
+  const tot = (compareCache?.chains || []).find(x => x.chain === chain && x.found);
   return {
-    superlist: 1, chain,
+    superlist: 1, chain, est: tot ? Math.round(tot.total * 100) / 100 : null,
     items: items.map(i => {
       const l = byName[i.id];
       // ברשת הזו נמצא בהשוואה רק מוצר "דומה" (המוצר עצמו לא בקובץ המחירים שלה): מחפשים באתר את המוצר עצמו,
@@ -2035,15 +2046,53 @@ function addRecipeSheet(recipe, fromLibrary) {
 }
 
 // ---------- עריכת מתכון ----------
+// הכתבה לשדות המתכון (שם, מצרכים, אופן הכנה). באפליקציה – זיהוי הדיבור של הטלפון; בדפדפן – של כרום
+let recipeVoice = null, dictRec = null;
+function dictate(btn, onText) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const label = btn.dataset.label || (btn.dataset.label = btn.textContent);
+  const off = () => { btn.classList.remove("on"); btn.textContent = label; };
+  if (inApp && window.SuperlistNative.voice) {
+    btn.classList.add("on"); btn.textContent = "● מקשיב…";
+    recipeVoice = (text, err) => { off(); if (text) onText(text); else if (err === "no-recognizer") toast("בטלפון אין זיהוי דיבור. אפשר להתקין את אפליקציית Google"); };
+    return window.SuperlistNative.voice();
+  }
+  if (!SR) return toast(inApp ? "עדכן את האפליקציה כדי להכתיב (הגדרות ← עדכון גרסה)" : "הדפדפן הזה לא תומך בהכתבה. נסה בכרום");
+  if (dictRec) { const was = dictRec; try { was.stop(); } catch {} if (was.btn === btn) return; }
+  const rec = dictRec = new SR();
+  rec.btn = btn;
+  rec.lang = "he-IL"; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) onText(e.results[i][0].transcript.trim()); };
+  rec.onerror = e => { if (!["no-speech", "aborted"].includes(e.error)) toast(e.error === "not-allowed" ? "צריך לאשר גישה למיקרופון" : "זיהוי הדיבור נכשל: " + e.error); };
+  rec.onend = () => { if (dictRec === rec) dictRec = null; off(); };
+  btn.classList.add("on"); btn.textContent = "⏹ עצור הכתבה";
+  rec.start();
+}
+// מצרכים מדיבור: "2 עגבניות, קילו תפוחי אדמה ובצל" -> שורה לכל מצרך; מספרים במילים -> ספרות
+const NUM_WORDS = { "אחד": 1, "אחת": 1, "שני": 2, "שתי": 2, "שניים": 2, "שתיים": 2, "שלוש": 3, "שלושה": 3, "ארבע": 4, "ארבעה": 4, "חמש": 5, "חמישה": 5,
+  "שש": 6, "שישה": 6, "שבע": 7, "שבעה": 7, "שמונה": 8, "תשע": 9, "תשעה": 9, "עשר": 10, "עשרה": 10 };
+const recipeSpeech = t => String(t || "").replace(/[.!?]/g, " ")
+  .split(/\s*,\s*|\s+וגם\s+|\s+ועוד\s+|\s+(?=ו(?!ניל|ופל|ודקה)[א-ת]{2,})/)
+  .map(x => x.trim().replace(/^ו(?!ניל|ופל|ודקה)(?=[א-ת]{2,})/, "")
+    .replace(/^חצי\s+(?:קילו|ק"ג|ק״ג)\s+/, "0.5 ק״ג ").replace(/^(?:קילו|ק"ג)\s+/, "1 ק״ג ")
+    .replace(/^([א-ת]+)\s+(?:קילו|ק"ג)\s+/, (m, w) => NUM_WORDS[w] ? `${NUM_WORDS[w]} ק״ג ` : m)
+    .replace(/^([א-ת]+)\s+/, (m, w) => NUM_WORDS[w] ? `${NUM_WORDS[w]} ` : m))
+  .filter(Boolean);
+const addLines = (el, lines) => { const v = el.value.replace(/\s+$/, ""); el.value = (v ? v + "\n" : "") + lines.filter(Boolean).join("\n"); el.scrollTop = el.scrollHeight; };
+
 function recipeSheet(id) {
   const r = id === "new" ? { id: uid(), name: "", servings: 4, ingredients: [] } : S.recipes.find(x => x.id === id);
   const text = r.ingredients.map(x => (x.unit === "kg" ? `${fmtNum(x.qty)} ק״ג ` : Number(x.qty) > 1 ? x.qty + " " : "") + x.name + (x.pantry ? " *" : "")).join("\n");
   sheet(`<h2 style="margin-top:0">${id === "new" ? "מתכון חדש" : "עריכת מתכון"}</h2>
+    <div class="muted" style="margin-bottom:6px">🎤 אפשר גם להכתיב: לוחצים על "הכתבה" ליד השדה ומדברים.</div>
     <div class="row"><input type="text" id="r-name" placeholder="שם המתכון" value="${esc(r.name)}" class="grow">
+      <button type="button" class="btn small ghost add-tool" id="r-name-mic" title="הכתבת שם המתכון" aria-label="הכתבת שם המתכון">🎤</button>
       <input type="text" id="r-serv" value="${r.servings || 4}" style="width:70px;text-align:center" inputmode="numeric" title="מנות"></div>
-    <div class="muted" style="margin:8px 0">מצרך בכל שורה: "1 ק״ג תפוחי אדמה", "6 עגבניות", "2 פסטה". כוכבית בסוף (*) = בדרך כלל יש בבית.</div>
+    <div class="row" style="margin:8px 0;align-items:flex-start"><div class="muted grow">מצרך בכל שורה: "1 ק״ג תפוחי אדמה", "6 עגבניות", "2 פסטה". כוכבית בסוף (*) = בדרך כלל יש בבית.</div>
+      <button type="button" class="btn small ghost add-tool" id="r-ing-mic">🎤 הכתבה</button></div>
     <textarea id="r-ing" rows="10">${esc(text)}</textarea>
-    <div class="muted" style="margin:8px 0 4px">אופן ההכנה (שלב בכל שורה, לא חובה):</div>
+    <div class="row" style="margin:8px 0 4px"><div class="muted grow">אופן ההכנה (שלב בכל שורה, לא חובה):</div>
+      <button type="button" class="btn small ghost add-tool" id="r-steps-mic">🎤 הכתבה</button></div>
     <textarea id="r-steps" rows="6">${esc((r.steps || []).join("\n"))}</textarea><br><br>
     <div class="row"><button class="btn grow" id="r-save">שמור</button>
     ${id === "new" ? "" : `<button class="btn ghost" id="r-del">מחק</button>`}
@@ -2063,13 +2112,24 @@ function recipeSheet(id) {
     if (id === "new") S.recipes.push(r);
     closeSheet(); commit();
   };
+  $("#r-name-mic").onclick = e => dictate(e.currentTarget, t => { $("#r-name").value = t.replace(/[.!?]+$/, ""); });
+  // מצרכים: "2 עגבניות, קילו תפוחי אדמה ובצל" – כל מצרך בשורה
+  $("#r-ing-mic").onclick = e => dictate(e.currentTarget, t => addLines($("#r-ing"), recipeSpeech(t)));
+  // הכנה: כל משפט שלב
+  $("#r-steps-mic").onclick = e => dictate(e.currentTarget, t => addLines($("#r-steps"), t.split(/[.!?]\s+|\s+(?:ואז|ו?אחר כך|ו?אחרי זה|ו?אחרי כן)\s+/).map(x => x.trim())));
+  sheetCleanup = () => { try { dictRec?.abort(); } catch {} dictRec = null; recipeVoice = null; };
   if ($("#r-del")) $("#r-del").onclick = () => { if (confirm("למחוק את המתכון?")) { Object.assign(r, { deleted: true, t: now() }); closeSheet(); commit(); } };
 }
 
 // ================= מחירים =================
 // תאריכים בשפה שנבחרה (ספרות רגילות גם בערבית)
 const LOC = () => ({ en: "en-GB", ru: "ru-RU", fr: "fr-FR", ar: "ar-u-nu-latn" })[typeof I18N !== "undefined" && I18N.lang] || "he-IL";
-function selected() { return Object.fromEntries(Object.entries(S.settings.stores).filter(([, v]) => v)); }
+// ספק שהוסתר בהגדרות: לא מופיע בהשוואה, בשליחה לסופר ובמועדי המשלוח (הבחירה שלו נשמרת)
+function shownChain(c) { return !S.settings.hiddenChains?.[c]; }
+function cartChains() { return CART_CHAINS.filter(shownChain); }
+function selected() { return Object.fromEntries(Object.entries(S.settings.stores).filter(([c, v]) => v && shownChain(c))); }
+// מחירי מועדון ודמי משלוח לא נכללים בהשוואה – נקבעים באתר
+var CLUB_NOTE = "מחירי מועדון לקוחות ודמי משלוח יתעדכנו בעת יצירת ההזמנה.";
 // הרשתות שאפשר לטעון להן מחירים כאן: קרפור, חצי חינם וויקטורי נטענות מהחיבור שלך – רק באפליקציה או עם תוסף הכרום
 // (בלי זה הן פשוט לא נכללות בהשוואה, במקום אזהרה קבועה ש"המחירים עוד לא הורדו")
 const localOnly = c => !!ONLINE[c]?.local;
@@ -2402,7 +2462,7 @@ function renderPrices() {
     const best = ranked.slice().sort(byCoverage)[0];
     const max = Math.max(...ranked.map(x => x.total), 1);
     const fast = fastestChain(c.chains.map(x => x.chain));
-    html += `<h2>💰🚚 מחירים וזמני אספקה קרובים</h2>${budgetWarn(best)}<div class="card">
+    html += `<h2>💰🚚 מחירים וזמני אספקה קרובים</h2>${budgetWarn(best)}<div class="muted" style="margin:0 0 6px">ℹ️ ${CLUB_NOTE}</div><div class="card">
       ${c.chains.map(x => `<div class="chain-card">
         <div class="grow"><div class="row"><b>${esc(x.name)}</b>${pickupTag(x.chain)}${best && x.chain === best.chain ? `<span class="badge">הכי זול</span>` : ""}${x.chain === fast ? `<span class="badge" style="background:#b5470b">הכי מהיר</span>` : ""}</div>
         <div class="muted">${x.found} מתוך ${c.lines.length} מוצרים${x.missing.length ? " · חסר: " + esc(x.missing.slice(0, 3).join(", ")) + (x.missing.length > 3 ? "…" : "") : ""}${x.promos ? ` · 🏷️ ${x.promos} במבצע` : ""}</div>
@@ -2625,6 +2685,7 @@ function onVoiceText(text) {
   voiceRender();
 }
 window.onNativeVoice = (text, err) => {
+  if (recipeVoice) { const f = recipeVoice; recipeVoice = null; return f(text, err); }
   voiceOn = false;
   if (text) return onVoiceText(text);
   if (err === "no-recognizer") toast("בטלפון אין זיהוי דיבור. אפשר להתקין את אפליקציית Google");
@@ -2810,6 +2871,7 @@ function setLink(item, code, pname, weighted) {
   if (code) matchUnit(item, weighted);
   // ביטול קישור ידני: לא לקשר שוב אוטומטית
   Object.assign(item, { code, product: pname, auto: false, noLink: !code, t: now() });
+  if (code) delete item.miss;
   if (code && S.history[norm(item.name)]) S.history[norm(item.name)].unit = item.unit;
   const k = norm(item.name);
   if (S.history[k]) Object.assign(S.history[k], { code, product: pname, t: now() });
@@ -2870,9 +2932,85 @@ window.addEventListener("message", e => {
 window.onCartReport = r => {
   if (!r || !r.total) return;
   S.settings.lastFill = { chain: r.chain, at: r.at || now(), total: r.total, ok: r.ok, lines: r.lines ?? null, failed: (r.failed || []).slice(0, 60), merged: (r.merged || []).slice(0, 60), substituted: (r.substituted || []).slice(0, 60) };
+  // חוסרים: מוצר שלא עבר לאתר מסומן ברשימה (תחת "חוסרים / לא זמינים") עד שבוחרים לו חלופה או מסירים
+  const failedNames = new Set((r.failed || []).map(x => norm(x.name)));
+  for (const i of live().filter(i => !i.done)) {
+    const f = (r.failed || []).find(x => norm(x.name) === norm(i.name));
+    if (f) Object.assign(i, { miss: { chain: r.chain, reason: f.reason || "", at: r.at || now() }, t: now() });
+    else if (i.miss && i.miss.chain === r.chain && !failedNames.has(norm(i.name))) { delete i.miss; i.t = now(); }
+  }
   S.settings.t = now(); commit();
-  if (r.failed?.length) toast(`⚠️ ${r.failed.length} מוצרים לא עברו ל${CART_NAMES[r.chain] || "אתר"} – מופיעים בראש הרשימה`);
+  if (r.failed?.length) toast(`⚠️ ${r.failed.length} מוצרים לא עברו ל${CART_NAMES[r.chain] || "אתר"} – מופיעים ברשימה תחת "חוסרים"`);
+  cartSummarySoon(r.chain);
 };
+// אחרי העברת הסל: המחירים בגדול, ובסיום – לרוקן את הרשימה או לשמור לקנייה הבאה
+let cartSummaryTimer = null;
+function cartSummarySoon(chain) {
+  clearTimeout(cartSummaryTimer);
+  cartSummaryTimer = setTimeout(() => { if (gate === "ok" && chain) cartSummarySheet(chain); }, 600);
+}
+function cartSummarySheet(chain) {
+  const name = CART_NAMES[chain] || chains[chain] || chain;
+  const r = S.settings.lastFill?.chain === chain && now() - S.settings.lastFill.at < 6 * 36e5 ? S.settings.lastFill : null;
+  const cart = cartTotal(chain), fresh = cart && now() - cart.at < 6 * 36e5 ? cart : null;
+  const o = (S.orders || []).find(o => !o.deleted && o.chain === chain && now() - o.at < 12 * 36e5);
+  const est = o?.est ?? null;
+  const missing = live().filter(i => !i.done && i.miss?.chain === chain).length;
+  sheet(`<h2 style="margin-top:0">🧾 סיכום העברת הסל · ${esc(name)}</h2>
+    <div class="card" style="text-align:center">
+      ${fresh ? `<div class="muted">בעגלה באתר</div><div style="font-size:40px;font-weight:800;color:var(--accent);line-height:1.15">${money(fresh.total)}</div>` : ""}
+      ${est != null ? `<div class="muted" style="margin-top:${fresh ? 8 : 0}px">${fresh ? "משוער לפי השוואת המחירים" : "סה״כ משוער לפי השוואת המחירים"}</div>
+        <div style="font-size:${fresh ? 24 : 40}px;font-weight:800;line-height:1.15;${fresh ? "" : "color:var(--accent)"}">${money(est)}</div>` : ""}
+      ${!fresh && est == null ? `<div class="muted">אין עדיין סכום – הוא יופיע בעגלה באתר.</div>` : ""}
+      ${fresh && est != null && Math.abs(fresh.total - est) >= 1 ? `<div class="muted" style="font-size:13px;margin-top:4px">הפרש: ${money(Math.abs(fresh.total - est))} ${fresh.total > est ? "יותר" : "פחות"} מהמשוער</div>` : ""}
+    </div>
+    ${r ? `<div class="card"><div>✅ ${r.ok} מתוך ${r.total} מוצרים עברו לעגלה${r.substituted?.length ? ` · 🔄 ${r.substituted.length} עם תחליף` : ""}</div>
+      ${missing ? `<div style="color:#b5470b;margin-top:4px">⚠️ ${missing} חוסרים – נשארים ברשימה תחת "חוסרים / לא זמינים" כדי למצוא להם חלופה</div>` : ""}</div>` : ""}
+    <div class="muted" style="margin:8px 0">ℹ️ ${CLUB_NOTE}</div>
+    <button class="btn" style="width:100%" id="cs-finish">✔ סיום</button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  $("#cs-finish").onclick = () => listAfterOrderSheet(chain);
+}
+function listAfterOrderSheet(chain) {
+  const missing = live().filter(i => !i.done && i.miss).length;
+  const rest = live().filter(i => !i.miss).length;
+  sheet(`<h2 style="margin-top:0">מה לעשות עם הרשימה?</h2>
+    <div class="muted" style="margin-bottom:8px">ההזמנה נשלחה ל${esc(CART_NAMES[chain] || chain)}.${missing ? ` ${missing} חוסרים יישארו ברשימה בכל מקרה.` : ""}</div>
+    <button class="btn" style="width:100%" id="la-empty" ${rest ? "" : "disabled"}>🗑 לרוקן את הרשימה${rest ? ` (${rest} פריטים)` : ""}</button>
+    <div class="muted" style="font-size:13px;margin:4px 0 10px">המוצרים נשמרים בהיסטוריה ובהזמנות, ויופיעו בהצעות לפעם הבאה.</div>
+    <button class="btn ghost" style="width:100%" id="la-keep">💾 לשמור את הרשימה לקנייה הבאה</button>`);
+  $("#la-empty").onclick = () => { const n = emptyList(true); closeSheet(); toast(`🗑 הרשימה רוקנה (${n} פריטים)`); refreshCompare().then(render); };
+  $("#la-keep").onclick = () => { closeSheet(); toast("💾 הרשימה נשמרה לקנייה הבאה"); };
+}
+// ריקון הרשימה. keepMissing: החוסרים נשארים (עוד לא נקנו). הפריטים נרשמים בהיסטוריה (להצעות "קונים בדרך כלל")
+function emptyList(keepMissing, history = true) {
+  const t = now(), list = live().filter(i => !(keepMissing && i.miss));
+  for (const i of list) {
+    if (history) {
+      const k = norm(i.name), h = S.history[k] || { name: i.name, buys: [] };
+      if (!h.buys.length || t - h.buys[h.buys.length - 1] > 12 * 36e5) h.buys = [...h.buys, t].slice(-12);
+      Object.assign(h, { name: i.name, cat: i.cat, code: i.code || h.code || null, product: i.product || h.product || null, unit: i.unit || h.unit, t });
+      S.history[k] = h;
+    }
+    Object.assign(i, { deleted: true, delBy: me || null, t });
+  }
+  commit();
+  return list.length;
+}
+// 🧹 ניקוי הרשימה (בלי היסטוריה – כמו מחיקה)
+function clearListSheet() {
+  const all = live(), done = all.filter(i => i.done), miss = all.filter(i => i.miss && !i.done);
+  sheet(`<h2 style="margin-top:0">🧹 ניקוי הרשימה</h2>
+    <div class="muted" style="margin-bottom:8px">הפריטים יימחקו מהרשימה (גם אצל מי שהרשימה משותפת איתו).</div>
+    <button class="btn" style="width:100%;background:#b42318" id="cl-all">מחק את כל ${all.length} הפריטים</button>
+    ${done.length && done.length < all.length ? `<button class="btn ghost" style="width:100%;margin-top:8px" id="cl-done">רק מה שסומן בעגלה (${done.length})</button>` : ""}
+    ${miss.length && miss.length < all.length ? `<button class="btn ghost" style="width:100%;margin-top:8px" id="cl-miss">רק החוסרים (${miss.length})</button>` : ""}
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>ביטול</button>`);
+  const del = list => { const t = now(); list.forEach(i => Object.assign(i, { deleted: true, delBy: me || null, t })); closeSheet(); commit(); toast(`🧹 נמחקו ${list.length} פריטים`); refreshCompare().then(render); };
+  $("#cl-all").onclick = () => del(all);
+  if ($("#cl-done")) $("#cl-done").onclick = () => del(done);
+  if ($("#cl-miss")) $("#cl-miss").onclick = () => del(miss);
+}
 function fillReportCard() {
   const r = S.settings.lastFill;
   if (!r || r.dismissed || now() - r.at > 3 * 864e5 || (!r.failed.length && !r.merged.length && !r.substituted?.length)) return "";
@@ -2880,10 +3018,9 @@ function fillReportCard() {
   return `<div class="card" style="border:2px solid #b5470b;margin-bottom:10px">
     <b>${r.failed.length ? `⚠️ ${r.failed.length} מתוך ${r.total} מוצרים לא עברו ל${esc(place)}` : `✅ כל המוצרים עברו ל${esc(place)}`}</b>
     <span class="muted" style="font-size:12px"> · ${ago(r.at)}</span>
-    ${r.failed.map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">✕ <b>${esc(x.name)}</b>${x.reason ? `<div class="muted" style="font-size:12px">${esc(x.reason)}</div>` : ""}</div>`).join("")}
+    ${r.failed.length ? `<div style="font-size:14px;padding:4px 0">הם מופיעים ברשימה תחת <b>"חוסרים / לא זמינים"</b>, עם כפתור למציאת חלופה.</div>` : ""}
     ${(r.substituted || []).map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">🔄 <b>${esc(x.name)}</b><div class="muted" style="font-size:12px">לא נמצא באתר – נוסף במקומו תחליף: ${esc(x.alt)}</div></div>`).join("")}
     ${r.merged.length ? `<div class="muted" style="font-size:13px;margin-top:6px">🔗 ${r.merged.length} פריטים ברשימה היו אותו מוצר כמו פריט אחר, ולכן אוחדו לשורה אחת עם הכמות הכוללת${r.lines ? ` – בעגלה ${r.lines} שורות` : ""}: ${esc(r.merged.join(", "))}</div>` : ""}
-    ${r.failed.length ? `<div class="muted" style="font-size:12px;margin-top:6px">אפשר להוסיף אותם ידנית באתר, או לבחור להם מוצר אחר (🔗 באריח) ולמלא שוב.</div>` : ""}
     <button class="btn small ghost" style="width:100%;margin-top:8px" data-act="fill-report-ok">הבנתי</button></div>`;
 }
 
@@ -2900,7 +3037,7 @@ window.onCartTotals = all => {
   }
   S.settings.t = now(); commit(); render();
   const first = Object.entries(all || {})[0];
-  if (first) toast(`🧾 נשמר: ${CART_NAMES[first[0]] || first[0]} – ${money(first[1].total)} בעגלה`);
+  if (first) { toast(`🧾 נשמר: ${CART_NAMES[first[0]] || first[0]} – ${money(first[1].total)} בעגלה`); cartSummarySoon(first[0]); }
 };
 function cartTotal(c) {
   const v = S.settings.cartTotals?.[c];
@@ -2913,7 +3050,8 @@ function ago(t) {
 const cartTotalLine = c => { const v = cartTotal(c); return v ? `<div style="font-size:12px">🧾 בעגלה בפועל: <b>${money(v.total)}</b> · ${ago(v.at)}${v.items ? ` · ${v.items} פריטים` : ""}</div>` : ""; };
 
 // הסניפים שהעדכון ב-GitHub צריך להוריד (בלי מה שהאפליקציה מורידה בעצמה)
-const publicStores = () => Object.fromEntries(Object.entries(selected()).filter(([c]) => !ONLINE[c]?.local));
+// (גם ספק שהוסתר – כדי שהמחירים שלו יהיו מוכנים כשמציגים אותו שוב)
+const publicStores = () => Object.fromEntries(Object.entries(S.settings.stores).filter(([c, v]) => v && !ONLINE[c]?.local));
 
 // ---------- רשתות שחוסמות את השרתים של GitHub: הקובץ הרשמי, מהחיבור שלך ----------
 // חצי חינם (shop.hazi-hinam.co.il/Prices): רשימת הקבצים דרך האפליקציה/התוסף, הקובץ עצמו יורד ישירות.
@@ -3208,13 +3346,11 @@ function renderSettings() {
   <div class="card"><div class="muted" style="margin-bottom:8px">ההשוואה היא בין המחירים של אתרי הקנייה (סניפי האונליין). ליוחננוף אין קובץ אונליין, אז היא מושווית לפי סניף שבוחרים ומסומנת <b>הערכה</b>.</div>
     ${Object.entries(ONLINE).map(([c, o]) => {
       const on = !!sel[c], u = chainUpdates[`${c}:${sel[c]}`];
+      if (!shownChain(c)) return chainRow(c, "מוסתר – לא מופיע בהשוואה ובשליחה לסופר");
       const status = !on ? (o.fixed ? "לא נכלל בהשוואה" : "לא נבחר: " + o.hint)
         : o.local && !u && !canLocal(c) ? o.label + ` · עובד באפליקציה לאנדרואיד (גרסה עדכנית) או עם תוסף הכרום (גרסה ${c === "carrefour" ? "1.2" : "1.1"})`
         : (o.fixed ? o.label : S.settings.storeNames?.[c] || "סניף " + sel[c]) + when(u) + (o.estimate ? " · " + ESTIMATE_NOTE : "");
-      const btn = o.fixed
-        ? `<button class="btn small ghost" data-toggle-online="${c}">${on ? "הסר" : "הוסף"}</button>`
-        : `<button class="btn small ghost" data-pick-store="${c}">${on ? "שנה" : o.estimate ? "בחר סניף" : "בחר אזור"}</button>`;
-      return `<div class="item"><div class="grow"><b>${esc(chains[c] || c)}</b>${o.estimate ? ` <span class="who">הערכה</span>` : ""}<div class="muted">${esc(status)}</div></div>${btn}</div>`;
+      return chainRow(c, status, o.estimate);
     }).join("")}
     ${Object.entries(NO_ONLINE_PRICES).map(([c, why]) => `<div class="item"><div class="grow"><b>${esc(CART_NAMES[c])}</b><div class="muted">${esc(why)}</div></div></div>`).join("")}
   </div>
@@ -3231,7 +3367,7 @@ function renderSettings() {
     ${inApp && !hasExt() ? `<div class="muted" style="margin-top:8px">כדי לראות מועדי משלוח צריך לעדכן את האפליקציה: <a href="app.html">עדכון גרסה</a>.</div>`
       : `<div class="row" style="margin-top:8px"><div class="grow muted">${inApp ? "⚡ האפליקציה בודקת מועדי משלוח. לשופרסל ולחצי חינם צריך להתחבר פעם אחת (במילוי עגלה)." : hasExt() ? "✓ תוסף מועדי המשלוח מותקן" : "התוסף לכרום לא מותקן"}</div>
       <button class="btn small ghost" data-act="${hasExt() ? "slots-refresh" : "ext-help"}">${hasExt() ? "בדוק עכשיו" : "איך מתקינים"}</button></div>`}
-    ${hasExt() && slots ? `<div style="margin-top:6px">${[...new Set([...CART_CHAINS, ...Object.keys(selected())])].map(c => `<div class="row" style="font-size:13px"><b style="min-width:80px">${esc(CART_NAMES[c] || chains[c] || c)}</b><div class="grow">${slots[c]?.ok ? esc(fmtSlot(slots[c])) : `<span class="muted">${esc(slots[c]?.reason || "—")}</span>`}</div></div>`).join("")}</div>` : ""}
+    ${hasExt() && slots ? `<div style="margin-top:6px">${[...new Set([...cartChains(), ...Object.keys(selected())])].map(c => `<div class="row" style="font-size:13px"><b style="min-width:80px">${esc(CART_NAMES[c] || chains[c] || c)}</b><div class="grow">${slots[c]?.ok ? esc(fmtSlot(slots[c])) : `<span class="muted">${esc(slots[c]?.reason || "—")}</span>`}</div></div>`).join("")}</div>` : ""}
   </div>
   ${inApp ? "" : `<h2>כפתור מילוי העגלה</h2>
   <div class="card"><div class="muted" style="margin-bottom:8px">סימנייה שממלאת את העגלה באתר הסופר מתוך הרשימה. מוסיפים אותה פעם אחת.</div>
@@ -3242,6 +3378,39 @@ function renderSettings() {
   : `<div class="card row"><div class="grow">${window.Cloud?.user ? esc(Cloud.user.email) : "מצב מקומי (בלי Firebase)"}</div>
     <button class="btn ghost small" data-act="share">👥 שיתוף</button></div>`}
   ${window.Cloud?.user ? `<button class="btn ghost" style="width:100%" data-act="lists">📋 הרשימות שלי (${myLists.length}) – יצירה, מעבר, שינוי שם ומחיקה</button>` : ""}`;
+}
+
+// שורת ספק בהגדרות: מתג "הצג" ועריכה (סניף, הכללה בהשוואה, האתר)
+function chainRow(c, status, estimate) {
+  const show = shownChain(c);
+  return `<div class="item" style="${show ? "" : "opacity:.6"}"><div class="grow"><b>${esc(chains[c] || CART_NAMES[c] || c)}</b>${estimate ? ` <span class="who">הערכה</span>` : ""}<div class="muted">${esc(status)}</div></div>
+    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;white-space:nowrap" title="להציג את הספק באפליקציה"><input type="checkbox" data-show-chain="${c}" ${show ? "checked" : ""}> הצג</label>
+    <button class="btn small ghost" data-edit-chain="${c}">✏️ עריכה</button></div>`;
+}
+function setChainShown(c, show) {
+  const h = (S.settings.hiddenChains ||= {});
+  if (show) delete h[c]; else h[c] = true;
+  S.settings.t = now(); commit();
+  toast(show ? `${chains[c] || CART_NAMES[c] || c} מוצג` : `${chains[c] || CART_NAMES[c] || c} הוסתר`);
+  refreshCompare().then(render);
+}
+function chainEditSheet(c) {
+  const o = ONLINE[c] || {}, on = !!S.settings.stores[c], name = chains[c] || CART_NAMES[c] || c;
+  sheet(`<h2 style="margin-top:0">✏️ עריכת ספק: ${esc(name)}</h2>
+    <div class="card">
+      <label class="row" style="cursor:pointer;gap:8px"><input type="checkbox" id="ce-show" ${shownChain(c) ? "checked" : ""}>
+        <div class="grow"><b>להציג את הספק</b><div class="muted">בהשוואת המחירים, בשליחה לסופר ובמועדי המשלוח</div></div></label>
+    </div>
+    <div class="card">
+      <div class="muted" style="margin-bottom:6px">${on ? esc(o.fixed ? o.label : S.settings.storeNames?.[c] || "סניף " + S.settings.stores[c]) : "לא נכלל בהשוואת המחירים"}</div>
+      ${o.fixed ? `<button class="btn ghost" style="width:100%" id="ce-online">${on ? "הסר מהשוואת המחירים" : "הוסף להשוואת המחירים"}</button>`
+        : `<button class="btn ghost" style="width:100%" id="ce-store">${on ? "שנה סניף / אזור" : o.estimate ? "בחר סניף" : "בחר אזור"}</button>`}
+    </div>
+    ${CART_URLS[c] ? `<a class="btn ghost" style="width:100%;display:block;text-align:center;text-decoration:none;margin-bottom:8px" href="${CART_URLS[c]}" target="_blank" rel="noopener">🌐 לאתר של ${esc(name)}</a>` : ""}
+    <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
+  $("#ce-show").onchange = e => setChainShown(c, e.target.checked);
+  if ($("#ce-online")) $("#ce-online").onclick = () => { closeSheet(); setStore(c, on ? null : o.fixed, o.label); };
+  if ($("#ce-store")) $("#ce-store").onclick = () => storeSheet(c);
 }
 
 async function loadChains() {
@@ -3508,6 +3677,10 @@ function onViewClick(e) {
   }
   const go = t.closest("[data-tab-go]");
   if (go) return document.querySelector(`nav button[data-tab="${go.dataset.tabGo}"]`)?.click();
+  const sc = t.closest("[data-show-chain]");
+  if (sc) return setChainShown(sc.dataset.showChain, sc.checked);
+  const ec = t.closest("[data-edit-chain]");
+  if (ec) return chainEditSheet(ec.dataset.editChain);
   const tg = t.closest("[data-toggle-online]");
   if (tg) { const c = tg.dataset.toggleOnline; return setStore(c, S.settings.stores[c] ? null : ONLINE[c].fixed, ONLINE[c].label); }
   const ps = t.closest("[data-pick-store]");
@@ -3518,6 +3691,7 @@ function onViewClick(e) {
   if (act === "update-hide") { try { localStorage.setItem(UPDATE_HIDE, String(appUpdate?.latest || "")); } catch {} toast("אפשר לעדכן בכל זמן מההגדרות"); return render(); }
   if (act === "update-go") { toast("📥 ההורדה מתחילה. פותחים את הקובץ שירד ומתקינים"); return; } // הקישור עצמו פותח את ההורדה
   if (act === "voice") return voiceAdd();
+  if (act === "clear-list") return clearListSheet();
   if (act === "scan") return scanAdd();
   if (act === "install") return doInstall();
   if (act === "install-help") return sheet(`${installCard()}<button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
@@ -3543,6 +3717,7 @@ function onViewClick(e) {
     }
     case "del": item.deleted = true; item.delBy = me || null; return touch();
     case "link": return linkSheet(item);
+    case "unmiss": delete item.miss; return touch();
     case "img": return imageSheet(item);
     case "finish": return finishShopping();
     case "recipe-library": return librarySheet();

@@ -125,6 +125,17 @@
         } catch (e) { return { ok: false, reason: "האתר דחה (" + e.status + ")" }; }
         return { ok: true, product: found.name, note: byW ? q + " ק\"ג" : "×" + q };
       },
+      // כמה מוצרים כבר בעגלה באתר (מקנייה קודמת)
+      async count() { return +((await (await fetch(ACC.config.encodedContextPath + "/cart/miniCart/SUBTOTAL")).json()).miniCartCount || 0); },
+      // ריקון: הכפתור "מחק הכל" של העגלה באתר עצמו
+      async clear() {
+        const b = document.querySelector("[data-miglog-role~=cart-remover]");
+        if (!b) return false;
+        b.click();
+        for (let i = 0; i < 20; i++) { await sleep(500); if (!(await this.count())) return true; }
+        return false;
+      },
+      page: "/online/he/cart/cartsummary",
       done: () => { location.href = "/online/he/cart/cartsummary"; },
     },
     ramilevy: {
@@ -132,6 +143,8 @@
       ready: () => window.$nuxt && $nuxt.$store,
       logged: async () => !!$nuxt.$store.getters["authuser/isAuthenticated"],
       existing: () => ($nuxt.$store.state.cart.items || []).length,
+      async clear() { $nuxt.$store.commit("cart/removeAllItems"); await sleep(2000); return !($nuxt.$store.state.cart.items || []).length; },
+      page: "/he/dashboard/checkout",
       async add({ name, code, kg, weighted, product }) {
         const st = $nuxt.$store, store = String(st.state.cart.storeId || 331);
         const find = async q => (await (await fetch("/api/catalog", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -173,6 +186,8 @@
       ready: () => { try { return !!angular.element(document.body).injector().get("Config").branch; } catch { return false; } },
       logged: async () => { const U = angular.element(document.body).injector().get("User"); return !!((U.session && U.session.token) || (U.data && U.data.id)); },
       existing: () => Object.keys(angular.element(document.body).injector().get("Cart").lines || {}).length,
+      async clear() { const C = angular.element(document.body).injector().get("Cart"); await C.clear(); await sleep(1500); return !Object.keys(C.lines || {}).length; },
+      page: "/cart/summary",
       async add({ name, code, kg, weighted, product }) {
         const inj = angular.element(document.body).injector();
         const Api = inj.get("Api"), Cart = inj.get("Cart"), cfg = inj.get("Config");
@@ -187,7 +202,12 @@
         await Cart.addLine({ product: found, quantity });
         return { ok: true, product: found.localName, note: found.isWeighable ? quantity + " ק\"ג" : "×" + quantity };
       },
-      done: async () => { await sleep(2500); },
+      // העגלה המלאה (סיכום העגלה) – דרך הניווט של האתר עצמו, ואם לא – בכתובת
+      done: async () => {
+        await sleep(1500);
+        try { angular.element(document.body).injector().get("$state").go("app.cartSummary"); await sleep(1500); } catch {}
+        if (!/\/cart\/summary/.test(location.pathname)) location.href = "/cart/summary";
+      },
     },
     victory: {  // ויקטורי – האתר החדש (נובמבר 2026): מוצרים מעמוד החיפוש, עגלה ב-api.victoryonline.co.il
       match: /victoryonline\.co\.il$/,
@@ -205,6 +225,16 @@
         window.__slVicHave = Object.fromEntries((j?.data?.items || []).map(i => [i.id, i.quantity]));
       },
       existing: () => Object.keys(window.__slVicHave || {}).length,
+      async clear() {
+        const ids = Object.keys(window.__slVicHave || {});
+        if (!ids.length) return true;
+        const res = await (await fetch("https://api.victoryonline.co.il/api/web/cart", { method: "PUT",
+          headers: { "Content-Type": "application/json", "Cart-Session-Id": window.__slVic }, body: JSON.stringify(ids.map(id => ({ id: String(id), quantity: 0 }))) })).json();
+        if (res?.status !== "success") return false;
+        window.__slVicHave = {};
+        return true;
+      },
+      page: "/checkout",
       async add({ name, code, kg, weighted, product }) {
         if (!window.__slVic) await this.site?.prepare?.();
         const sid = window.__slVic;
@@ -251,13 +281,29 @@
         const j = await (await fetch("https://api.victoryonline.co.il/api/web/cart", { headers: { "Cart-Session-Id": window.__slVic } })).json();
         return new Set((j?.data?.items || []).map(i => String(i.id)));
       },
-      // האתר קורא את העגלה כשהדף נטען – עוברים לתשלום
-      done: () => { location.href = "/checkout"; },
+      // פותחים את העגלה של האתר (החלונית "העגלה שלי"). דף התשלום (/checkout) מחזיר לדף הבית כשאין כתובת/התחברות
+      done: async () => {
+        const b = document.querySelector('button[aria-label^="פתיחת סל קניות"]');
+        if (!b) { location.href = "/checkout"; return false; }
+        b.click();
+        return true;
+      },
     },
     hazihinam: {  // חצי חינם: ה-API של האתר עצמו (proxy/api), Type 1 = יחידות, Type 2 = ק"ג
       match: /hazi-hinam\.co\.il$/,
       ready: () => document.readyState !== "loading",
       logged: async () => !!(await (await fetch("/proxy/api/user/info", { credentials: "include" })).json())?.Results?.UserInfo,
+      cartItems: async () => (await (await fetch("/proxy/api/item/getItemsInCart", { credentials: "include" })).json())?.Results?.CartItems?.Items || [],
+      async count() { return (await this.cartItems()).length; },
+      // כמות 0 = הסרה מהעגלה
+      async clear() {
+        for (const p of await this.cartItems())
+          await fetch("/proxy/api/item/addItemToCart", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ Object: { ItemId: p.Id, Quantity: 0, Type: p.Type || (p.IsShakil ? 2 : 1), IsCalculateCart: true } }) });
+        window.__slTot = {};
+        return !(await this.count());
+      },
+      page: "/checkout/cart",
       async add({ name, code, kg, weighted, product }) {
         const call = async (u, b) => (await fetch("/proxy/api/" + u, { method: "POST", credentials: "include",
           headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })).json();
@@ -299,6 +345,22 @@
         window.__slCart = token ? (await gql("{ customerCart { id } }")).data?.customerCart?.id
           : (localStorage.getItem("cartId") || (await gql("mutation { createEmptyCart }")).data?.createEmptyCart);
       },
+      async cartItems() {
+        const token = localStorage.getItem("token"), store = localStorage.getItem("storeId");
+        const headers = { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(store ? { Store: store } : {}) };
+        const j = await (await fetch("https://api.yochananof.co.il/graphql", { method: "POST", headers,
+          body: JSON.stringify({ query: "query($c:String!){ cart(cart_id:$c){ items { uid } } }", variables: { c: window.__slCart } }) })).json();
+        return { headers, items: j.data?.cart?.items || [] };
+      },
+      async count() { return window.__slCart ? (await this.cartItems()).items.length : 0; },
+      async clear() {
+        const { headers, items } = await this.cartItems();
+        for (const it of items)
+          await fetch("https://api.yochananof.co.il/graphql", { method: "POST", headers, body: JSON.stringify({
+            query: "mutation($c:String!,$u:ID){ removeItemFromCart(input:{cart_id:$c, cart_item_uid:$u}){ cart { id } } }", variables: { c: window.__slCart, u: it.uid } }) });
+        return !(await this.count());
+      },
+      page: "/checkout",
       async add({ name, code, kg, weighted, product }) {
         const token = localStorage.getItem("token"), store = localStorage.getItem("storeId");
         const headers = { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(store ? { Store: store } : {}) };
@@ -352,15 +414,43 @@
     return;
   }
 
-  // מוצרים שכבר היו בעגלה באתר (מקנייה קודמת) – לא מהרשימה. מציינים, כדי שלא ייראה כאילו המילוי הוסיף אותם
+  if (site.prepare) { try { await site.prepare(); } catch {} }
+
+  // כבר יש עגלה באתר (מקנייה קודמת): שואלים אם להחליף אותה ברשימה, או להשאיר ולהוסיף אליה
+  const btnCss = "display:block;width:100%;margin:6px 0;padding:10px;border:0;border-radius:10px;font:600 15px system-ui;cursor:pointer;";
+  const ask = (q, options) => new Promise(res => {
+    const w = document.createElement("div");
+    const t = document.createElement("div");
+    t.style.margin = "6px 0"; t.textContent = q;
+    w.appendChild(t);
+    options.forEach(([label, val, main]) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.style.cssText = btnCss + (main ? "background:#0f7a4a;color:#fff" : "background:#eef2ef;color:#1b2620");
+      b.onclick = e => { e.preventDefault(); e.stopPropagation(); w.remove(); res(val); };
+      w.appendChild(b);
+    });
+    box.querySelector("#__sl_head").after(w);
+  });
   let before = 0;
-  try { before = site.existing ? site.existing() : 0; } catch {}
-  if (before) row(false, `בעגלה באתר כבר היו ${before} מוצרים מלפני (לא מהרשימה)`, "כדאי לבדוק ולהסיר בעגלה מה שלא צריך");
+  try { before = site.count ? await site.count() : site.existing ? site.existing() : 0; } catch {}
+  if (before) {
+    head(`בעגלה באתר כבר יש ${before} מוצרים (מקנייה קודמת)`);
+    const how = await ask("מה לעשות עם העגלה הקיימת?", [
+      ["🔄 להחליף: לרוקן את העגלה ולשים בה רק את הרשימה", "replace", true],
+      ["➕ להשאיר אותה ולהוסיף אליה את המוצרים מהרשימה", "add"]]);
+    if (how === "replace") {
+      head("מרוקן את העגלה באתר…");
+      let ok = false;
+      try { ok = site.clear ? await site.clear() : false; } catch {}
+      if (ok) row(true, `העגלה הקודמת רוקנה (${before} מוצרים)`);
+      else row(false, "לא הצלחתי לרוקן את העגלה באתר", "הרשימה נוספה למה שכבר היה בעגלה – אפשר להסיר באתר ידנית");
+    } else row(true, `${before} מוצרים שכבר היו בעגלה נשארו, והרשימה נוספה אליהם`);
+  }
 
   // 4 מוצרים במקביל (חיפוש והוספה) – הרבה יותר מהיר מאחד-אחד
   const n = job.items.length, results = new Array(n);
   let next = 0, doneCount = 0;
-  if (site.prepare) { try { await site.prepare(); } catch {} }
   const worker = async () => {
     while (next < n) {
       const k = next++, it = job.items[k];
@@ -401,20 +491,38 @@
   try { window.SuperlistCart?.report(JSON.stringify(report)); } catch {}
   // במחשב: הלשונית של הרשימה (שפתחה את הסופר) מקבלת את הדוח ומציגה אותו בראש הרשימה
   try { window.opener?.postMessage({ type: "superlist-fill-report", report }, "https://tk912.github.io"); } catch {}
+  // המחיר בגדול (לפי השוואת המחירים באפליקציה), עם הסבר שהסכום הסופי נקבע באתר
+  const money = v => "₪" + (Math.round(v * 100) / 100).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const price = document.createElement("div");
+  price.style.cssText = "text-align:center;margin:8px 0;padding:10px;border-radius:12px;background:#eef7f1";
+  price.innerHTML = (job.est ? `<div style="font-size:13px;color:#4b5a51">סה״כ משוער לרשימה</div><div style="font:800 34px system-ui;color:#0f7a4a">${money(job.est)}</div>` : "")
+    + `<div style="font-size:12px;color:#4b5a51;margin-top:4px">מחירי מועדון לקוחות ודמי משלוח יתעדכנו בעת יצירת ההזמנה באתר.</div>`;
+  box.querySelector("#__sl_head").after(price);
+  // מעבר לעגלה: מיד, ואם האתר לא עבר לבד – בכתובת של העגלה
+  const goCart = async b => {
+    if (b) { b.disabled = true; b.textContent = "עובר לעגלה…"; }
+    const from = location.href;
+    let opened = false;
+    try { opened = await Promise.race([site.done(), sleep(6000)]); } catch {}
+    // האתר פתח את העגלה בתוך הדף (בלי מעבר דף) – מקטינים את החלונית שלנו כדי שלא תסתיר
+    if (opened === true) { if (b) { b.disabled = false; b.textContent = "המשך לעגלה ←"; } box.style.maxHeight = "28vh"; return; }
+    await sleep(1500);
+    if (location.href === from && site.page) location.href = site.page;
+  };
   const subNote = substituted.length ? ` · 🔄 ${substituted.length} לא נמצאו ונוסף במקומם תחליף (מסומנים למטה)` : "";
   if (!failed.length && !substituted.length) {
     head(`✅ כל ${n} המוצרים נוספו${mergedNote}. עוברים לעגלה – בדקו ושלמו בעצמכם.`);
     await sleep(2500);
-    await site.done();
+    await goCart();
     window.__slRunning = false;
     return;
   }
   // יש מוצרים שלא עברו: לא עוברים לבד – שיהיה זמן לראות מה חסר
-  head(`⚠️ נוספו ${ok} מתוך ${n}${mergedNote}${subNote}.${failed.length ? ` ${failed.length} לא עברו – מסומנים ב-✕ למטה (אפשר להוסיף אותם ידנית באתר).` : ""}`);
+  head(`⚠️ נוספו ${ok} מתוך ${n}${mergedNote}${subNote}.${failed.length ? ` ${failed.length} לא עברו – מסומנים ב-✕ למטה, ונשמרו ברשימה תחת "חוסרים" כדי למצוא להם חלופה.` : ""}`);
   const go = document.createElement("button");
   go.textContent = "המשך לעגלה ←";
   go.style.cssText = "display:block;width:100%;margin:8px 0;padding:10px;border:0;border-radius:10px;background:#0f7a4a;color:#fff;font:600 15px system-ui;cursor:pointer";
-  go.onclick = async () => { await site.done(); };
-  box.querySelector("#__sl_head").after(go);
+  go.onclick = e => { e.preventDefault(); e.stopPropagation(); goCart(go); };
+  price.after(go);
   window.__slRunning = false;
 })();
