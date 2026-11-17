@@ -113,6 +113,13 @@ public class CartActivity extends Activity {
         status.setTextColor(Color.WHITE);
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         status.setText(SITES.get(chain)[0] + ": " + count() + " פריטים. אם צריך – התחבר, ואז \"מלא עגלה\".");
+        // חזרה: לדף הקודם באתר הסופר, ומהדף הראשון – חזרה לרשימה
+        Button back = barButton("→", v -> { if (web != null && web.canGoBack()) web.goBack(); else finish(); });
+        back.setContentDescription("חזרה למסך הקודם");
+        back.setPadding(dp(10), 0, dp(10), 0);
+        ((LinearLayout.LayoutParams) back.getLayoutParams()).setMarginStart(0);
+        ((LinearLayout.LayoutParams) back.getLayoutParams()).setMarginEnd(dp(6));
+        bar.addView(back);
         bar.addView(status, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         bar.addView(barButton("🛒 מלא עגלה", v -> fill(true)));
         bar.addView(barButton("✓ סיום", v -> finish()));

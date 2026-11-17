@@ -161,6 +161,7 @@ td.best { color: var(--accent); font-weight: 700; }
 .scroll-x { overflow-x: auto; }
 .warn { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
 .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet-back { display: block; border: 0; background: none; color: var(--accent); font: 600 15px/1.2 inherit; padding: 2px 0 8px; cursor: pointer; }
 .sheet { background: var(--bg); width: 100%; max-width: 680px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0;
   padding: 16px 16px calc(16px + var(--sab)); }
 .result { padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
@@ -667,8 +668,8 @@ function ordersSheet() {
     commit(); closeSheet(); refreshCompare().then(render);
     toast(n ? `נוספו ${n} פריטים מההזמנה` : "כל הפריטים כבר ברשימה");
   });
-  root.querySelectorAll("[data-oinv]").forEach(el => el.onclick = () => invoiceSheet(el.dataset.oinv));
-  root.querySelectorAll("[data-oedit]").forEach(el => el.onclick = () => orderEditSheet(el.dataset.oedit));
+  root.querySelectorAll("[data-oinv]").forEach(el => el.onclick = () => sub(() => invoiceSheet(el.dataset.oinv), ordersSheet));
+  root.querySelectorAll("[data-oedit]").forEach(el => el.onclick = () => sub(() => orderEditSheet(el.dataset.oedit), ordersSheet));
   root.querySelectorAll("[data-orecv]").forEach(el => el.onclick = () => {
     Object.assign(S.orders.find(x => x.id === el.dataset.orecv), { received: now(), t: now() });
     commit(); ordersSheet();
@@ -1372,7 +1373,7 @@ function moreSheet() {
     <button data-act="dept-order">⇅ סדר המחלקות</button>
   </div><button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   const go = { orders: ordersSheet, share: shareSheet, import: () => importSheet(), recurring: recurringSheet, "dept-order": deptOrderSheet };
-  $("#sheet-root .menu-list").onclick = e => { const b = e.target.closest("[data-act]"); if (b && go[b.dataset.act]) go[b.dataset.act](); };
+  $("#sheet-root .menu-list").onclick = e => { const b = e.target.closest("[data-act]"); if (b && go[b.dataset.act]) sub(go[b.dataset.act], moreSheet); };
 }
 // הפס הקבוע מעל התפריט התחתון: כמה עולה הסל, איפה הכי זול, המשלוח הקרוב – וכפתור השליחה
 function renderSendBar() {
@@ -1410,7 +1411,7 @@ function sendSheet() {
       <span>←</span></div>`).join("")}</div>
     <button class="btn ghost" style="width:100%" data-close>ביטול</button>`);
   $("#sheet-root").querySelectorAll("[data-fill]").forEach(el => el.onclick = () => fillCart(el.dataset.fill));
-  $("#sheet-root").querySelector("[data-act=ext-help]")?.addEventListener("click", e => { e.preventDefault(); extSheet(); });
+  $("#sheet-root").querySelector("[data-act=ext-help]")?.addEventListener("click", e => { e.preventDefault(); sub(extSheet, sendSheet); });
   if (hasExt() && !slots && !slotsLoading) requestSlots().then(() => { if ($("#send-sheet")) sendSheet(); });
 }
 
@@ -1497,7 +1498,7 @@ function shareSheet() {
     if (nativeShare) return window.SuperlistNative.share(text);
     navigator.share({ title: `רשימת הקניות "${title}"`, text }).catch(() => {});
   };
-  $("#sheet-root").querySelector("[data-act=rename]").onclick = () => nameSheet(shareSheet);
+  $("#sheet-root").querySelector("[data-act=rename]").onclick = () => sub(() => nameSheet(shareSheet), shareSheet);
   $("#sh-out").onclick = async () => { if (confirm("להתנתק מהחשבון במכשיר הזה?")) { closeSheet(); await Cloud.signOut(); } };
   $("#sh-delete").onclick = async () => {
     const mineCount = myLists.filter(isOwner).length, others = myLists.length - mineCount;
@@ -1678,7 +1679,7 @@ async function fillCart(chain, only = null) {
     <div class="row"><button class="btn ghost grow" id="fc-bm">איך מוסיפים את כפתור המילוי</button>
     <button class="btn ghost grow" id="fc-copy">העתק את הרשימה שוב</button></div>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
-  $("#fc-bm").onclick = bookmarkSheet;
+  $("#fc-bm").onclick = () => sub(bookmarkSheet, null);
   $("#fc-copy").onclick = async () => {
     try { await navigator.clipboard.writeText(job); toast("הרשימה הועתקה"); }
     catch { prompt("העתק את הטקסט הזה:", job); }
@@ -2545,7 +2546,7 @@ function imageSheet(item) {
     ${item.note ? `<div class="card">📝 ${esc(item.note)}</div>` : ""}
     ${code ? `<div class="muted" style="margin:0 0 8px">ברקוד ${esc(code)}. אם זה לא המוצר הנכון, אפשר להחליף.</div>` : ""}
     <div class="row"><button class="btn grow" id="img-change">🔗 ${code ? "החלף מוצר" : "בחר מוצר"}</button><button class="btn ghost grow" data-close>סגור</button></div>`);
-  $("#img-change").onclick = () => linkSheet(item);
+  $("#img-change").onclick = () => sub(() => linkSheet(item), () => imageSheet(item));
   // לחיצה: מסך מלא (ולחיצה נוספת סוגרת)
   const im = $("#sheet-root .big-img");
   if (im) im.onclick = () => im.classList.toggle("full");
@@ -2969,7 +2970,7 @@ function cartSummarySheet(chain) {
     <div class="muted" style="margin:8px 0">ℹ️ ${CLUB_NOTE}</div>
     <button class="btn" style="width:100%" id="cs-finish">✔ סיום</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
-  $("#cs-finish").onclick = () => listAfterOrderSheet(chain);
+  $("#cs-finish").onclick = () => sub(() => listAfterOrderSheet(chain), () => cartSummarySheet(chain));
 }
 function listAfterOrderSheet(chain) {
   const missing = live().filter(i => !i.done && i.miss).length;
@@ -3410,7 +3411,7 @@ function chainEditSheet(c) {
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   $("#ce-show").onchange = e => setChainShown(c, e.target.checked);
   if ($("#ce-online")) $("#ce-online").onclick = () => { closeSheet(); setStore(c, on ? null : o.fixed, o.label); };
-  if ($("#ce-store")) $("#ce-store").onclick = () => storeSheet(c);
+  if ($("#ce-store")) $("#ce-store").onclick = () => sub(() => storeSheet(c), () => chainEditSheet(c));
 }
 
 async function loadChains() {
@@ -3578,15 +3579,51 @@ function render() {
 // פעולה לסגירת חלון (למשל כיבוי המצלמה בסריקה)
 let sheetCleanup = null;
 function runSheetCleanup() { const f = sheetCleanup; sheetCleanup = null; try { f?.(); } catch {} }
+// ---------- חזרה למסך הקודם ----------
+// לכל חלון יש כפתור "→ חזרה". חלון שנפתח מתוך חלון אחר (sub) חוזר אליו; אחרת "חזרה" סוגרת וחוזרים למסך שמתחת.
+// גם כפתור/מחוות "חזרה" של הטלפון (והדפדפן) עושים אותו דבר, במקום לצאת מהאפליקציה.
+let sheetBack = null, nextBack = null, ignorePop = 0;
+const sheetOpen = () => !!$("#sheet-root").innerHTML;
+// פותח חלון מתוך החלון הנוכחי, כך ש"חזרה" תחזיר לחלון הנוכחי
+const sub = (open, back) => { nextBack = back; open(); };
 function sheet(html) {
   runSheetCleanup();
-  $("#sheet-root").innerHTML = `<div class="sheet-bg"><div class="sheet">${html}</div></div>`;
+  const wasOpen = sheetOpen();
+  sheetBack = nextBack; nextBack = null;
+  $("#sheet-root").innerHTML = `<div class="sheet-bg"><div class="sheet"><button type="button" class="sheet-back" data-back aria-label="חזרה למסך הקודם">→ חזרה</button>${html}</div></div>`;
   const bg = $(".sheet-bg");
-  bg.onclick = e => { if (e.target === bg || e.target.matches("[data-close]")) closeSheet(); };
+  bg.onclick = e => {
+    if (e.target.closest("[data-back]")) return sheetGoBack();
+    if (e.target === bg || e.target.matches("[data-close]")) closeSheet();
+  };
   const first = bg.querySelector("input");
   if (first && matchMedia("(pointer: fine)").matches) first.focus();
+  if (!wasOpen) try { history.pushState({ slSheet: 1 }, ""); } catch {}
 }
-function closeSheet() { runSheetCleanup(); $("#sheet-root").innerHTML = ""; }
+function sheetGoBack() {
+  const back = sheetBack;
+  if (!back) return closeSheet();
+  sheetBack = null;
+  back();
+}
+function closeSheet() {
+  runSheetCleanup();
+  const was = sheetOpen();
+  $("#sheet-root").innerHTML = "";
+  sheetBack = nextBack = null;
+  if (was && history.state?.slSheet) { ignorePop++; history.back(); }
+}
+window.addEventListener("popstate", () => {
+  if (ignorePop) { ignorePop--; return; }
+  if (sheetOpen()) {
+    const back = sheetBack;
+    if (back) { sheetBack = null; back(); if (sheetOpen()) try { history.pushState({ slSheet: 1 }, ""); } catch {} }
+    else { runSheetCleanup(); $("#sheet-root").innerHTML = ""; sheetBack = nextBack = null; }
+    return;
+  }
+  // בלשונית אחרת – "חזרה" מחזירה לרשימה
+  if (tab !== "list") document.querySelector('nav button[data-tab="list"]')?.click();
+});
 let toastTimer;
 function toast(msg) {
   document.querySelector(".toast")?.remove();
@@ -3597,8 +3634,14 @@ function toast(msg) {
 document.querySelector("nav").onclick = async e => {
   const b = e.target.closest("button[data-tab]");
   if (!b) return;
+  const from = tab;
   tab = b.dataset.tab;
   document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  // מעבר מהרשימה ללשונית אחרת נרשם, כדי ש"חזרה" בטלפון תחזיר לרשימה (ולא תצא מהאפליקציה)
+  try {
+    if (from === "list" && tab !== "list" && !history.state?.slTab) history.pushState({ slTab: 1 }, "");
+    else if (tab === "list" && from !== "list" && history.state?.slTab) { ignorePop++; history.back(); }
+  } catch {}
   window.scrollTo(0, 0);
   render();
   if (tab === "prices") { await refreshCompare(); render(); }
