@@ -1291,7 +1291,7 @@ function renderList() {
       : p ? `<div class="tile-price" data-act="img"><b>${money(p.price)}</b>${p.weighted ? " לק״ג" : ""} · ${esc(p.chain)}</div>${tags ? `<div class="tags" data-act="img">${tags}</div>` : ""}` : "";
     const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
     const miss = i.miss && !i.done && !shop ? `<div class="tile-note" style="color:#b5470b">⚠️ לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
-      <div class="row" style="gap:4px;margin:4px 0"><button class="btn small ghost grow" data-act="link">🔍 חלופה</button><button class="btn small ghost grow" data-act="unmiss">✓ הסר מחוסרים</button></div>` : "";
+      <div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><button class="btn small ghost" style="width:100%;white-space:normal" data-act="link">🔍 חלופה</button><button class="btn small ghost" style="width:100%;white-space:normal" data-act="unmiss">✓ הסר מחוסרים</button></div>` : "";
     const img = thumb(i.code, "tile-img", `data-act="img" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
