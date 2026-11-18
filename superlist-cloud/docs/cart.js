@@ -101,6 +101,7 @@
   }
   const notFound = r => ({ ok: false, reason: r.closest ? `אין התאמה בטוחה – לא נוסף (באתר: ${r.closest.slice(0, 40)})` : "לא נמצא באתר" });
 
+  let shufLock = Promise.resolve();
   const SITES = {
     shufersal: {
       match: /shufersal\.co\.il$/,
@@ -119,10 +120,20 @@
         if (!found) { const m = await searchPick(async q => (await tiles(q)).filter(x => x.ok), x => x.name, this.it, x => /WEIGHT/i.test(x.method || "")); found = m.found; if (!found) return notFound(m); }
         const method = (found.method || "BY_UNIT").toUpperCase(), byW = method === "BY_WEIGHT";
         const q = byW ? round05(kg) : units(this.it);
-        try {
-          await $.ajax({ type: "POST", url: ctx + "/cart/add", contentType: "application/json", headers: { CSRFToken: ACC.config.CSRFToken },
-            data: JSON.stringify({ productCodePost: found.code, productCode: found.code, sellingMethod: method, qty: q, frontQuantity: q, comment: "", affiliateCode: "" }) });
-        } catch (e) { return { ok: false, reason: "האתר דחה (" + e.status + ")" }; }
+        // שופרסל מחזיר שגיאה (500) כשכמה מוצרים נוספים לעגלה באותו רגע – לכן ההוספות עצמן אחת-אחת (החיפוש נשאר במקביל),
+        // ובשגיאה מנסים שוב אחרי רגע
+        const post = () => $.ajax({ type: "POST", url: ctx + "/cart/add", contentType: "application/json", headers: { CSRFToken: ACC.config.CSRFToken },
+          data: JSON.stringify({ productCodePost: found.code, productCode: found.code, sellingMethod: method, qty: q, frontQuantity: q, comment: "", affiliateCode: "" }) });
+        const turn = shufLock.then(async () => {
+          let err;
+          for (let a = 0; a < 3; a++) {
+            try { await post(); return null; } catch (e) { err = e; if (e.status && e.status < 500) break; await sleep(800 * (a + 1)); }
+          }
+          return err;
+        });
+        shufLock = turn.catch(() => {});
+        const err = await turn;
+        if (err) return { ok: false, reason: "האתר דחה (" + err.status + ")" };
         return { ok: true, product: found.name, note: byW ? q + " ק\"ג" : "×" + q };
       },
       // כמה מוצרים כבר בעגלה באתר (מקנייה קודמת)
