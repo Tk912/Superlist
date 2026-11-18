@@ -64,6 +64,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .btn:disabled { opacity: .5; }
 .icon-btn { border: 0; background: none; padding: 6px; cursor: pointer; font-size: 18px; color: var(--muted); line-height: 1; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 0 0 10px; }
+.quick button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 8px 2px 6px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); box-shadow: var(--shadow); cursor: pointer; font: inherit; }
+.quick button:active { background: var(--accent-soft); }
+.quick .qi { font-size: 20px; line-height: 1.1; }
+.quick .ql { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.quick .qb { position: absolute; top: -6px; left: -4px; min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--chip); color: var(--text); font-size: 11px; font-weight: 700; line-height: 16px; }
+.quick .qb.warn { background: var(--warn); color: #fff; }
+.miss-box { margin-top: 8px; padding: 8px 10px; border: 2px solid var(--warn); border-radius: 12px; background: var(--warn-soft); }
 .chip { border: 0; background: var(--chip); border-radius: 999px; padding: 6px 12px; font-size: 14px; cursor: pointer; }
 .chip.add::before { content: "+ "; color: var(--accent); font-weight: 700; }
 .chip.on { background: var(--accent); color: #fff; }
@@ -602,8 +611,58 @@ function recordOrder(chain, items) {
 const orderTotal = o => o.cart ?? o.est ?? null;
 // הזמנה "בתהליך": נשלחה לרשת בשבוע האחרון ועוד לא סומנה שהתקבלה – אפשר עוד לשנות אותה
 const orderOpen = o => o.chain !== "store" && !o.received && now() - o.at < 7 * 864e5;
-let ordersFilter = "all";
+// ---------- חוסרים בהזמנה ----------
+// מה שלא עבר לאתר בהעברת הסל (מהדוח של המילוי) נשמר בהזמנה שנשלחה לאותה רשת, וגם מה שלא הגיע לפי החשבונית.
+// מכל הזמנה אפשר להחזיר את החוסרים לרשימה (אחד-אחד או הכל), כדי לקנות אותם בפעם הבאה או במקום אחר.
+function orderMissFromFill(f, onlyNew = false) {
+  if (!f?.failed?.length) return false;
+  const o = (S.orders || []).find(o => !o.deleted && o.chain === f.chain && f.at >= o.at - 6e4 && f.at - o.at < 12 * 36e5);
+  if (!o || (onlyNew && o.missing)) return false;
+  const old = Object.fromEntries((o.missing || []).map(m => [norm(m.name), m]));
+  o.missing = f.failed.map(x => {
+    const src = o.items.find(i => norm(i.name) === norm(x.name)) || {};
+    return { name: x.name, reason: String(x.reason || "").slice(0, 80), qty: src.qty || 1, unit: src.unit || "unit", code: src.code || null, product: src.product || null, back: old[norm(x.name)]?.back || null };
+  });
+  o.t = now();
+  return true;
+}
+// כל החוסרים של הזמנה: מהאתר, ומהחשבונית (מה שלא הגיע)
+function orderMissing(o) {
+  const list = [...(o.missing || [])], seen = new Set(list.map(m => norm(m.name)));
+  for (const n of o.check?.missing || []) {
+    if (seen.has(norm(n))) continue;
+    seen.add(norm(n));
+    const src = o.items.find(i => norm(i.name) === norm(n)) || {};
+    list.push({ name: n, reason: "לא הגיע לפי החשבונית", qty: src.qty || 1, unit: src.unit || "unit", code: src.code || null, product: src.product || null, back: o.checkBack?.[norm(n)] || null, inv: true });
+  }
+  return list;
+}
+const orderMissOpen = o => orderMissing(o).filter(m => !m.back).length;
+// מחזיר חוסרים לרשימה. מוצר שכבר ברשימה (ועוד לא נקנה) לא נוסף שוב
+function returnMissing(o, names) {
+  const have = new Set(live().filter(i => !i.done).map(i => norm(i.name)));
+  let added = 0, already = 0;
+  for (const m of orderMissing(o).filter(m => names.includes(norm(m.name)))) {
+    if (have.has(norm(m.name))) already++;
+    else {
+      addItem(m.name, m.qty, "order", m.unit);
+      const it = live().find(x => norm(x.name) === norm(m.name) && !x.done);
+      if (it && m.code && !it.code) Object.assign(it, { code: m.code, product: m.product, t: now() });
+      added++;
+    }
+    const t = now();
+    if (m.inv) (o.checkBack ||= {})[norm(m.name)] = t;
+    else { const x = o.missing.find(x => norm(x.name) === norm(m.name)); if (x) x.back = t; }
+  }
+  o.t = now();
+  commit();
+  return { added, already };
+}
+
+let ordersFilter = "all", openOrder = null;
 function ordersSheet() {
+  // הזמנה אחרונה שעוד לא נשמרו בה החוסרים (מלפני העדכון) – מהדוח של המילוי האחרון
+  if (orderMissFromFill(S.settings.lastFill, true)) commit();
   const all = (S.orders || []).filter(o => !o.deleted).sort((a, b) => b.at - a.at);
   if (!all.length) return sheet(`<h2 style="margin-top:0">🧾 היסטוריית הזמנות</h2>
     <div class="card muted">עוד אין הזמנות. כל פעם שלוחצים "שלח לסופר" (או "סיימתי קנייה" בחנות) ההזמנה נשמרת כאן, עם הרשת, התאריך והמוצרים.</div>
@@ -621,17 +680,26 @@ function ordersSheet() {
     <div class="muted" style="margin-bottom:6px">${shown.length} הזמנות${sum ? ` · סה"כ ${money(sum)}` : ""}</div>
     ${shown.map(o => {
       const head = month(o) !== last ? `<div class="cat-title">${esc(last = month(o))}</div>` : "";
-      const tot = orderTotal(o);
-      return `${head}<details class="card" style="margin-bottom:8px"><summary class="row" style="cursor:pointer;gap:8px">
+      const tot = orderTotal(o), miss = orderMissing(o), missOpen = miss.filter(m => !m.back).length;
+      const missTag = miss.length ? `<span style="color:var(--warn)">⚠️ ${miss.length} חוסרים${missOpen < miss.length ? ` (${miss.length - missOpen} הוחזרו)` : ""}</span> · ` : checkTag(o);
+      return `${head}<details class="card" style="margin-bottom:8px" data-order="${o.id}" ${o.id === openOrder ? "open" : ""}><summary class="row" style="cursor:pointer;gap:8px">
           <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
-            <div class="muted" style="font-size:12px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${checkTag(o)}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
+            <div class="muted" style="font-size:12px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${missTag}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
           <b>${tot != null ? money(tot) : ""}</b>
           <button class="btn small ghost" data-odel="${o.id}" title="מחיקת ההזמנה" aria-label="מחיקת ההזמנה">🗑</button></summary>
         ${orderOpen(o) ? `<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="who" style="background:#fef3c7;color:#92400e">⏳ בתהליך</span>
           <button class="btn small" data-oedit="${o.id}">✏️ עריכת ההזמנה</button>
           <button class="btn small ghost" data-orecv="${o.id}">✓ ההזמנה התקבלה</button></div>` : ""}
         ${o.chain !== "store" ? `<button class="btn small ${o.check ? "ghost" : ""}" style="margin-top:6px" data-oinv="${o.id}">🧾 ${o.check ? "בדיקה חוזרת מול החשבונית" : "סריקת חשבונית – האם הכל הגיע?"}</button>` : ""}
-        ${o.check?.missing?.length ? `<div class="warn" style="margin-top:6px">⚠️ לא הגיעו לפי החשבונית: ${esc(o.check.missing.join(", "))}</div>` : ""}
+        ${miss.length ? `<div class="miss-box">
+          <b>⚠️ חוסרים בהזמנה (${miss.length})</b>
+          <div class="muted" style="font-size:12px;margin-bottom:4px">מוצרים שלא עברו לאתר או לא הגיעו. אפשר להחזיר אותם לרשימה ולקנות בפעם הבאה או במקום אחר.</div>
+          ${miss.map((m, k) => `<div class="row" style="gap:8px;padding:5px 0;border-top:1px solid var(--line)">
+            <span class="grow" style="font-size:14px">${esc(m.name)}${m.unit === "kg" ? ` <span class="muted">${fmtNum(m.qty)} ק״ג</span>` : m.qty > 1 ? ` ×${fmtNum(m.qty)}` : ""}
+              ${m.reason ? `<div class="muted" style="font-size:12px">${esc(m.reason)}</div>` : ""}</span>
+            ${m.back ? `<span class="muted" style="font-size:13px;white-space:nowrap">✓ הוחזר</span>` : `<button class="btn small ghost" style="white-space:nowrap" data-oback="${o.id}" data-k="${k}">↩ לרשימה</button>`}</div>`).join("")}
+          ${missOpen > 1 ? `<button class="btn small" style="width:100%;margin-top:6px" data-oback-all="${o.id}">↩ החזר את כל ${missOpen} החוסרים לרשימה</button>` : ""}
+        </div>` : ""}
         ${o.cart == null ? `<button class="btn small ghost" style="margin-top:6px" data-paid="${o.id}">₪ ${o.chain === "store" ? "כמה שילמת?" : "עדכן את הסכום ששילמת"}</button>` : ""}
         <div style="margin-top:6px">${o.items.map(i => `<div class="row" style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--line)">
           <span class="grow">${esc(i.name)}${i.unit === "kg" ? ` <span class="muted">${fmtNum(i.qty)} ק״ג</span>` : i.qty > 1 ? ` ×${fmtNum(i.qty)}` : ""}${i.alt ? `<div class="alt">≈ ${esc(i.alt)}</div>` : ""}</span>
@@ -641,6 +709,22 @@ function ordersSheet() {
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   const root = $("#sheet-root");
   root.querySelectorAll("[data-of]").forEach(el => el.onclick = () => { ordersFilter = el.dataset.of; ordersSheet(); });
+  root.querySelectorAll("details[data-order]").forEach(d => d.ontoggle = () => { if (d.open) openOrder = d.dataset.order; else if (openOrder === d.dataset.order) openOrder = null; });
+  const back = (o, names) => {
+    const { added, already } = returnMissing(o, names);
+    openOrder = o.id;
+    ordersSheet();
+    refreshCompare().then(render);
+    toast(added ? `↩ ${added === 1 ? "המוצר הוחזר" : `${added} מוצרים הוחזרו`} לרשימה${already ? ` (${already} כבר היו בה)` : ""}` : "כבר נמצא ברשימה");
+  };
+  root.querySelectorAll("[data-oback]").forEach(el => el.onclick = () => {
+    const o = S.orders.find(x => x.id === el.dataset.oback), m = orderMissing(o)[+el.dataset.k];
+    if (m) back(o, [norm(m.name)]);
+  });
+  root.querySelectorAll("[data-oback-all]").forEach(el => el.onclick = () => {
+    const o = S.orders.find(x => x.id === el.dataset.obackAll);
+    back(o, orderMissing(o).filter(m => !m.back).map(m => norm(m.name)));
+  });
   root.querySelectorAll("[data-paid]").forEach(el => el.onclick = () => {
     const o = S.orders.find(x => x.id === el.dataset.paid);
     const v = parseFloat(String(prompt("כמה שילמת בסך הכל? (₪)", orderTotal(o) ?? "") || "").replace(/[^\d.]/g, ""));
@@ -1336,6 +1420,7 @@ function renderList() {
   ${cl ? `<div class="row" style="margin:0 0 8px;gap:6px;flex-wrap:wrap">
     <button class="chip" data-act="lists" style="font-weight:600">📋 ${esc(listName(cl))}${isOwner(cl) ? "" : ` · של ${esc((cl.owner || "").split("@")[0])}`} ▾</button>
     ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}</div>` : ""}
+  ${quickBar()}
   <form class="card row" id="add-form" autocomplete="off">
     <input type="text" id="add-input" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
     <button type="button" class="icon-btn add-tool" data-act="voice" title="הוספה קולית" aria-label="הוספה קולית">${icon("mic", 22)}</button>
@@ -1356,24 +1441,26 @@ function renderList() {
   ${done.length ? `<button class="btn" style="width:100%" data-act="finish">✔ סיימתי קנייה (${done.length})</button>` : ""}
   ${items.length && !done.length ? `<div class="muted" style="text-align:center;font-size:14px">לחיצה על מוצר מסמנת שהוא בעגלה · לחיצה ארוכה מעבירה למחלקה אחרת</div>` : ""}
   ${dealsCard()}
-  <div class="row" style="margin-top:12px">
+  ${open.length || items.length ? `<div class="row" style="margin-top:12px">
     ${open.length ? `<button class="btn ghost grow" data-act="shop-enter" style="display:flex;align-items:center;justify-content:center;gap:6px">${icon("store", 18)} אני בסופר – מצב קנייה</button>` : ""}
-    ${items.length ? `<button class="btn ghost" data-act="clear-list" title="ניקוי הרשימה" aria-label="ניקוי הרשימה">🧹 ניקוי</button>` : ""}
-    <button class="btn ghost ${open.length ? "" : "grow"}" data-act="more" style="display:flex;align-items:center;justify-content:center;gap:6px" aria-label="עוד">${icon("more", 18)} עוד</button>
-  </div>`;
+    ${items.length ? `<button class="btn ghost ${open.length ? "" : "grow"}" data-act="clear-list" title="ניקוי הרשימה" aria-label="ניקוי הרשימה">🧹 ניקוי</button>` : ""}
+  </div>` : ""}`;
 }
-// "⋯ עוד": הפעולות המשניות של הרשימה בחלון אחד (במקום 4–5 כפתורים זה מתחת לזה)
-function moreSheet() {
-  const orders = (S.orders || []).filter(o => !o.deleted).length, rec = (S.settings.recurring || []).length;
-  sheet(`<h2 style="margin-top:0">עוד</h2><div class="menu-list">
-    <button data-act="orders">🧾 הזמנות והוצאות${orders ? ` (${orders})` : ""}</button>
-    <button data-act="share">👥 שיתוף הרשימה</button>
-    <button data-act="import">📥 ייבוא רשימת קניות</button>
-    <button data-act="recurring">🔁 מוצרים קבועים${rec ? ` (${rec})` : ""}</button>
-    <button data-act="dept-order">⇅ סדר המחלקות</button>
-  </div><button class="btn ghost" style="width:100%" data-close>סגור</button>`);
-  const go = { orders: ordersSheet, share: shareSheet, import: () => importSheet(), recurring: recurringSheet, "dept-order": deptOrderSheet };
-  $("#sheet-root .menu-list").onclick = e => { const b = e.target.closest("[data-act]"); if (b && go[b.dataset.act]) sub(go[b.dataset.act], moreSheet); };
+// פס פעולות בראש הרשימה – כל הפעולות גלויות בלחיצה אחת (במקום כפתור "עוד" בתחתית שהסתיר אותן).
+// תג אדום על "הזמנות" = חוסרים מהזמנות שעוד לא הוחזרו לרשימה
+function quickBar() {
+  const orders = (S.orders || []).filter(o => !o.deleted);
+  const miss = orders.filter(o => now() - o.at < 30 * 864e5).reduce((s, o) => s + orderMissOpen(o), 0);
+  const rec = (S.settings.recurring || []).length;
+  const b = (act, ic, label, badge, title) => `<button data-act="${act}" title="${esc(title)}" aria-label="${esc(title)}${badge && act !== "orders" ? ` (${badge})` : ""}">
+    <span class="qi" aria-hidden="true">${ic}</span><span class="ql">${label}</span>${badge ? `<span class="qb ${act === "orders" && miss ? "warn" : ""}">${badge}</span>` : ""}</button>`;
+  return `<div class="quick" role="toolbar" aria-label="פעולות ברשימה">
+    ${b("orders", "🧾", "הזמנות", miss || "", miss ? `הזמנות והוצאות – ${miss} חוסרים להחזיר` : "הזמנות והוצאות")}
+    ${b("share", "👥", "שיתוף", "", "שיתוף הרשימה")}
+    ${b("recurring", "🔁", "קבועים", rec || "", "מוצרים קבועים")}
+    ${b("import", "📥", "ייבוא", "", "ייבוא רשימת קניות")}
+    ${b("dept-order", "⇅", "מחלקות", "", "סדר המחלקות")}
+  </div>`;
 }
 // הפס הקבוע מעל התפריט התחתון: כמה עולה הסל, איפה הכי זול, המשלוח הקרוב – וכפתור השליחה
 function renderSendBar() {
@@ -2940,6 +3027,8 @@ window.onCartReport = r => {
     if (f) Object.assign(i, { miss: { chain: r.chain, reason: f.reason || "", at: r.at || now() }, t: now() });
     else if (i.miss && i.miss.chain === r.chain && !failedNames.has(norm(i.name))) { delete i.miss; i.t = now(); }
   }
+  // החוסרים נשמרים גם בהזמנה עצמה (בהיסטוריית ההזמנות), עם אפשרות להחזיר אותם לרשימה
+  orderMissFromFill(S.settings.lastFill);
   S.settings.t = now(); commit();
   if (r.failed?.length) toast(`⚠️ ${r.failed.length} מוצרים לא עברו ל${CART_NAMES[r.chain] || "אתר"} – מופיעים ברשימה תחת "חוסרים"`);
   cartSummarySoon(r.chain);
@@ -3767,7 +3856,6 @@ function onViewClick(e) {
     case "recipe-import": return importRecipeSheet();
     case "autolink": return autoLink();
     case "import": return importSheet();
-    case "more": return moreSheet();
     case "orders": return ordersSheet();
     case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); setShoppingNow(true); return render();
     case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); setShoppingNow(false); return render();
