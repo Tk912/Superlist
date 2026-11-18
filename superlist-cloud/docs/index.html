@@ -16,13 +16,13 @@
 :root {
   /* שולי מסך (סרגלי המערכת). באפליקציה האנדרואיד כבר משאירה להם מקום, אז כאן 0 – אחרת המרווח כפול */
   --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
-  --bg: #f4f6f3; --card: #ffffff; --text: #1b2620; --muted: #6b7a71; --line: #e3e8e4;
+  --bg: #f4f6f3; --card: #ffffff; --text: #1b2620; --muted: #55635a; --line: #e3e8e4;
   --accent: #0f7a4a; --accent-soft: #e2f3ea; --warn: #b5470b; --warn-soft: #fdeee4;
   --chip: #eef2ef; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111613; --card: #1a211d; --text: #e6ece8; --muted: #93a39a; --line: #2a332e;
+    --bg: #111613; --card: #1a211d; --text: #e6ece8; --muted: #a3b2a9; --line: #2a332e;
     --accent: #3cc486; --accent-soft: #173326; --warn: #f0965a; --warn-soft: #3a2518;
     --chip: #232c27; --shadow: none;
   }
@@ -68,7 +68,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .quick button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 8px 2px 6px;
   border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); box-shadow: var(--shadow); cursor: pointer; font: inherit; }
 .quick button:active { background: var(--accent-soft); }
-.quick .qi { font-size: 20px; line-height: 1.1; }
+.quick .qi { line-height: 0; color: var(--accent); }
 .quick .ql { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .quick .qb { position: absolute; top: -6px; left: -4px; min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--chip); color: var(--text); font-size: 11px; font-weight: 700; line-height: 16px; }
 .quick .qb.warn { background: var(--warn); color: #fff; }
@@ -210,6 +210,11 @@ td.best { color: var(--accent); font-weight: 700; }
 #sendbar .sum b { font-size: 16px; font-variant-numeric: tabular-nums; }
 #sendbar .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sendbar .btn { display: flex; align-items: center; gap: 6px; padding: 10px 14px; }
+#sendbar, #sendbar .btn { transition: padding .2s; }
+/* בגלילה למטה: רק הסכום והכפתור, בשורה דקה; בגלילה למעלה – חוזר */
+body.bar-slim #sendbar { padding-top: 3px; padding-bottom: 3px; }
+body.bar-slim #sendbar .sub { display: none; }
+body.bar-slim #sendbar .btn { min-height: 38px; padding: 6px 12px; }
 body.has-sendbar main { padding-bottom: calc(136px + var(--sab)); }
 /* הודעות לפי סוג: מידע (כחול), אזהרה (כתום), שגיאה (אדום) */
 .note-info { background: #e8f0fd; color: #1d4b8f; border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
@@ -246,7 +251,20 @@ body.has-sendbar main { padding-bottom: calc(136px + var(--sab)); }
 /* חוסר: שורת אזהרה עם ✕ קטן להסרה מהחוסרים */
 .miss-note { color: var(--warn); font-size: 13px; margin: 2px 0 4px; }
 .miss-keep { display: block; width: 100%; border: 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; padding: 8px 0 4px; cursor: pointer; }
-#lang-btn { border: 0; background: var(--chip); border-radius: 999px; padding: 4px 9px; font-size: 13px; cursor: pointer; }
+/* ---------- קריאות ונוחות לחיצה ---------- */
+.muted { font-size: 14px; }
+nav button .t { white-space: nowrap; }
+.tile-price, .tile-note, .tag, .who, .price-tag, .trend, .promo, .unit-price, .alt, .ac-row .sub, th, #sendbar .sub, .badge { font-size: 13px; }
+.cat-title, .dept-head { font-size: 15px; }
+.dept-sum, .miss-note, .miss-keep { font-size: 14px; }
+.quick .ql { font-size: 13px; }
+.btn { min-height: 44px; }
+.btn.small { min-height: 40px; font-size: 15px; }
+.chip { min-height: 36px; }
+.icon-btn { min-width: 40px; min-height: 40px; }
+.qty button { width: 36px; height: 36px; }
+#lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+#sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
 </style>
 <script>if (/SuperlistApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");</script>
@@ -510,7 +528,7 @@ function setOnline(v) {
   online = v;
   const el = $("#sync");
   const local = isGuest() || window.Cloud?.configured === false || !window.Cloud?.user;
-  el.textContent = v ? "☁️" : local ? "" : "⚠️ לא מסונכרן";
+  el.innerHTML = v ? icon("cloud", 18) : local ? "" : `${icon("alert", 16)} לא מסונכרן`;
   el.title = v ? "מסונכרן" : local ? "" : "אין חיבור – השינויים יישמרו כשהחיבור יחזור";
   el.setAttribute("aria-label", el.title);
   el.className = v ? "" : "off";
@@ -599,12 +617,12 @@ function spendingCard() {
     <div class="row" style="gap:8px"><b class="grow">החודש: ${money(spent)}</b>
       <label class="muted" style="font-size:13px">תקציב ₪ <input id="budget-in" inputmode="numeric" value="${b || ""}" placeholder="—" style="width:80px;padding:4px 6px"></label></div>
     ${b ? `<div class="bar" style="height:8px;margin-top:6px"><i style="width:${Math.min(100, spent / b * 100)}%;${spent > b ? "background:#dc2626" : ""}"></i></div>
-      <div class="muted" style="font-size:12px">${spent > b ? `חריגה של ${money(spent - b)}` : `נשארו ${money(b - spent)}`}</div>` : ""}
+      <div class="muted" style="font-size:13px">${spent > b ? `חריגה של ${money(spent - b)}` : `נשארו ${money(b - spent)}`}</div>` : ""}
     <svg viewBox="0 0 312 100" style="width:100%;max-width:420px;display:block;margin:8px auto 0" aria-label="הוצאות ב-6 החודשים האחרונים">${budgetLine}${bars}</svg>
     ${cur.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
-      <div><div class="muted" style="font-size:12px">לפי רשת</div>${list(byChain, ORDER_PLACE)}</div>
-      <div><div class="muted" style="font-size:12px">לפי מחלקה (הערכה)</div>${list(byDept, x => x)}</div></div>` : ""}
-    <div class="muted" style="font-size:12px;margin-top:6px">נספר: הסכום שבעגלה (או המשוער) לכל הזמנה, וקניות בחנות שהזנת להן סכום.</div></div>`;
+      <div><div class="muted" style="font-size:13px">לפי רשת</div>${list(byChain, ORDER_PLACE)}</div>
+      <div><div class="muted" style="font-size:13px">לפי מחלקה (הערכה)</div>${list(byDept, x => x)}</div></div>` : ""}
+    <div class="muted" style="font-size:13px;margin-top:6px">נספר: הסכום שבעגלה (או המשוער) לכל הזמנה, וקניות בחנות שהזנת להן סכום.</div></div>`;
 }
 
 // ================= היסטוריית הזמנות =================
@@ -703,7 +721,7 @@ function ordersSheet() {
       const missTag = miss.length ? `<span style="color:var(--warn)">⚠️ ${miss.length} חוסרים${missOpen < miss.length ? ` (${miss.length - missOpen} הוחזרו)` : ""}</span> · ` : checkTag(o);
       return `${head}<details class="card" style="margin-bottom:8px" data-order="${o.id}" ${o.id === openOrder ? "open" : ""}><summary class="row" style="cursor:pointer;gap:8px">
           <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
-            <div class="muted" style="font-size:12px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${missTag}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
+            <div class="muted" style="font-size:13px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${missTag}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
           <b>${tot != null ? money(tot) : ""}</b>
           <button class="btn small ghost" data-odel="${o.id}" title="מחיקת ההזמנה" aria-label="מחיקת ההזמנה">🗑</button></summary>
         ${orderOpen(o) ? `<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="who" style="background:#fef3c7;color:#92400e">⏳ בתהליך</span>
@@ -712,10 +730,10 @@ function ordersSheet() {
         ${o.chain !== "store" ? `<button class="btn small ${o.check ? "ghost" : ""}" style="margin-top:6px" data-oinv="${o.id}">🧾 ${o.check ? "בדיקה חוזרת מול החשבונית" : "סריקת חשבונית – האם הכל הגיע?"}</button>` : ""}
         ${miss.length ? `<div class="miss-box">
           <b>⚠️ חוסרים בהזמנה (${miss.length})</b>
-          <div class="muted" style="font-size:12px;margin-bottom:4px">מוצרים שלא עברו לאתר או לא הגיעו. אפשר להחזיר אותם לרשימה ולקנות בפעם הבאה או במקום אחר.</div>
+          <div class="muted" style="font-size:13px;margin-bottom:4px">מוצרים שלא עברו לאתר או לא הגיעו. אפשר להחזיר אותם לרשימה ולקנות בפעם הבאה או במקום אחר.</div>
           ${miss.map((m, k) => `<div class="row" style="gap:8px;padding:5px 0;border-top:1px solid var(--line)">
             <span class="grow" style="font-size:14px">${esc(m.name)}${m.unit === "kg" ? ` <span class="muted">${fmtNum(m.qty)} ק״ג</span>` : m.qty > 1 ? ` ×${fmtNum(m.qty)}` : ""}
-              ${m.reason ? `<div class="muted" style="font-size:12px">${esc(m.reason)}</div>` : ""}</span>
+              ${m.reason ? `<div class="muted" style="font-size:13px">${esc(m.reason)}</div>` : ""}</span>
             ${m.back ? `<span class="muted" style="font-size:13px;white-space:nowrap">✓ הוחזר</span>` : `<button class="btn small ghost" style="white-space:nowrap" data-oback="${o.id}" data-k="${k}">↩ לרשימה</button>`}</div>`).join("")}
           ${missOpen > 1 ? `<button class="btn small" style="width:100%;margin-top:6px" data-oback-all="${o.id}">↩ החזר את כל ${missOpen} החוסרים לרשימה</button>` : ""}
         </div>` : ""}
@@ -933,11 +951,11 @@ function invoiceResult(o, rows, total) {
     const miss = rows.filter(r => !r.ok);
     $("#inv-out").innerHTML = `<div class="card">
       <div style="font-weight:600;margin-bottom:4px">${miss.length ? `⚠️ ${miss.length} מתוך ${rows.length} מוצרים לא נמצאו בחשבונית` : `✅ כל ${rows.length} המוצרים נמצאו בחשבונית`}</div>
-      <div class="muted" style="font-size:12px;margin-bottom:6px">הקריאה האוטומטית לא תמיד מדויקת: לחיצה על מוצר מחליפה בין "הגיע" ל"לא הגיע".</div>
+      <div class="muted" style="font-size:13px;margin-bottom:6px">הקריאה האוטומטית לא תמיד מדויקת: לחיצה על מוצר מחליפה בין "הגיע" ל"לא הגיע".</div>
       ${rows.map((r, k) => `<div class="row" data-inv-t="${k}" style="cursor:pointer;padding:5px 0;border-bottom:1px solid var(--line);gap:8px">
         <span>${r.ok ? "✅" : "❌"}</span><span class="grow">${esc(r.name)}${r.unit === "kg" ? ` <span class="muted">${fmtNum(r.qty)} ק״ג</span>` : r.qty > 1 ? ` ×${fmtNum(r.qty)}` : ""}
-          ${r.product ? `<div class="muted" style="font-size:12px">${esc(r.product)}</div>` : ""}</span>
-        <span class="muted" style="font-size:12px">${r.ok ? "הגיע" : "לא הגיע"}</span></div>`).join("")}
+          ${r.product ? `<div class="muted" style="font-size:13px">${esc(r.product)}</div>` : ""}</span>
+        <span class="muted" style="font-size:13px">${r.ok ? "הגיע" : "לא הגיע"}</span></div>`).join("")}
       ${total ? `<label class="row" style="margin-top:8px;gap:6px"><input type="checkbox" id="inv-total" ${o.cart == null ? "checked" : ""}> הסכום בחשבונית: <b>${money(total)}</b> – לשמור כסכום ששולם</label>` : ""}
       <div class="row" style="margin-top:8px;gap:6px">
         <button class="btn grow" id="inv-save">💾 שמור את הבדיקה</button>
@@ -967,7 +985,7 @@ function orderEditSheet(id) {
   const priceOf = code => { const r = code && PriceDB.info().data[o.chain]?.byCode.get(String(code).replace(/^0+/, "")); return r ? r[2] : null; };
   const draw = () => {
     $("#oe-list").innerHTML = work.length ? work.map((i, k) => `<div class="row" style="padding:4px 0;border-bottom:1px solid var(--line);gap:8px">
-        <span class="grow">${esc(i.name)}${i.price != null ? ` <span class="muted" style="font-size:12px">${money(i.price)}</span>` : ""}</span>
+        <span class="grow">${esc(i.name)}${i.price != null ? ` <span class="muted" style="font-size:13px">${money(i.price)}</span>` : ""}</span>
         <button class="btn small ghost" data-oe-q="${k}" data-d="-1">−</button>
         <span style="min-width:44px;text-align:center">${i.unit === "kg" ? `${fmtNum(i.qty)} ק״ג` : fmtNum(i.qty)}</span>
         <button class="btn small ghost" data-oe-q="${k}" data-d="1">+</button>
@@ -1172,7 +1190,7 @@ function recurringSheet() {
     <div class="muted" style="margin-bottom:8px">חוזרים לרשימה לבד בזמן שקבעתם. מוסיפים מוצר קבוע בלחיצה ארוכה עליו ברשימה.</div>
     <div class="card">${list.length ? list.map((r, k) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)">
       <div class="grow">${esc(r.name)} <span class="muted" style="font-size:13px">${r.unit === "kg" ? fmtNum(r.qty) + " ק״ג" : "×" + r.qty}</span>
-        <div class="muted" style="font-size:12px">${label(r.every)} · בפעם הבאה ${new Date((r.last || 0) + r.every * 864e5).toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "numeric" })}</div></div>
+        <div class="muted" style="font-size:13px">${label(r.every)} · בפעם הבאה ${new Date((r.last || 0) + r.every * 864e5).toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "numeric" })}</div></div>
       <button class="icon-btn" data-rdel="${k}" aria-label="הסר">✕</button></div>`).join("") : `<div class="muted">אין מוצרים קבועים.</div>`}</div>
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   $("#sheet-root").querySelectorAll("[data-rdel]").forEach(el => el.onclick = () => {
@@ -1234,7 +1252,7 @@ function planToListSheet() {
       <div class="card">${rows.map((x, k) => `<label class="item" style="cursor:pointer">
         <input type="checkbox" data-k="${k}" ${picked[k] ? "checked" : ""} style="width:20px;height:20px">
         <div class="grow">${esc(x.name)}${x.pantry ? ` <span class="who">יש בבית?</span>` : ""}
-          ${x.from.length > 1 ? `<div class="muted" style="font-size:12px">${esc(x.from.join(" + "))}</div>` : ""}</div>
+          ${x.from.length > 1 ? `<div class="muted" style="font-size:13px">${esc(x.from.join(" + "))}</div>` : ""}</div>
         <span class="muted">${x.unit === "kg" ? fmtNum(x.qty) + " ק״ג" : "×" + x.qty}</span></label>`).join("")}</div>
       <div class="row"><button class="btn grow" id="pl-go">הוסף ${picked.filter(Boolean).length} מצרכים לרשימה</button></div>
       <button class="btn ghost" style="width:100%;margin-top:8px" data-close>ביטול</button>`);
@@ -1377,7 +1395,7 @@ function priceFor(item) {
 }
 
 // אייקונים (Lucide, רישיון MIT) – במקום אימוג'י, שנראים אחרת בכל טלפון ונחתכים
-const ICON = {"list": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M12 11h4\"/><path d=\"M12 16h4\"/><path d=\"M8 11h.01\"/><path d=\"M8 16h.01\"/>", "book": "<path d=\"M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z\"/><path d=\"M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z\"/>", "prices": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>", "settings": "<line x1=\"21\" x2=\"14\" y1=\"4\" y2=\"4\"/><line x1=\"10\" x2=\"3\" y1=\"4\" y2=\"4\"/><line x1=\"21\" x2=\"12\" y1=\"12\" y2=\"12\"/><line x1=\"8\" x2=\"3\" y1=\"12\" y2=\"12\"/><line x1=\"21\" x2=\"16\" y1=\"20\" y2=\"20\"/><line x1=\"12\" x2=\"3\" y1=\"20\" y2=\"20\"/><line x1=\"14\" x2=\"14\" y1=\"2\" y2=\"6\"/><line x1=\"8\" x2=\"8\" y1=\"10\" y2=\"14\"/><line x1=\"16\" x2=\"16\" y1=\"18\" y2=\"22\"/>", "help": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/><path d=\"M12 17h.01\"/>", "mic": "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>", "scan": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><path d=\"M8 7v10\"/><path d=\"M12 7v10\"/><path d=\"M17 7v10\"/>", "x": "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", "cart": "<circle cx=\"8\" cy=\"21\" r=\"1\"/><circle cx=\"19\" cy=\"21\" r=\"1\"/><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\"/>", "more": "<circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/><circle cx=\"5\" cy=\"12\" r=\"1\"/>", "store": "<path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\"/><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\"/><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\"/><path d=\"M2 7h20\"/><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\"/>"};
+const ICON = {"list": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M12 11h4\"/><path d=\"M12 16h4\"/><path d=\"M8 11h.01\"/><path d=\"M8 16h.01\"/>", "book": "<path d=\"M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z\"/><path d=\"M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z\"/>", "prices": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>", "settings": "<line x1=\"21\" x2=\"14\" y1=\"4\" y2=\"4\"/><line x1=\"10\" x2=\"3\" y1=\"4\" y2=\"4\"/><line x1=\"21\" x2=\"12\" y1=\"12\" y2=\"12\"/><line x1=\"8\" x2=\"3\" y1=\"12\" y2=\"12\"/><line x1=\"21\" x2=\"16\" y1=\"20\" y2=\"20\"/><line x1=\"12\" x2=\"3\" y1=\"20\" y2=\"20\"/><line x1=\"14\" x2=\"14\" y1=\"2\" y2=\"6\"/><line x1=\"8\" x2=\"8\" y1=\"10\" y2=\"14\"/><line x1=\"16\" x2=\"16\" y1=\"18\" y2=\"22\"/>", "help": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/><path d=\"M12 17h.01\"/>", "mic": "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>", "scan": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><path d=\"M8 7v10\"/><path d=\"M12 7v10\"/><path d=\"M17 7v10\"/>", "x": "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", "cart": "<circle cx=\"8\" cy=\"21\" r=\"1\"/><circle cx=\"19\" cy=\"21\" r=\"1\"/><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\"/>", "more": "<circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/><circle cx=\"5\" cy=\"12\" r=\"1\"/>", "store": "<path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\"/><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\"/><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\"/><path d=\"M2 7h20\"/><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\"/>", "receipt": "<path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\"/><path d=\"M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8\"/><path d=\"M12 17.5v-11\"/>", "users": "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>", "repeat": "<path d=\"m17 2 4 4-4 4\"/><path d=\"M3 11v-1a4 4 0 0 1 4-4h14\"/><path d=\"m7 22-4-4 4-4\"/><path d=\"M21 13v1a4 4 0 0 1-4 4H3\"/>", "import": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" x2=\"12\" y1=\"15\" y2=\"3\"/>", "sort": "<path d=\"m21 16-4 4-4-4\"/><path d=\"M17 20V4\"/><path d=\"m3 8 4-4 4 4\"/><path d=\"M7 4v16\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/>", "eraser": "<path d=\"m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21\"/><path d=\"M22 21H7\"/><path d=\"m5 11 9 9\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/>", "cloud": "<path d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\"/>", "alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>"};
 const icon = (n, s = 20) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 function renderList() {
   const items = live();
@@ -1394,8 +1412,8 @@ function renderList() {
       : p ? `<div class="tile-price" data-act="img"><b>${money(p.price)}</b>${p.weighted ? " לק״ג" : ""} · ${esc(p.chain)}</div>${tags ? `<div class="tags" data-act="img">${tags}</div>` : ""}` : "";
     const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
     // חוסר: שורת אזהרה, כפתור אחד – חלופה, וקישור טקסט קטן – להשאיר לפעם הבאה (יוצא מהחוסרים, נשאר ברשימה)
-    const miss = i.miss && !i.done && !shop ? `<div class="miss-note">⚠️ לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
-      <button class="btn small ghost" style="width:100%;margin:2px 0 0" data-act="link">🔍 חלופה</button>
+    const miss = i.miss && !i.done && !shop ? `<div class="miss-note">לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
+      <button class="btn small ghost" style="width:100%;margin:2px 0 0;display:flex;align-items:center;justify-content:center;gap:6px" data-act="link">${icon("search", 16)} חלופה</button>
       <button class="miss-keep" data-act="unmiss">להשאיר לפעם הבאה</button>` : "";
     const img = thumb(i.code, "tile-img", `data-act="img" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
@@ -1419,7 +1437,7 @@ function renderList() {
   // חוסרים (לא עברו לאתר בהעברה האחרונה) – בחלק נפרד בראש הרשימה
   const missing = shop ? [] : open.filter(i => i.miss);
   for (const i of [...open, ...done]) if (!missing.includes(i)) (byDept[CAT_ORDER.includes(i.cat) ? i.cat : "אחר"] ||= []).push(i);
-  const missBlock = !missing.length ? "" : `<section class="dept" style="border:2px solid #b5470b"><div class="dept-head"><span>⚠️</span><span class="grow">חוסרים / לא זמינים</span><span class="dept-sum">${missing.length}</span></div>
+  const missBlock = !missing.length ? "" : `<section class="dept" style="border:2px solid #b5470b"><div class="dept-head" style="color:var(--warn)">${icon("alert", 18)}<span class="grow">חוסרים / לא זמינים</span><span class="dept-sum">${missing.length}</span></div>
       <div class="muted" style="font-size:13px;margin:0 4px 6px">לא נמצאו באתר בהעברת הסל. בחרו להם חלופה (🔍), או השאירו לקנייה הבאה.</div>
       <div class="tiles">${missing.map(tile).join("")}</div></section>`;
   const deptBlock = c => {
@@ -1463,7 +1481,7 @@ function renderList() {
   ${dealsCard()}
   ${open.length || items.length ? `<div class="row" style="margin-top:12px">
     ${open.length ? `<button class="btn ghost grow" data-act="shop-enter" style="display:flex;align-items:center;justify-content:center;gap:6px">${icon("store", 18)} אני בסופר – מצב קנייה</button>` : ""}
-    ${items.length ? `<button class="btn ghost ${open.length ? "" : "grow"}" data-act="clear-list" title="ניקוי הרשימה" aria-label="ניקוי הרשימה">🧹 ניקוי</button>` : ""}
+    ${items.length ? `<button class="btn ghost ${open.length ? "" : "grow"}" data-act="clear-list" title="ניקוי הרשימה" aria-label="ניקוי הרשימה" style="display:flex;align-items:center;justify-content:center;gap:6px">${icon("eraser", 18)} ניקוי</button>` : ""}
   </div>` : ""}`;
 }
 // פס פעולות בראש הרשימה – כל הפעולות גלויות בלחיצה אחת (במקום כפתור "עוד" בתחתית שהסתיר אותן).
@@ -1473,13 +1491,13 @@ function quickBar() {
   const miss = orders.filter(o => now() - o.at < 30 * 864e5).reduce((s, o) => s + orderMissOpen(o), 0);
   const rec = (S.settings.recurring || []).length;
   const b = (act, ic, label, badge, title) => `<button data-act="${act}" title="${esc(title)}" aria-label="${esc(title)}${badge && act !== "orders" ? ` (${badge})` : ""}">
-    <span class="qi" aria-hidden="true">${ic}</span><span class="ql">${label}</span>${badge ? `<span class="qb ${act === "orders" && miss ? "warn" : ""}">${badge}</span>` : ""}</button>`;
+    <span class="qi" aria-hidden="true">${icon(ic, 22)}</span><span class="ql">${label}</span>${badge ? `<span class="qb ${act === "orders" && miss ? "warn" : ""}">${badge}</span>` : ""}</button>`;
   return `<div class="quick" role="toolbar" aria-label="פעולות ברשימה">
-    ${b("orders", "🧾", "הזמנות", miss || "", miss ? `הזמנות והוצאות – ${miss} חוסרים להחזיר` : "הזמנות והוצאות")}
-    ${b("share", "👥", "שיתוף", "", "שיתוף הרשימה")}
-    ${b("recurring", "🔁", "קבועים", rec || "", "מוצרים קבועים")}
-    ${b("import", "📥", "ייבוא", "", "ייבוא רשימת קניות")}
-    ${b("dept-order", "⇅", "מחלקות", "", "סדר המחלקות")}
+    ${b("orders", "receipt", "הזמנות", miss || "", miss ? `הזמנות והוצאות – ${miss} חוסרים להחזיר` : "הזמנות והוצאות")}
+    ${b("share", "users", "שיתוף", "", "שיתוף הרשימה")}
+    ${b("recurring", "repeat", "קבועים", rec || "", "מוצרים קבועים")}
+    ${b("import", "import", "ייבוא", "", "ייבוא רשימת קניות")}
+    ${b("dept-order", "sort", "מחלקות", "", "סדר המחלקות")}
   </div>`;
 }
 // הפס הקבוע מעל התפריט התחתון: כמה עולה הסל, איפה הכי זול, המשלוח הקרוב – וכפתור השליחה
@@ -2330,19 +2348,19 @@ function requestSlots(force = false) {
   });
 }
 const slotLine = c => {
-  if (PICKUP_ONLY.has(c)) return `<div class="muted" style="font-size:12px">🏪 איסוף עצמי מהסניף (אין משלוח)</div>`;
+  if (PICKUP_ONLY.has(c)) return `<div class="muted" style="font-size:13px">🏪 איסוף עצמי מהסניף (אין משלוח)</div>`;
   if (!hasExt()) return "";
   const r = slots?.[c];
-  if (!r) return slotsLoading ? `<div class="muted" style="font-size:12px">⏳ בודק מועד משלוח…</div>` : "";
-  return r.ok ? `<div style="font-size:12px;color:var(--accent)">⚡ משלוח קרוב: ${esc(fmtSlot(r))}${r.price ? ` · ${money(r.price)}` : ""}</div>`
-    : `<div class="muted" style="font-size:12px">⚡ ${esc(r.reason || "אין מידע")}</div>`;
+  if (!r) return slotsLoading ? `<div class="muted" style="font-size:13px">⏳ בודק מועד משלוח…</div>` : "";
+  return r.ok ? `<div style="font-size:13px;color:var(--accent)">⚡ משלוח קרוב: ${esc(fmtSlot(r))}${r.price ? ` · ${money(r.price)}` : ""}</div>`
+    : `<div class="muted" style="font-size:13px">⚡ ${esc(r.reason || "אין מידע")}</div>`;
 };
 
 // מוצרים שלא נמכרים ברשת, והמוצר המקביל שהושווה (ויתווסף לעגלה) במקומם
 function altLine(chain) {
   const alts = (compareCache?.lines || []).filter(l => l.approx?.[chain]);
   if (!alts.length) return "";
-  return `<details class="muted" style="font-size:12px"><summary>≈ ${alts.length} ${alts.length === 1 ? "מוצר מקביל" : "מוצרים מקבילים"}</summary>
+  return `<details class="muted" style="font-size:13px"><summary>≈ ${alts.length} ${alts.length === 1 ? "מוצר מקביל" : "מוצרים מקבילים"}</summary>
     ${alts.map(l => `<div>${esc(l.name)} ← <b>${esc(l.approx[chain])}</b> ${money(l.prices[chain])}</div>`).join("")}</details>`;
 }
 
@@ -2358,9 +2376,9 @@ function deliveryCard(sub = false) {
   const order = list.sort((a, b) => key(a).localeCompare(key(b)));
   return `${title}<div class="card">
     ${order.map(c => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)">
-      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:12px">אין מידע</span>`}</div>`).join("")}
-    <div class="muted" style="font-size:12px;margin-top:6px">🏪 ${[...PICKUP_ONLY].map(c => esc(CART_NAMES[c])).join(", ")} – איסוף עצמי מהסניף בלבד, בלי משלוח.</div>
-    <div class="row" style="margin-top:6px"><span class="muted grow" style="font-size:12px">לפי הכתובת בהגדרות · ${slotsAt ? ago(slotsAt) : ""}</span>
+      <b class="grow">${esc(CART_NAMES[c] || chains[c] || c)}</b>${slotLine(c).replace(/⚡ משלוח קרוב: /, "") || `<span class="muted" style="font-size:13px">אין מידע</span>`}</div>`).join("")}
+    <div class="muted" style="font-size:13px;margin-top:6px">🏪 ${[...PICKUP_ONLY].map(c => esc(CART_NAMES[c])).join(", ")} – איסוף עצמי מהסניף בלבד, בלי משלוח.</div>
+    <div class="row" style="margin-top:6px"><span class="muted grow" style="font-size:13px">לפי הכתובת בהגדרות · ${slotsAt ? ago(slotsAt) : ""}</span>
       <button class="btn small ghost" data-act="slots-refresh">↻ רענן</button></div></div>`;
 }
 
@@ -2376,12 +2394,12 @@ function splitCard(c) {
   if (!s) return "";
   const [A, B] = s.chains, nm = x => esc(chains[x] || x);
   const part = x => `<div style="margin-top:6px"><b>${nm(x)}</b> · ${money(s.part[x].total)} · ${s.part[x].items.length} מוצרים
-      <div class="muted" style="font-size:12px">${esc(s.part[x].items.slice(0, 8).join(", "))}${s.part[x].items.length > 8 ? "…" : ""}</div>
+      <div class="muted" style="font-size:13px">${esc(s.part[x].items.slice(0, 8).join(", "))}${s.part[x].items.length > 8 ? "…" : ""}</div>
       <button class="btn small ghost" style="margin-top:4px" data-fill="${x}">🛒 שלח ל${nm(x)}</button></div>`;
   return `<h2>✂️ פיצול סל</h2><div class="card">
     <div>קנייה בשתי רשתות יוצאת <b>${money(s.saving)}</b> זול יותר מהכל ב${nm(s.vs)} (${money(s.vsTotal)}), גם אחרי משלוח נוסף.</div>
     ${part(A)}${part(B)}
-    <div class="muted" style="font-size:12px;margin-top:6px">מילוי עגלה בכל רשת שולח את כל הרשימה; את מה שלא שייך לרשת מסירים בעגלה שלה.</div></div>`;
+    <div class="muted" style="font-size:13px;margin-top:6px">מילוי עגלה בכל רשת שולח את כל הרשימה; את מה שלא שייך לרשת מסירים בעגלה שלה.</div></div>`;
 }
 // מותג הבית של הרשת הזולה: אותו מוצר (סוג, גודל, אחוז שומן) בזול יותר
 function swapsCard(c, best) {
@@ -2399,7 +2417,7 @@ function swapsCard(c, best) {
     <div class="muted" style="margin-bottom:4px">אותו מוצר, מהמותג של הרשת – עד ${money(total)} פחות בסל.</div>
     ${rows.slice(0, 10).map(({ l, s, save }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
       <div class="grow" style="min-width:0;font-size:14px">${esc(s.fromName)} <span class="muted">${money(s.from)}</span>
-        <div style="color:var(--accent)">← ${esc(s.name)} <b>${money(s.price)}</b> <span style="font-size:12px">(חוסך ${money(save)})</span></div></div>
+        <div style="color:var(--accent)">← ${esc(s.name)} <b>${money(s.price)}</b> <span style="font-size:13px">(חוסך ${money(save)})</span></div></div>
       <button class="btn small" data-swap="${esc(l.code)}" data-to="${esc(s.code)}" data-to-name="${esc(s.name)}">החלף</button></div>`).join("")}</div>`;
 }
 
@@ -2427,7 +2445,7 @@ function packsCard(c, best) {
     <div class="muted" style="margin-bottom:4px">אותו מוצר באריזה גדולה יותר – זול יותר לכל 100 גרם / ליטר ב${esc(chains[best.chain] || best.chain)}.</div>
     ${rows.slice(0, 8).map(({ l, s, qty }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
       <div class="grow" style="min-width:0;font-size:14px">${esc(s.fromName)} <span class="muted">${sizeLabel(s.fromSize, s.kind)} · ${unitLabel([s.fromPer, s.kind])}</span>
-        <div style="color:var(--accent)">← ${esc(s.name)} <b>${money(s.price)}</b> <span style="font-size:12px">(${sizeLabel(s.size, s.kind)} · ${unitLabel([s.per, s.kind])}, ${Math.round(s.save * 100)}% פחות ליחידה)</span></div></div>
+        <div style="color:var(--accent)">← ${esc(s.name)} <b>${money(s.price)}</b> <span style="font-size:13px">(${sizeLabel(s.size, s.kind)} · ${unitLabel([s.per, s.kind])}, ${Math.round(s.save * 100)}% פחות ליחידה)</span></div></div>
       <button class="btn small" data-swap="${esc(l.code)}" data-to="${esc(s.code)}" data-to-name="${esc(s.name)}" data-qty="${qty}">החלף</button></div>`).join("")}</div>`;
 }
 
@@ -2449,7 +2467,7 @@ function dealsCard() {
   return `<h2>🏷️ מבצעים על מה שאתם קונים</h2><div class="card">
     ${rows.slice(0, 6).map(({ k, h, d }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
       <div class="grow" style="min-width:0;font-size:14px"><b>${esc(h.name)}</b> <span class="muted">${esc(chains[d.chain] || d.chain)}</span>
-        <div><s class="muted">${money(d.regular)}</s> <b style="color:var(--accent)">${money(d.price)}</b>${d.weighted ? " לק״ג" : ""} <span style="font-size:12px">(${Math.round(d.save * 100)}% הנחה)</span></div>
+        <div><s class="muted">${money(d.regular)}</s> <b style="color:var(--accent)">${money(d.price)}</b>${d.weighted ? " לק״ג" : ""} <span style="font-size:13px">(${Math.round(d.save * 100)}% הנחה)</span></div>
         <div class="promo">${esc(d.desc)}${d.minq > 1 ? ` · בקניית ${fmtNum(d.minq)}` : ""}${until(d.end)}</div></div>
       <button class="btn small" data-deal-add="${esc(k)}" data-qty="${d.minq > 1 && !d.weighted ? Math.round(d.minq) : 1}">➕ הוסף</button></div>`).join("")}
     ${rows.length > 6 ? `<div class="muted" style="margin-top:4px">ועוד ${rows.length - 6} מבצעים על מוצרים שקניתם</div>` : ""}</div>`;
@@ -2478,10 +2496,10 @@ function changesCard(c) {
   if (!rows.length) return "";
   rows.sort((a, b) => (a.tr.to / a.tr.from) - (b.tr.to / b.tr.from));
   return `<h2>📊 שינויי מחיר אחרונים</h2><div class="card">${rows.slice(0, 12).map(({ l, ch, tr, pts }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
-      <div class="grow" style="min-width:0"><div>${esc(l.name)} <span class="muted" style="font-size:12px">· ${esc(chains[ch] || ch)}</span></div>
+      <div class="grow" style="min-width:0"><div>${esc(l.name)} <span class="muted" style="font-size:13px">· ${esc(chains[ch] || ch)}</span></div>
         <div class="trend ${tr.to < tr.from ? "down" : "up"}">${money(tr.from)} ← ${money(tr.to)} (${tr.to < tr.from ? "−" : "+"}${Math.round(Math.abs(1 - tr.to / tr.from) * 100)}%) · ${ago(tr.day * 864e5)}</div></div>
       ${sparkline(pts)}</div>`).join("")}
-    <div class="muted" style="font-size:12px;margin-top:6px">הגרף מראה את המחיר לאורך הזמן, מאז שהתחלנו לעקוב (נובמבר 2026).</div></div>`;
+    <div class="muted" style="font-size:13px;margin-top:6px">הגרף מראה את המחיר לאורך הזמן, מאז שהתחלנו לעקוב (נובמבר 2026).</div></div>`;
 }
 // התרעה פעם אחת לכל הוזלה של מוצר ברשימה
 const DROPS_SEEN = "superlist-drops-seen";
@@ -2540,7 +2558,7 @@ function basketCard() {
         ${altLine(x.chain)}
         ${cartTotalLine(x.chain)}</div>
       <div style="text-align:center"><div class="total">${money(x.total)}</div>
-        ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button>` : `<div class="muted" style="font-size:11px">הזמנה באפליקציית Wolt</div>`}</div></div>`).join("")}
+        ${CART_CHAINS.includes(x.chain) ? `<button class="btn small ghost" data-fill="${x.chain}">🛒 שלח</button>` : `<div class="muted" style="font-size:12px">הזמנה באפליקציית Wolt</div>`}</div></div>`).join("")}
     ${CART_CHAINS.filter(ch => !ranked.some(x => x.chain === ch) && cartTotal(ch)).map(ch => `<div class="chain-card">
       <div class="grow"><div class="row"><b>${esc(CART_NAMES[ch])}</b><span class="who">לפי העגלה</span></div>
         <div class="muted">אין לרשת קובץ מחירים – זה הסכום שהאתר הציג בעגלה ${ago(cartTotal(ch).at)}</div></div>
@@ -2592,8 +2610,8 @@ function renderPrices() {
         ${order.map((x, k) => { const ch = x.chain, ap = l.approx?.[ch], pm = l.promo?.[ch], ph = l.promoHint?.[ch];
           const extra = [unitLabel(l.unit?.[ch]), pm ? "🏷️ " + esc(pm) : ph ? "🏷️ " + esc(ph) : "", ap ? "≈ " + esc(ap) : ""].filter(Boolean).join(" · ");
           return `<div class="pline-row ${k === 0 && order.length > 1 ? "best" : ""}"><span class="ch">${esc(x.name)}</span><span class="pr">${ap ? "≈" : ""}${money(l.prices[ch])}</span></div>
-            ${extra ? `<div class="muted" style="font-size:12px;margin:-2px 0 2px">${extra}</div>` : ""}`; }).join("")}
-        ${missing.length ? `<div class="muted" style="font-size:12px">לא נמצא ב: ${esc(missing.join(", "))}</div>` : ""}</div>`; }).join("")}</div>
+            ${extra ? `<div class="muted" style="font-size:13px;margin:-2px 0 2px">${extra}</div>` : ""}`; }).join("")}
+        ${missing.length ? `<div class="muted" style="font-size:13px">לא נמצא ב: ${esc(missing.join(", "))}</div>` : ""}</div>`; }).join("")}</div>
     <div class="muted">הזול ביותר לכל מוצר מסומן בירוק. ≈ = המוצר עצמו לא נמכר ברשת (למשל מותג פרטי של רשת אחרת), אז הושווה מוצר מקביל – וזה מה שיתווסף לעגלה. המחיר הוא ליחידה או לק״ג; הסכום למעלה כבר מחושב לפי הכמות.</div>`;
   }
   if (unlinked.length) html += `<h2>מוצרים שעוד לא הותאמו (${unlinked.length})</h2>
@@ -2642,12 +2660,12 @@ function imageSheet(item) {
     const pm = l.promo?.[ch], ph = l.promoHint?.[ch], tr = l.trend?.[ch], ap = l.approx?.[ch];
     return `<div class="pline-row ${k === 0 && Object.keys(l.prices).length > 1 ? "best" : ""}"><span class="ch">${esc(chains[ch] || ch)}${k === 0 && Object.keys(l.prices).length > 1 ? " · הכי זול" : ""}</span>
       <span class="pr">${pm ? `<s class="muted">${money(l.regular[ch])}</s> ` : ""}${ap ? "≈" : ""}${money(p)}${l.weighted ? " לק״ג" : ""}</span></div>
-      ${pm || ph || tr || ap || l.unit?.[ch] ? `<div class="muted" style="font-size:12px;margin:-2px 0 4px">${[unitLabel(l.unit?.[ch]), pm ? "🏷️ " + esc(pm) : ph ? "🏷️ " + esc(ph) : "",
+      ${pm || ph || tr || ap || l.unit?.[ch] ? `<div class="muted" style="font-size:13px;margin:-2px 0 4px">${[unitLabel(l.unit?.[ch]), pm ? "🏷️ " + esc(pm) : ph ? "🏷️ " + esc(ph) : "",
         tr ? (tr.to < tr.from ? `📉 ירד מ-${money(tr.from)}` : `📈 עלה מ-${money(tr.from)}`) : "", ap ? `מוצר דומה: ${esc(ap)}` : ""].filter(Boolean).join(" · ")}</div>` : ""}`;
   }).join("") : "";
   sheet(`<h2 style="margin-top:0">${esc(item.product || item.name)}</h2>
     ${code ? `<div class="big-wrap">${thumb(code, "big-img", 'title="מסך מלא"') || `<div class="muted">אין תמונה למוצר הזה</div>`}</div>
-    <div class="muted" style="font-size:12px;text-align:center;margin-bottom:8px">לחיצה על התמונה – מסך מלא</div>` : ""}
+    <div class="muted" style="font-size:13px;text-align:center;margin-bottom:8px">לחיצה על התמונה – מסך מלא</div>` : ""}
     ${rows ? `<div class="card">${rows}</div>` : code ? "" : `<div class="card muted">עוד לא נבחר מוצר מדויק – בלי זה אין מחיר להשוואה.</div>`}
     ${item.note ? `<div class="card">📝 ${esc(item.note)}</div>` : ""}
     ${code ? `<div class="muted" style="margin:0 0 8px">ברקוד ${esc(code)}. אם זה לא המוצר הנכון, אפשר להחליף.</div>` : ""}
@@ -3142,8 +3160,8 @@ function fillReportCard() {
   const place = CART_NAMES[r.chain] || "אתר הספק";
   return `<div class="card" style="margin-bottom:10px">
     <b>🛒 העברת הסל ל${esc(place)}</b>
-    <span class="muted" style="font-size:12px"> · ${ago(r.at)}</span>
-    ${(r.substituted || []).map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">🔄 <b>${esc(x.name)}</b><div class="muted" style="font-size:12px">לא נמצא באתר – נוסף במקומו תחליף: ${esc(x.alt)}</div></div>`).join("")}
+    <span class="muted" style="font-size:13px"> · ${ago(r.at)}</span>
+    ${(r.substituted || []).map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">🔄 <b>${esc(x.name)}</b><div class="muted" style="font-size:13px">לא נמצא באתר – נוסף במקומו תחליף: ${esc(x.alt)}</div></div>`).join("")}
     ${r.merged.length ? `<div class="muted" style="font-size:13px;margin-top:6px">🔗 ${r.merged.length} פריטים ברשימה היו אותו מוצר כמו פריט אחר, ולכן אוחדו לשורה אחת עם הכמות הכוללת${r.lines ? ` – בעגלה ${r.lines} שורות` : ""}: ${esc(r.merged.join(", "))}</div>` : ""}
     <button class="btn small ghost" style="width:100%;margin-top:8px" data-act="fill-report-ok">הבנתי</button></div>`;
 }
@@ -3171,7 +3189,7 @@ function ago(t) {
   const m = Math.round((Date.now() - t) / 6e4);
   return m < 60 ? `לפני ${Math.max(1, m)} דק׳` : m < 1440 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
 }
-const cartTotalLine = c => { const v = cartTotal(c); return v ? `<div style="font-size:12px">🧾 בעגלה בפועל: <b>${money(v.total)}</b> · ${ago(v.at)}${v.items ? ` · ${v.items} פריטים` : ""}</div>` : ""; };
+const cartTotalLine = c => { const v = cartTotal(c); return v ? `<div style="font-size:13px">🧾 בעגלה בפועל: <b>${money(v.total)}</b> · ${ago(v.at)}${v.items ? ` · ${v.items} פריטים` : ""}</div>` : ""; };
 
 // הסניפים שהעדכון ב-GitHub צריך להוריד (בלי מה שהאפליקציה מורידה בעצמה)
 // (גם ספק שהוסתר – כדי שהמחירים שלו יהיו מוכנים כשמציגים אותו שוב)
@@ -3691,7 +3709,7 @@ function render() {
   // בורר השפה בכותרת (🌐) – נבנה פעם אחת
   const ls = $("#lang-slot");
   if (ls && !ls.firstChild) {
-    ls.innerHTML = `<button id="lang-btn" type="button" aria-label="שפה / Language" title="שפה / Language">🌐 ${I18N.lang === "he" ? "" : esc(I18N.lang.toUpperCase())}</button>`;
+    ls.innerHTML = `<button id="lang-btn" type="button" aria-label="שפה / Language" title="שפה / Language">${icon("globe", 18)}${I18N.lang === "he" ? "" : ` ${esc(I18N.lang.toUpperCase())}`}</button>`;
     $("#lang-btn").onclick = async () => {
       const v = await appDialog({ title: "🌐 שפה / Language", choices: Object.entries(I18N.LANGS).map(([k, label]) => ({ label, value: k, on: k === I18N.lang })) });
       if (v) I18N.set(v);
@@ -3983,7 +4001,7 @@ function renderGate() {
       <div class="muted" style="margin-bottom:16px">נכנסים עם חשבון Google – ומקבלים מיד רשימה משלך. אפשר ליצור עוד רשימות ולשתף אותן עם מי שתבחר.</div>
       <button class="btn" data-act="login" style="width:100%">התחברות עם Google</button>
       <button class="btn ghost" data-act="guest" style="width:100%;margin-top:8px">לנסות בלי חשבון</button>
-      <div class="muted" style="font-size:12px;margin-top:6px">בלי חשבון הרשימה נשמרת רק במכשיר הזה, ואי אפשר לשתף אותה. אפשר להתחבר בכל זמן מההגדרות – והרשימה תעבור לחשבון.</div></div>`;
+      <div class="muted" style="font-size:13px;margin-top:6px">בלי חשבון הרשימה נשמרת רק במכשיר הזה, ואי אפשר לשתף אותה. אפשר להתחבר בכל זמן מההגדרות – והרשימה תעבור לחשבון.</div></div>`;
   return `<div class="card" style="text-align:center;padding:24px 16px">
       <div style="font-size:36px">⚠️</div><h2 style="color:var(--text)">לא הצלחתי לטעון את הרשימות</h2>
       <div class="muted">אתה מחובר בתור <b dir="ltr">${esc(window.Cloud?.email() || "")}</b>. בדוק את החיבור לאינטרנט ונסה שוב.</div>
@@ -4192,6 +4210,16 @@ function updateBanner() {
     <button class="icon-btn" data-act="update-hide" aria-label="לא עכשיו">✕</button></div>`;
 }
 if (inApp) setTimeout(checkAppUpdate, 4000);
+// הפס התחתון ("שלח לסופר") מתכווץ כשגוללים למטה ברשימה, וחוזר כשגוללים למעלה – יותר מקום לרשימה
+{
+  let lastY = 0;
+  addEventListener("scroll", () => {
+    const y = scrollY;
+    if (y > lastY + 6 && y > 80) document.body.classList.add("bar-slim");
+    else if (y < lastY - 6 || y < 40) document.body.classList.remove("bar-slim");
+    lastY = y;
+  }, { passive: true });
+}
 
 S = fill(S);
 setOnline(false);
