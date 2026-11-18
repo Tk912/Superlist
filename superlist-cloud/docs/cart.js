@@ -153,8 +153,13 @@
       match: /rami-levy\.co\.il$/,
       ready: () => window.$nuxt && $nuxt.$store,
       logged: async () => !!$nuxt.$store.getters["authuser/isAuthenticated"],
-      existing: () => ($nuxt.$store.state.cart.items || []).length,
-      async clear() { $nuxt.$store.commit("cart/removeAllItems"); await sleep(2000); return !($nuxt.$store.state.cart.items || []).length; },
+      // "מחיר משלוח" – שורה שהאתר מוסיף לעגלה בעצמו, לא מוצר
+      goods: () => ($nuxt.$store.state.cart.items || []).filter(i => !/^מחיר משלוח/.test(i.name || "")),
+      existing() { return this.goods().length; },
+      async clear() {
+        for (let a = 0; a < 3; a++) { $nuxt.$store.commit("cart/removeAllItems"); await sleep(2000); if (!this.goods().length) return true; }
+        return false;
+      },
       page: "/he/dashboard/checkout",
       async add({ name, code, kg, weighted, product }) {
         const st = $nuxt.$store, store = String(st.state.cart.storeId || 331);
