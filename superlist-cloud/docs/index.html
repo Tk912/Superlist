@@ -36,7 +36,7 @@ header { position: sticky; top: 0; z-index: 5; background: var(--bg);
 header h1 { font-size: 20px; margin: 0; flex: 1; }
 #sync { font-size: 12px; color: var(--muted); }
 #sync.off { color: var(--warn); }
-.hdr-side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.hdr-side { display: flex; align-items: center; gap: 8px; }
 #lang-slot .lang-pick { padding: 0 8px; font-size: 12px; min-height: 0; }
 #lang-slot .lang-pick select { font-size: 12px; padding: 1px 0; }
 main { padding: 0 16px calc(76px + var(--sab)); max-width: 680px; margin: 0 auto; }
@@ -231,6 +231,22 @@ body.has-sendbar main { padding-bottom: calc(136px + var(--sab)); }
   margin-bottom: 8px; font-size: 16px; text-align: start; cursor: pointer; box-shadow: var(--shadow); }
 .toast { position: fixed; bottom: calc(80px + var(--sab)); inset-inline: 16px; margin: auto; max-width: 420px;
   background: #1b2620; color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 30; text-align: center; font-size: 14px; }
+.toast.has-undo { display: flex; align-items: center; gap: 10px; text-align: start; padding: 6px 8px 6px 14px; }
+.toast.has-undo span { flex: 1; }
+.toast button { border: 0; background: none; color: #7ee2b0; font: 700 15px/1 inherit; padding: 10px 8px; cursor: pointer; white-space: nowrap; }
+/* חלון שאלה של האפליקציה (במקום החלונות של הדפדפן) */
+.dlg-bg { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dlg { background: var(--card); color: var(--text); border-radius: 16px; padding: 18px 16px 14px; width: 100%; max-width: 380px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.dlg h3 { margin: 0 0 6px; font-size: 18px; }
+.dlg-text { white-space: pre-line; font-size: 15px; margin-bottom: 12px; }
+.dlg-in { width: 100%; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); margin-bottom: 12px; }
+.dlg-row { display: flex; gap: 8px; }
+.dlg-row .btn { flex: 1; }
+.dlg-choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+/* חוסר: שורת אזהרה עם ✕ קטן להסרה מהחוסרים */
+.miss-note { color: var(--warn); font-size: 13px; margin: 2px 0 4px; }
+.miss-keep { display: block; width: 100%; border: 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; padding: 8px 0 4px; cursor: pointer; }
+#lang-btn { border: 0; background: var(--chip); border-radius: 999px; padding: 4px 9px; font-size: 13px; cursor: pointer; }
 html.in-app { --sat: 0px; --sab: 0px; }
 </style>
 <script>if (/SuperlistApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");</script>
@@ -493,7 +509,10 @@ function notifyOthers(before) {
 function setOnline(v) {
   online = v;
   const el = $("#sync");
-  el.textContent = v ? "● מסונכרן" : isGuest() ? "● מצב אורח" : window.Cloud?.configured === false ? "● מצב מקומי" : "● לא מסונכרן";
+  const local = isGuest() || window.Cloud?.configured === false || !window.Cloud?.user;
+  el.textContent = v ? "☁️" : local ? "" : "⚠️ לא מסונכרן";
+  el.title = v ? "מסונכרן" : local ? "" : "אין חיבור – השינויים יישמרו כשהחיבור יחזור";
+  el.setAttribute("aria-label", el.title);
   el.className = v ? "" : "off";
 }
 
@@ -725,9 +744,9 @@ function ordersSheet() {
     const o = S.orders.find(x => x.id === el.dataset.obackAll);
     back(o, orderMissing(o).filter(m => !m.back).map(m => norm(m.name)));
   });
-  root.querySelectorAll("[data-paid]").forEach(el => el.onclick = () => {
+  root.querySelectorAll("[data-paid]").forEach(el => el.onclick = async () => {
     const o = S.orders.find(x => x.id === el.dataset.paid);
-    const v = parseFloat(String(prompt("כמה שילמת בסך הכל? (₪)", orderTotal(o) ?? "") || "").replace(/[^\d.]/g, ""));
+    const v = parseFloat(String(await askText("כמה שילמת בסך הכל? (₪)", orderTotal(o) ?? "", { mode: "decimal", placeholder: "₪" }) || "").replace(/[^\d.]/g, ""));
     if (!(v > 0)) return;
     Object.assign(o, { cart: Math.round(v * 100) / 100, t: now() });
     commit(); ordersSheet();
@@ -760,10 +779,10 @@ function ordersSheet() {
   });
   root.querySelectorAll("[data-odel]").forEach(el => el.onclick = e => {
     e.preventDefault(); e.stopPropagation();
-    if (!confirm("למחוק את ההזמנה מההיסטוריה? (למשל אם נשלחה בטעות)")) return;
     const o = S.orders.find(x => x.id === el.dataset.odel);
     Object.assign(o, { deleted: true, t: now() });
     commit(); ordersSheet();
+    toast(`🗑 ההזמנה מ${ORDER_PLACE(o.chain)} נמחקה`, () => { restore("orders", o.id); if ($("#sheet-root").innerHTML) ordersSheet(); });
   });
 }
 
@@ -1374,8 +1393,10 @@ function renderList() {
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none" data-act="img">לא נמצא בסניפים</div>`
       : p ? `<div class="tile-price" data-act="img"><b>${money(p.price)}</b>${p.weighted ? " לק״ג" : ""} · ${esc(p.chain)}</div>${tags ? `<div class="tags" data-act="img">${tags}</div>` : ""}` : "";
     const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
-    const miss = i.miss && !i.done && !shop ? `<div class="tile-note" style="color:#b5470b">⚠️ לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
-      <div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><button class="btn small ghost" style="width:100%;white-space:normal" data-act="link">🔍 חלופה</button><button class="btn small ghost" style="width:100%;white-space:normal" data-act="unmiss">✓ הסר מחוסרים</button></div>` : "";
+    // חוסר: שורת אזהרה, כפתור אחד – חלופה, וקישור טקסט קטן – להשאיר לפעם הבאה (יוצא מהחוסרים, נשאר ברשימה)
+    const miss = i.miss && !i.done && !shop ? `<div class="miss-note">⚠️ לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
+      <button class="btn small ghost" style="width:100%;margin:2px 0 0" data-act="link">🔍 חלופה</button>
+      <button class="miss-keep" data-act="unmiss">להשאיר לפעם הבאה</button>` : "";
     const img = thumb(i.code, "tile-img", `data-act="img" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img">${DEPT_ICON[i.cat] || "🛒"}</span>`;
     return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
@@ -1430,8 +1451,7 @@ function renderList() {
   </form>
   ${fillReportCard()}
   ${sn ? `<div class="warn" style="background:var(--accent-soft);color:var(--text)">🛍️ <b>${esc(sn.by)}</b> בסופר עכשיו${sn.chain ? ` (${esc(chains[sn.chain] || sn.chain)})` : ""} – מה שתוסיפו לרשימה יופיע מיד במסך הקנייה.</div>` : ""}
-  ${updateBanner()}
-  ${installBanner()}
+  ${updateBanner() || installBanner()}
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   <h2>${items.length ? `ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})` : ""}</h2>
@@ -1565,7 +1585,7 @@ function shareSheet() {
     <button class="btn ghost" style="width:100%;margin-top:8px;color:var(--warn)" id="sh-delete">🗑 מחיקת החשבון וכל הנתונים</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
   if ($("#sh-leave")) $("#sh-leave").onclick = async () => {
-    if (!confirm(`לצאת מהרשימה "${title}"? היא תישאר אצל השאר.`)) return;
+    if (!await askOk(`לצאת מהרשימה "${title}"? היא תישאר אצל השאר.`, "יציאה מהרשימה", { danger: true })) return;
     try { await Cloud.leaveList(Cloud.listId); closeSheet(); toast("יצאת מהרשימה"); } catch (err) { toast("לא הצלחתי: " + (err.code || err.message)); }
   };
   if ($("#sh-add")) $("#sh-add").onsubmit = async e => {
@@ -1576,7 +1596,7 @@ function shareSheet() {
     catch (err) { toast("לא הצלחתי להוסיף: " + (err.code || err.message)); }
   };
   $("#sheet-root").querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => {
-    if (!confirm(`להסיר את ${b.dataset.rm} מהרשימה המשותפת?`)) return;
+    if (!await askOk(`להסיר את ${b.dataset.rm} מהרשימה המשותפת?`, "הסרה", { danger: true })) return;
     try { await Cloud.setMembers(members.filter(m => m !== b.dataset.rm)); members = members.filter(m => m !== b.dataset.rm); shareSheet(); }
     catch (err) { toast("לא הצלחתי להסיר: " + (err.code || err.message)); }
   });
@@ -1586,17 +1606,16 @@ function shareSheet() {
     navigator.share({ title: `רשימת הקניות "${title}"`, text }).catch(() => {});
   };
   $("#sheet-root").querySelector("[data-act=rename]").onclick = () => sub(() => nameSheet(shareSheet), shareSheet);
-  $("#sh-out").onclick = async () => { if (confirm("להתנתק מהחשבון במכשיר הזה?")) { closeSheet(); await Cloud.signOut(); } };
+  $("#sh-out").onclick = async () => { if (await askOk("להתנתק מהחשבון במכשיר הזה?", "התנתקות")) { closeSheet(); await Cloud.signOut(); } };
   $("#sh-delete").onclick = async () => {
     const mineCount = myLists.filter(isOwner).length, others = myLists.length - mineCount;
-    if (!confirm(`למחוק את החשבון?
-
+    if (!await appDialog({ title: "למחוק את החשבון?", ok: "המשך למחיקה", danger: true, text: `
 • ${mineCount} הרשימות שלך יימחקו לגמרי – גם אצל מי ששיתפת איתו
 • תצא/י מ-${others} רשימות של אחרים (הן יישארו אצלם)
 • ההיסטוריה, המתכונים וההזמנות שברשימות שלך יימחקו
 
-אי אפשר לבטל את זה.`)) return;
-    if (prompt('כדי לאשר, כתבו "מחיקה"') !== "מחיקה") return toast("המחיקה בוטלה");
+אי אפשר לבטל את זה.` })) return;
+    if ((await askText('כדי לאשר, כתבו "מחיקה"', "", { placeholder: "מחיקה" }))?.trim() !== "מחיקה") return toast("המחיקה בוטלה");
     closeSheet(); toast("מוחק…");
     try {
       const full = await Cloud.deleteAccount(myLists.map(l => ({ id: l.id, owner: l.owner })));
@@ -2206,7 +2225,7 @@ function recipeSheet(id) {
   // הכנה: כל משפט שלב
   $("#r-steps-mic").onclick = e => dictate(e.currentTarget, t => addLines($("#r-steps"), t.split(/[.!?]\s+|\s+(?:ואז|ו?אחר כך|ו?אחרי זה|ו?אחרי כן)\s+/).map(x => x.trim())));
   sheetCleanup = () => { try { dictRec?.abort(); } catch {} dictRec = null; recipeVoice = null; };
-  if ($("#r-del")) $("#r-del").onclick = () => { if (confirm("למחוק את המתכון?")) { Object.assign(r, { deleted: true, t: now() }); closeSheet(); commit(); } };
+  if ($("#r-del")) $("#r-del").onclick = () => { Object.assign(r, { deleted: true, t: now() }); closeSheet(); commit(); toast(`🗑 המתכון "${r.name || ""}" נמחק`, () => restore("recipes", r.id)); };
 }
 
 // ================= מחירים =================
@@ -3069,7 +3088,16 @@ function listAfterOrderSheet(chain) {
     <button class="btn" style="width:100%" id="la-empty" ${rest ? "" : "disabled"}>🗑 לרוקן את הרשימה${rest ? ` (${rest} פריטים)` : ""}</button>
     <div class="muted" style="font-size:13px;margin:4px 0 10px">המוצרים נשמרים בהיסטוריה ובהזמנות, ויופיעו בהצעות לפעם הבאה.</div>
     <button class="btn ghost" style="width:100%" id="la-keep">💾 לשמור את הרשימה לקנייה הבאה</button>`);
-  $("#la-empty").onclick = () => { const n = emptyList(true); closeSheet(); toast(`🗑 הרשימה רוקנה (${n} פריטים)`); refreshCompare().then(render); };
+  $("#la-empty").onclick = () => {
+    const ids = live().filter(i => !i.miss).map(i => i.id), hist = JSON.stringify(S.history);
+    const n = emptyList(true); closeSheet();
+    toast(`🗑 הרשימה רוקנה (${n} פריטים)`, () => {
+      S.history = JSON.parse(hist);
+      ids.forEach(id => { const x = S.items.find(v => v.id === id); if (x) { x.deleted = false; delete x.delBy; x.t = now(); } });
+      commit();
+    });
+    refreshCompare().then(render);
+  };
   $("#la-keep").onclick = () => { closeSheet(); toast("💾 הרשימה נשמרה לקנייה הבאה"); };
 }
 // ריקון הרשימה. keepMissing: החוסרים נשארים (עוד לא נקנו). הפריטים נרשמים בהיסטוריה (להצעות "קונים בדרך כלל")
@@ -3096,19 +3124,25 @@ function clearListSheet() {
     ${done.length && done.length < all.length ? `<button class="btn ghost" style="width:100%;margin-top:8px" id="cl-done">רק מה שסומן בעגלה (${done.length})</button>` : ""}
     ${miss.length && miss.length < all.length ? `<button class="btn ghost" style="width:100%;margin-top:8px" id="cl-miss">רק החוסרים (${miss.length})</button>` : ""}
     <button class="btn ghost" style="width:100%;margin-top:8px" data-close>ביטול</button>`);
-  const del = list => { const t = now(); list.forEach(i => Object.assign(i, { deleted: true, delBy: me || null, t })); closeSheet(); commit(); toast(`🧹 נמחקו ${list.length} פריטים`); refreshCompare().then(render); };
+  const del = list => {
+    const t = now(), ids = list.map(i => i.id);
+    list.forEach(i => Object.assign(i, { deleted: true, delBy: me || null, t }));
+    closeSheet(); commit();
+    toast(`🧹 נמחקו ${list.length} פריטים`, () => { ids.forEach(id => { const x = S.items.find(v => v.id === id); if (x) { x.deleted = false; delete x.delBy; x.t = now(); } }); commit(); });
+    refreshCompare().then(render);
+  };
   $("#cl-all").onclick = () => del(all);
   if ($("#cl-done")) $("#cl-done").onclick = () => del(done);
   if ($("#cl-miss")) $("#cl-miss").onclick = () => del(miss);
 }
 function fillReportCard() {
   const r = S.settings.lastFill;
-  if (!r || r.dismissed || now() - r.at > 3 * 864e5 || (!r.failed.length && !r.merged.length && !r.substituted?.length)) return "";
+  // מה שלא עבר כבר מופיע בחלק "חוסרים / לא זמינים" – כאן רק תחליפים ואיחודים (אם היו)
+  if (!r || r.dismissed || now() - r.at > 3 * 864e5 || (!r.merged.length && !r.substituted?.length)) return "";
   const place = CART_NAMES[r.chain] || "אתר הספק";
-  return `<div class="card" style="border:2px solid #b5470b;margin-bottom:10px">
-    <b>${r.failed.length ? `⚠️ ${r.failed.length} מתוך ${r.total} מוצרים לא עברו ל${esc(place)}` : `✅ כל המוצרים עברו ל${esc(place)}`}</b>
+  return `<div class="card" style="margin-bottom:10px">
+    <b>🛒 העברת הסל ל${esc(place)}</b>
     <span class="muted" style="font-size:12px"> · ${ago(r.at)}</span>
-    ${r.failed.length ? `<div style="font-size:14px;padding:4px 0">הם מופיעים ברשימה תחת <b>"חוסרים / לא זמינים"</b>, עם כפתור למציאת חלופה.</div>` : ""}
     ${(r.substituted || []).map(x => `<div style="font-size:14px;padding:4px 0;border-bottom:1px solid var(--line)">🔄 <b>${esc(x.name)}</b><div class="muted" style="font-size:12px">לא נמצא באתר – נוסף במקומו תחליף: ${esc(x.alt)}</div></div>`).join("")}
     ${r.merged.length ? `<div class="muted" style="font-size:13px;margin-top:6px">🔗 ${r.merged.length} פריטים ברשימה היו אותו מוצר כמו פריט אחר, ולכן אוחדו לשורה אחת עם הכמות הכוללת${r.lines ? ` – בעגלה ${r.lines} שורות` : ""}: ${esc(r.merged.join(", "))}</div>` : ""}
     <button class="btn small ghost" style="width:100%;margin-top:8px" data-act="fill-report-ok">הבנתי</button></div>`;
@@ -3555,7 +3589,7 @@ function renderHelp() {
   </ul>`)}
 
   ${sec("🌐 שפה", `<ul>
-    <li>בורר השפה נמצא בראש המסך (מעל "מסונכרן") וגם ב⚙️ הגדרות: עברית, English, Русский, Français, العربية.</li>
+    <li>בורר השפה: הכפתור 🌐 בראש המסך, וגם ב⚙️ הגדרות: עברית, English, Русский, Français, العربية.</li>
     <li>הממשק מתורגם; שמות המוצרים נשארים כמו שהרשתות כותבות אותם. השפה נשמרת במכשיר הזה.</li>
   </ul>`)}
 
@@ -3654,9 +3688,15 @@ function render() {
   if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
   if (focus === "add-input" && val) acShow();
   view.querySelectorAll(".lang-sel").forEach(s => s.onchange = () => I18N.set(s.value));
-  // בורר השפה בכותרת (מעל "מסונכרן") – נבנה פעם אחת
+  // בורר השפה בכותרת (🌐) – נבנה פעם אחת
   const ls = $("#lang-slot");
-  if (ls && !ls.firstChild) { ls.innerHTML = langPicker(); ls.querySelector(".lang-sel")?.addEventListener("change", e => I18N.set(e.target.value)); }
+  if (ls && !ls.firstChild) {
+    ls.innerHTML = `<button id="lang-btn" type="button" aria-label="שפה / Language" title="שפה / Language">🌐 ${I18N.lang === "he" ? "" : esc(I18N.lang.toUpperCase())}</button>`;
+    $("#lang-btn").onclick = async () => {
+      const v = await appDialog({ title: "🌐 שפה / Language", choices: Object.entries(I18N.LANGS).map(([k, label]) => ({ label, value: k, on: k === I18N.lang })) });
+      if (v) I18N.set(v);
+    };
+  }
   const fs = $("#free-search");
   if (fs) { let t; fs.oninput = () => { clearTimeout(t); t = setTimeout(async () => {
     const res = await searchProducts(fs.value).catch(() => []);
@@ -3714,11 +3754,59 @@ window.addEventListener("popstate", () => {
   if (tab !== "list") document.querySelector('nav button[data-tab="list"]')?.click();
 });
 let toastTimer;
-function toast(msg) {
+// הודעה קצרה. עם undo: כפתור "בטל" ל-6 שניות (במקום לשאול "בטוח?" לפני כל מחיקה)
+function toast(msg, undo) {
   document.querySelector(".toast")?.remove();
-  const el = document.createElement("div"); el.className = "toast"; el.textContent = msg; document.body.append(el);
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), 3200);
+  const el = document.createElement("div"); el.className = "toast" + (undo ? " has-undo" : "");
+  el.setAttribute("role", "status");
+  const t = document.createElement("span"); t.textContent = msg; el.append(t);
+  if (undo) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = "↶ בטל";
+    b.onclick = () => { clearTimeout(toastTimer); el.remove(); undo(); };
+    el.append(b);
+  }
+  document.body.append(el);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), undo ? 6000 : 3200);
 }
+// ביטול מחיקה: מחזירים לפי המזהה (האובייקט עצמו אולי הוחלף בינתיים בסנכרון)
+function restore(coll, id, extra = {}) {
+  const x = (S[coll] || []).find(v => v.id === id);
+  if (!x) return;
+  Object.assign(x, { deleted: false, ...extra, t: now() });
+  delete x.delBy;
+  commit();
+}
+// חלון שאלה של האפליקציה, במקום confirm/prompt של הדפדפן. מחזיר Promise:
+// אישור – true/false; עם input – הטקסט או null; עם choices – הערך שנבחר או null
+function appDialog({ title = "", text = "", ok = "אישור", cancel = "ביטול", danger = false, input = null, choices = null }) {
+  return new Promise(res => {
+    document.querySelector(".dlg-bg")?.remove();
+    const bg = document.createElement("div"); bg.className = "dlg-bg";
+    bg.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" ${title ? 'aria-labelledby="dlg-t"' : ""}>
+      ${title ? `<h3 id="dlg-t">${esc(title)}</h3>` : ""}${text ? `<div class="dlg-text">${esc(text)}</div>` : ""}
+      ${input ? `<input class="dlg-in" type="text" ${input.mode ? `inputmode="${input.mode}"` : ""} placeholder="${esc(input.placeholder || "")}" value="${esc(input.value ?? "")}" aria-label="${esc(text || title)}">` : ""}
+      ${choices ? `<div class="dlg-choices">${choices.map((c, k) => `<button type="button" class="btn ${c.on ? "" : "ghost"}" data-k="${k}">${esc(c.label)}</button>`).join("")}</div>` : ""}
+      <div class="dlg-row">${choices ? "" : `<button type="button" class="btn" data-ok ${danger ? 'style="background:#b42318"' : ""}>${esc(ok)}</button>`}
+        <button type="button" class="btn ghost" data-cancel>${esc(cancel)}</button></div></div>`;
+    document.body.append(bg);
+    const inp = bg.querySelector(".dlg-in"), empty = input || choices ? null : false;
+    const done = v => { bg.remove(); document.removeEventListener("keydown", key, true); res(v); };
+    const key = e => {
+      if (e.key === "Escape") { e.preventDefault(); done(empty); }
+      else if (e.key === "Enter" && inp && e.target === inp) { e.preventDefault(); done(inp.value); }
+    };
+    document.addEventListener("keydown", key, true);
+    bg.onclick = e => {
+      if (e.target === bg || e.target.closest("[data-cancel]")) return done(empty);
+      if (e.target.closest("[data-ok]")) return done(inp ? inp.value : true);
+      const c = e.target.closest("[data-k]");
+      if (c) done(choices[+c.dataset.k].value);
+    };
+    if (inp) { inp.focus(); inp.select(); } else bg.querySelector("[data-ok], [data-k]")?.focus();
+  });
+}
+const askOk = (text, ok = "אישור", o = {}) => appDialog({ text, ok, ...o });
+const askText = (text, value = "", o = {}) => appDialog({ text, ok: "שמירה", input: { value, ...o } });
 
 document.querySelector("nav").onclick = async e => {
   const b = e.target.closest("button[data-tab]");
@@ -3847,9 +3935,9 @@ function onViewClick(e) {
       toast(item.unit === "kg" ? `${item.name}: לפי משקל (ק״ג)` : `${item.name}: לפי כמות (יחידות/אריזות)`);
       touch(); return refreshCompare().then(render);
     }
-    case "del": item.deleted = true; item.delBy = me || null; return touch();
+    case "del": item.deleted = true; item.delBy = me || null; touch(); return toast(`🗑 "${item.name}" נמחק`, () => restore("items", item.id));
     case "link": return linkSheet(item);
-    case "unmiss": delete item.miss; return touch();
+    case "unmiss": { const was = item.miss; delete item.miss; touch(); return toast(`"${item.name}" הוסר מהחוסרים`, () => restore("items", item.id, { miss: was })); }
     case "img": return imageSheet(item);
     case "finish": return finishShopping();
     case "recipe-library": return librarySheet();
@@ -4000,25 +4088,25 @@ function listsSheet() {
   const root = $("#sheet-root");
   root.querySelectorAll("[data-open-list]").forEach(b => b.onclick = () => { closeSheet(); if (b.dataset.openList !== Cloud.listId) openList(b.dataset.openList); });
   $("#ls-new").onclick = async () => {
-    const name = (prompt("שם הרשימה החדשה (למשל: בית, שבת, מסיבה):") || "").trim();
+    const name = ((await askText("שם הרשימה החדשה", "", { placeholder: "למשל: בית, שבת, מסיבה" })) || "").trim();
     if (!name) return;
     try { const id = await Cloud.createList(name.slice(0, 40), freshState()); closeSheet(); toast(`נוצרה הרשימה "${name}"`); openList(id); }
     catch (e) { toast("לא הצלחתי ליצור: " + (e.code || e.message)); }
   };
   root.querySelectorAll("[data-rename-list]").forEach(b => b.onclick = async () => {
     const l = myLists.find(x => x.id === b.dataset.renameList);
-    const name = (prompt("שם חדש לרשימה:", listName(l)) || "").trim();
+    const name = ((await askText("שם חדש לרשימה", listName(l))) || "").trim();
     if (!name) return;
     try { await Cloud.renameList(l.id, name.slice(0, 40)); l.name = name; listsSheet(); } catch (e) { toast("לא הצלחתי: " + (e.code || e.message)); }
   });
   root.querySelectorAll("[data-del-list]").forEach(b => b.onclick = async () => {
     const l = myLists.find(x => x.id === b.dataset.delList);
-    if (!confirm(`למחוק את "${listName(l)}"${l.members.length > 1 ? " – גם אצל השותפים" : ""}? אי אפשר לשחזר.`)) return;
+    if (!await askOk(`למחוק את "${listName(l)}"${l.members.length > 1 ? " – גם אצל השותפים" : ""}? אי אפשר לשחזר.`, "מחיקה", { danger: true })) return;
     try { await Cloud.deleteList(l.id); closeSheet(); toast("הרשימה נמחקה"); } catch (e) { toast("לא הצלחתי למחוק: " + (e.code || e.message)); }
   });
   root.querySelectorAll("[data-leave-list]").forEach(b => b.onclick = async () => {
     const l = myLists.find(x => x.id === b.dataset.leaveList);
-    if (!confirm(`לצאת מהרשימה "${listName(l)}"? היא תישאר אצל השאר.`)) return;
+    if (!await askOk(`לצאת מהרשימה "${listName(l)}"? היא תישאר אצל השאר.`, "יציאה מהרשימה", { danger: true })) return;
     try { await Cloud.leaveList(l.id); closeSheet(); toast("יצאת מהרשימה"); } catch (e) { toast("לא הצלחתי: " + (e.code || e.message)); }
   });
 }
