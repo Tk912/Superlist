@@ -277,6 +277,19 @@ body.compact .tile > :not(.tile-top):not(.tile-bottom):not(.tile-price):not(.til
 body.compact .tile .qty button { width: 36px; height: 36px; }
 body.compact .tile-check { position: static; order: 0; }
 .view-toggle { display: inline-flex; align-items: center; gap: 6px; }
+/* הזמנות: לשוניות, קו זמן, חיסכון */
+.seg { display: flex; gap: 4px; background: var(--chip); border-radius: 12px; padding: 4px; margin-bottom: 10px; }
+.seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; border: 0; border-radius: 9px; background: none; color: var(--muted); font-weight: 600; cursor: pointer; }
+.seg button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+.tl { display: flex; align-items: center; gap: 4px; margin: 6px 0 2px; }
+.tl-s { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.tl-s i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.tl-s.on { color: var(--accent); font-weight: 600; }
+.tl-s.on i { background: var(--accent); border-color: var(--accent); }
+.tl-l { flex: 1; height: 2px; background: var(--line); min-width: 10px; }
+.save-tag { font-size: 13px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+.save-card { background: var(--accent-soft); }
+.save-big { font-size: 30px; font-weight: 800; color: var(--accent); line-height: 1.15; font-variant-numeric: tabular-nums; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
@@ -610,11 +623,11 @@ function spendingCard() {
   const now0 = monthKey(Date.now()), b = S.settings.budget, spent = monthSpent(now0);
   const months = [5, 4, 3, 2, 1, 0].map(k => { const key = now0 - k; return { key, total: monthSpent(key), name: new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString(LOC(), { month: "short" }) }; });
   const max = Math.max(b || 0, ...months.map(m => m.total), 1);
-  const bars = months.map((m, i) => { const h = Math.round(m.total / max * 70), x = 8 + i * 50;
+  const bars = months.map((m, i) => { const h = Math.round(m.total / max * 60), x = 8 + i * 50;
     return `<rect x="${x}" y="${80 - h}" width="34" height="${h}" rx="4" fill="${b && m.total > b ? "#dc2626" : "var(--accent)"}" opacity="${m.key === now0 ? 1 : .55}"/>
       <text x="${x + 17}" y="96" text-anchor="middle" font-size="11" fill="var(--muted)">${m.name}</text>
       ${m.total ? `<text x="${x + 17}" y="${74 - h}" text-anchor="middle" font-size="10" fill="var(--text)">${Math.round(m.total)}</text>` : ""}`; }).join("");
-  const budgetLine = b ? `<line x1="4" x2="304" y1="${80 - Math.round(b / max * 70)}" y2="${80 - Math.round(b / max * 70)}" stroke="#b5470b" stroke-dasharray="4 3"/>` : "";
+  const budgetLine = b ? `<line x1="4" x2="304" y1="${80 - Math.round(b / max * 60)}" y2="${80 - Math.round(b / max * 60)}" stroke="#b5470b" stroke-dasharray="4 3"/>` : "";
   // לפי רשת ולפי מחלקה – החודש
   const cur = spentOrders().filter(o => monthKey(o.at) === now0), byChain = {}, byDept = {};
   for (const o of cur) {
@@ -654,8 +667,22 @@ function recordOrder(chain, items) {
     if (price != null) { est += price * (l.weighted ? l.kg : l.units); found++; }
     return { name: i.name, qty: i.qty || 1, unit: i.unit || "unit", code: i.code || null, product: i.product || null, price, alt: l?.approx?.[chain] || null };
   });
+  // כמה חסכת: לכל רשת אחרת – ההפרש על המוצרים שיש לשתיהן מחיר (לפחות 60% מהמוצרים), ולוקחים את הרשת היקרה
+  let save = 0, vs = null;
+  if (chain !== "store" && compareCache) {
+    const ls = items.map(line).filter(l => l && l.prices[chain] != null);
+    const others = new Set(ls.flatMap(l => Object.keys(l.prices)));
+    others.delete(chain);
+    for (const c of others) {
+      const common = ls.filter(l => l.prices[c] != null);
+      if (!common.length || common.length < ls.length * 0.6) continue;
+      const d = common.reduce((t, l) => t + (l.prices[c] - l.prices[chain]) * (l.weighted ? l.kg : l.units), 0);
+      if (d > save) { save = d; vs = c; }
+    }
+  }
   S.orders = [{
     id: uid(), t: at, at, chain, by: me || "", items: rows,
+    save: save >= 1 ? Math.round(save * 100) / 100 : null, vs: save >= 1 ? vs : null,
     est: found ? Math.round(est * 100) / 100 : null, found: chain === "store" ? null : found,
   }, ...(S.orders || [])].slice(0, 80);
 }
@@ -710,7 +737,25 @@ function returnMissing(o, names) {
   return { added, already };
 }
 
-let ordersFilter = "all", openOrder = null;
+let ordersFilter = "all", openOrder = null, ordersTab = "orders";
+const savedIn = list => list.reduce((t, o) => t + (o.save || 0), 0);
+// כרטיס החיסכון: החודש ומתחילת הדרך
+function savingsCard() {
+  const all = (S.orders || []).filter(o => !o.deleted && o.save > 0);
+  if (!all.length) return `<div class="card muted" style="margin-bottom:10px">💚 כאן יופיע כמה חסכת: בכל שליחה לסופר נבדק כמה היו עולים אותם מוצרים ברשת היקרה ביותר.</div>`;
+  const m0 = monthKey(Date.now()), month = savedIn(all.filter(o => monthKey(o.at) === m0)), total = savedIn(all);
+  return `<div class="card save-card" style="margin-bottom:10px">
+    <div class="row" style="gap:12px;align-items:flex-end">
+      <div class="grow"><div class="muted">💚 חסכת החודש</div><div class="save-big">${money(month)}</div></div>
+      <div style="text-align:end"><div class="muted">מתחילת הדרך</div><b style="font-size:18px">${money(total)}</b></div></div>
+    <div class="muted" style="font-size:13px;margin-top:4px">לעומת הרשת היקרה ביותר על אותם מוצרים, לפי המחירים ביום השליחה (${all.length} הזמנות).</div></div>`;
+}
+// מצב ההזמנה בקו זמן: נשלחה ← שולמה ← הגיעה (בחנות: נקנה ← שולם)
+function orderTimeline(o) {
+  const steps = o.chain === "store" ? [["נקנה", true], ["שולם", o.cart != null]]
+    : [["נשלחה", true], ["שולמה", o.cart != null], ["הגיעה", !!(o.received || o.check)]];
+  return `<div class="tl" aria-label="מצב ההזמנה">${steps.map(([l, on]) => `<span class="tl-s ${on ? "on" : ""}"><i></i>${l}</span>`).join('<span class="tl-l"></span>')}</div>`;
+}
 function ordersSheet() {
   // הזמנה אחרונה שעוד לא נשמרו בה החוסרים (מלפני העדכון) – מהדוח של המילוי האחרון
   if (orderMissFromFill(S.settings.lastFill, true)) commit();
@@ -725,8 +770,24 @@ function ordersSheet() {
   const month = o => new Date(o.at).toLocaleDateString(LOC(), { month: "long", year: "numeric" });
   const date = o => new Date(o.at).toLocaleDateString(LOC(), { weekday: "short", day: "numeric", month: "numeric" }) + " " + new Date(o.at).toTimeString().slice(0, 5);
   let last = "";
+  const seg = `<div class="seg" role="tablist">
+    <button role="tab" data-otab="orders" aria-selected="${ordersTab === "orders"}" class="${ordersTab === "orders" ? "on" : ""}">${icon("receipt", 18)} הזמנות (${all.length})</button>
+    <button role="tab" data-otab="spend" aria-selected="${ordersTab === "spend"}" class="${ordersTab === "spend" ? "on" : ""}">💚 הוצאות וחיסכון</button></div>`;
+  if (ordersTab === "spend") {
+    sheet(`<h2 style="margin-top:0">🧾 הזמנות והוצאות</h2>${seg}${savingsCard()}${spendingCard()}
+      <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
+    const r0 = $("#sheet-root");
+    r0.querySelectorAll("[data-otab]").forEach(el => el.onclick = () => { ordersTab = el.dataset.otab; ordersSheet(); });
+    const bi0 = r0.querySelector("#budget-in");
+    if (bi0) bi0.onchange = () => {
+      const v = parseFloat(bi0.value.replace(/[^\d.]/g, ""));
+      Object.assign(S.settings, { budget: v > 0 ? Math.round(v) : null, t: now() });
+      commit(); ordersSheet();
+    };
+    return;
+  }
   sheet(`<h2 style="margin-top:0">🧾 הזמנות והוצאות</h2>
-    ${spendingCard()}
+    ${seg}
     <div class="chips" style="margin-bottom:8px">${["all", ...places].map(p => `<button class="chip ${p === ordersFilter ? "on" : ""}" data-of="${esc(p)}">${p === "all" ? "הכל" : esc(ORDER_PLACE(p))} (${p === "all" ? all.length : all.filter(o => o.chain === p).length})</button>`).join("")}</div>
     <div class="muted" style="margin-bottom:6px">${shown.length} הזמנות${sum ? ` · סה"כ ${money(sum)}` : ""}</div>
     ${shown.map(o => {
@@ -735,7 +796,9 @@ function ordersSheet() {
       const missTag = miss.length ? `<span style="color:var(--warn)">⚠️ ${miss.length} חוסרים${missOpen < miss.length ? ` (${miss.length - missOpen} הוחזרו)` : ""}</span> · ` : checkTag(o);
       return `${head}<details class="card" style="margin-bottom:8px" data-order="${o.id}" ${o.id === openOrder ? "open" : ""}><summary class="row" style="cursor:pointer;gap:8px">
           <div class="grow"><b>${esc(ORDER_PLACE(o.chain))}</b> <span class="muted">· ${esc(date(o))}</span>
-            <div class="muted" style="font-size:13px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${missTag}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div></div>
+            <div class="muted" style="font-size:13px">${orderOpen(o) ? "⏳ בתהליך · " : ""}${missTag}${o.items.length} פריטים${o.by ? ` · ${esc(o.by)}` : ""}${o.cart != null ? " · 🧾 לפי העגלה" : o.est != null ? " · משוער" : ""}</div>
+            ${o.save > 0 ? `<div class="save-tag">💚 חסכת ${money(o.save)} לעומת ${esc(chains[o.vs] || CART_NAMES[o.vs] || o.vs || "הרשת היקרה")}</div>` : ""}
+            ${orderTimeline(o)}</div>
           <b>${tot != null ? money(tot) : ""}</b>
           <button class="btn small ghost" data-odel="${o.id}" title="מחיקת ההזמנה" aria-label="מחיקת ההזמנה">🗑</button></summary>
         ${orderOpen(o) ? `<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><span class="who" style="background:#fef3c7;color:#92400e">⏳ בתהליך</span>
@@ -760,6 +823,7 @@ function ordersSheet() {
     <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
   const root = $("#sheet-root");
   root.querySelectorAll("[data-of]").forEach(el => el.onclick = () => { ordersFilter = el.dataset.of; ordersSheet(); });
+  root.querySelectorAll("[data-otab]").forEach(el => el.onclick = () => { ordersTab = el.dataset.otab; ordersSheet(); });
   root.querySelectorAll("details[data-order]").forEach(d => d.ontoggle = () => { if (d.open) openOrder = d.dataset.order; else if (openOrder === d.dataset.order) openOrder = null; });
   const back = (o, names) => {
     const { added, already } = returnMissing(o, names);
@@ -3110,6 +3174,7 @@ function cartSummarySheet(chain) {
       ${!fresh && est == null ? `<div class="muted">אין עדיין סכום – הוא יופיע בעגלה באתר.</div>` : ""}
       ${fresh && est != null && Math.abs(fresh.total - est) >= 1 ? `<div class="muted" style="font-size:13px;margin-top:4px">הפרש: ${money(Math.abs(fresh.total - est))} ${fresh.total > est ? "יותר" : "פחות"} מהמשוער</div>` : ""}
     </div>
+    ${o?.save > 0 ? `<div class="card save-card" style="text-align:center">💚 בהזמנה הזו חסכת <b>${money(o.save)}</b> לעומת ${esc(chains[o.vs] || CART_NAMES[o.vs] || o.vs || "הרשת היקרה")}</div>` : ""}
     ${r ? `<div class="card"><div>✅ ${r.ok} מתוך ${r.total} מוצרים עברו לעגלה${r.substituted?.length ? ` · 🔄 ${r.substituted.length} עם תחליף` : ""}</div>
       ${missing ? `<div style="color:#b5470b;margin-top:4px">⚠️ ${missing} חוסרים – נשארים ברשימה תחת "חוסרים / לא זמינים" כדי למצוא להם חלופה</div>` : ""}</div>` : ""}
     <div class="muted" style="margin:8px 0">ℹ️ ${CLUB_NOTE}</div>
