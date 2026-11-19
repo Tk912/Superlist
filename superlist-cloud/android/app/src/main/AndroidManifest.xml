@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- רטט קצר כשמסמנים מוצר ברשימה -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- הסורקים של Google (ברקוד, חשבונית) נעולים לאורך, ומזה Play מסיק שהאפליקציה דורשת מסך לאורך
+         ולא מציע אותה לטאבלטים/מחשבים. כאן מצהירים שזה לא חובה. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
 
     <application
         android:label="הסל החכם"
