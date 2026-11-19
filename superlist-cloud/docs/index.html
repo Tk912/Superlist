@@ -263,6 +263,20 @@ nav button .t { white-space: nowrap; }
 .chip { min-height: 36px; }
 .icon-btn { min-width: 40px; min-height: 40px; }
 .qty button { width: 36px; height: 36px; }
+/* ---------- תצוגה מקוצרת: שורה אחת לכל מוצר (לרשימות ארוכות) ---------- */
+body.compact .tiles { grid-template-columns: 1fr; gap: 4px; }
+body.compact .tile { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 4px 6px 4px 8px; }
+body.compact .tile-top { display: contents; }
+body.compact .tile-img, body.compact .tile-ph { order: 1; width: 32px; height: 32px; font-size: 18px; border-radius: 8px; }
+body.compact .tile-name { order: 2; flex: 1; }
+body.compact .tile-bottom { order: 3; margin: 0; }
+body.compact .tile-tools { order: 4; margin: 0; }
+body.compact .tile-price { order: 5; flex-basis: 100%; padding-inline-start: 40px; margin-top: -4px; }
+body.compact .tile .tags { display: none; }
+body.compact .tile > :not(.tile-top):not(.tile-bottom):not(.tile-price):not(.tile-check) { order: 6; flex-basis: 100%; }
+body.compact .tile .qty button { width: 36px; height: 36px; }
+body.compact .tile-check { position: static; order: 0; }
+.view-toggle { display: inline-flex; align-items: center; gap: 6px; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
@@ -1397,7 +1411,11 @@ function priceFor(item) {
 // אייקונים (Lucide, רישיון MIT) – במקום אימוג'י, שנראים אחרת בכל טלפון ונחתכים
 const ICON = {"list": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M12 11h4\"/><path d=\"M12 16h4\"/><path d=\"M8 11h.01\"/><path d=\"M8 16h.01\"/>", "book": "<path d=\"M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z\"/><path d=\"M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z\"/>", "prices": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>", "settings": "<line x1=\"21\" x2=\"14\" y1=\"4\" y2=\"4\"/><line x1=\"10\" x2=\"3\" y1=\"4\" y2=\"4\"/><line x1=\"21\" x2=\"12\" y1=\"12\" y2=\"12\"/><line x1=\"8\" x2=\"3\" y1=\"12\" y2=\"12\"/><line x1=\"21\" x2=\"16\" y1=\"20\" y2=\"20\"/><line x1=\"12\" x2=\"3\" y1=\"20\" y2=\"20\"/><line x1=\"14\" x2=\"14\" y1=\"2\" y2=\"6\"/><line x1=\"8\" x2=\"8\" y1=\"10\" y2=\"14\"/><line x1=\"16\" x2=\"16\" y1=\"18\" y2=\"22\"/>", "help": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/><path d=\"M12 17h.01\"/>", "mic": "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>", "scan": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><path d=\"M8 7v10\"/><path d=\"M12 7v10\"/><path d=\"M17 7v10\"/>", "x": "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", "cart": "<circle cx=\"8\" cy=\"21\" r=\"1\"/><circle cx=\"19\" cy=\"21\" r=\"1\"/><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\"/>", "more": "<circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/><circle cx=\"5\" cy=\"12\" r=\"1\"/>", "store": "<path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\"/><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\"/><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\"/><path d=\"M2 7h20\"/><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\"/>", "receipt": "<path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\"/><path d=\"M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8\"/><path d=\"M12 17.5v-11\"/>", "users": "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>", "repeat": "<path d=\"m17 2 4 4-4 4\"/><path d=\"M3 11v-1a4 4 0 0 1 4-4h14\"/><path d=\"m7 22-4-4 4-4\"/><path d=\"M21 13v1a4 4 0 0 1-4 4H3\"/>", "import": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" x2=\"12\" y1=\"15\" y2=\"3\"/>", "sort": "<path d=\"m21 16-4 4-4-4\"/><path d=\"M17 20V4\"/><path d=\"m3 8 4-4 4 4\"/><path d=\"M7 4v16\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/>", "eraser": "<path d=\"m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21\"/><path d=\"M22 21H7\"/><path d=\"m5 11 9 9\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/>", "cloud": "<path d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\"/>", "alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>"};
 const icon = (n, s = 20) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+// תצוגה מקוצרת של הרשימה (שורה לכל מוצר) – נשמרת במכשיר
+var COMPACT_KEY = "superlist-compact", compactView = false;
+try { compactView = !!localStorage.getItem(COMPACT_KEY); } catch {}
 function renderList() {
+  document.body.classList.toggle("compact", compactView);
   const items = live();
   const open = items.filter(i => !i.done), done = items.filter(i => i.done);
   const sug = suggestions();
@@ -1472,7 +1490,8 @@ function renderList() {
   ${updateBanner() || installBanner()}
   ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
-  <h2>${items.length ? `ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})` : ""}</h2>
+  ${items.length ? `<div class="row" style="align-items:center;gap:8px"><h2 class="grow">ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})</h2>
+    ${items.length > 3 ? `<button class="chip view-toggle" data-act="view-mode" aria-pressed="${compactView}">${compactView ? "▦ אריחים" : "☰ מקוצר"}</button>` : ""}</div>` : "<h2></h2>"}
   ${missBlock}
   ${items.length ? deptOrder().filter(c => byDept[c]).map(deptBlock).join("") : ""}
   ${!open.length ? `<div class="card empty">${done.length ? "הכל בעגלה! 🎉" : "הרשימה ריקה. אפשר להוסיף פריטים, או להוסיף מצרכים ממתכון בלשונית מתכונים."}</div>` : ""}
@@ -3963,6 +3982,11 @@ function onViewClick(e) {
     case "autolink": return autoLink();
     case "import": return importSheet();
     case "orders": return ordersSheet();
+    case "view-mode":
+      compactView = !compactView;
+      try { localStorage.setItem(COMPACT_KEY, compactView ? "1" : ""); } catch {}
+      document.body.classList.toggle("compact", compactView);
+      return render();
     case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); setShoppingNow(true); return render();
     case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); setShoppingNow(false); return render();
     case "dept-order": return deptOrderSheet();
