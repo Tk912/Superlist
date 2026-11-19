@@ -89,7 +89,40 @@
   // מחפשים באתר לפי השם המדויק, לפי מה שכתוב ברשימה, ובלשון יחיד ("עגבניות" -> "עגבניה": ברמי לוי רק כך מופיעות העגבניות עצמן).
   // עוצרים כשנמצא שם זהה; אחרת בוחרים את ההתאמה הטובה מכל התוצאות.
   const singular = s => String(s || "").split(/\s+/).map(w => w.length > 4 && /ות$/.test(w) ? w.slice(0, -2) + "ה" : w.length > 4 && /ים$/.test(w) ? w.slice(0, -2) : w).join(" ");
+  // חלופות לחוסרים: אותו קוד הוספה של כל אתר, אבל במקום לבחור לבד –
+  // simMode.list: מחזיר (בזריקה) עד 4 מוצרים דומים מהחיפוש באתר; simMode.pick: מוסיף את המוצר שבחרת
+  let simMode = null;
+  async function similarFrom(search, nameOf, it) {
+    // מילים כלליות ("בטעם", "עם", "ללא") לא קובעות דמיון
+    const GEN = new Set(["בטעמ", "טעמ", "עמ", "ללא", "של", "מארז", "חדש", "מבצע", "אריזה", "גדול", "קטנ"]);
+    const qs = words(it.name).filter(w => !NOISE.has(w) && !GEN.has(w));
+    const plain = String(it.name || "").replace(/\d+([.,]\d+)?\s*(%|גרם|גר'?|ג'?|מ"ל|מל|ליטר|ל'?|ק"ג|קג|יח'?)?/g, " ").replace(/\s+/g, " ").trim();
+    const ws = plain.split(" ").filter(w => w.length > 1);
+    // שמות שונים לאותו מוצר באתרים ("חלב שקדים" = "משקה שקדים")
+    const syn = plain.replace(/^חלב (שקדים|סויה|שיבולת שועל|שיבולת|אורז|קוקוס)/, "משקה $1");
+    const queries = [...new Set([plain, syn, ws.slice(0, 2).join(" "), syn.split(" ").slice(0, 2).join(" "), ws[0], singular(ws[0] || "")].filter(q => q && q.length > 1))];
+    const pool = [], seen = new Set();
+    for (const q of queries) {
+      let res = [];
+      try { res = await search(q); } catch {}
+      for (const x of res) { const n = nameOf(x); if (n && !seen.has(n)) { seen.add(n); pool.push(x); } }
+      if (pool.length >= 16) break;
+    }
+    // דומה = סוג המוצר (אחת משתי המילים הראשונות ברשימה) מופיע בתחילת השם באתר; ניקוד לפי המילים המשותפות –
+    // המילים הראשונות שוות יותר ("חלב שקדים בטעם מנגו": חלב 3, שקדים 2, מנגו 1)
+    const synQs = words(syn).filter(w => !NOISE.has(w) && !GEN.has(w));
+    const score = x => Math.max(score1(x, qs), syn !== plain ? score1(x, synQs) : 0);
+    const score1 = (x, qs) => {
+      const ns = words(nameOf(x));
+      if (!qs.slice(0, 2).some(w => ns.slice(0, 3).some(n => wm(w, n)))) return 0;
+      // מילה שהופכת למוצר אחר ("בציפוי", "ממולא") ולא הייתה ברשימה – יורד למטה
+      return qs.reduce((t, w, i) => t + (ns.some(n => wm(w, n)) ? (i === 0 ? 3 : i === 1 ? 2 : 1) : 0), 0) - 2 * extraMods(ns, qs) + 0.01;
+    };
+    return pool.map((x, k) => ({ x, sc: score(x), k })).filter(o => o.sc > 0).sort((a, b) => b.sc - a.sc || a.k - b.k).slice(0, 4).map(o => o.x);
+  }
   async function searchPick(search, nameOf, it, isWeighted) {
+    if (simMode?.pick) return { found: simMode.pick, exact: true };
+    if (simMode?.list) throw { simList: await similarFrom(search, nameOf, it), nameOf };
     const pool = [];
     let m = { found: null };
     for (const q of [...new Set([it.product, it.name, singular(it.name)].filter(Boolean))]) {
@@ -105,6 +138,7 @@
   const SITES = {
     shufersal: {
       match: /shufersal\.co\.il$/,
+      priceOf: x => x.price,
       ready: () => window.ACC && window.$,
       logged: async () => (await (await fetch("/online/he/authentication/get-status-includes-otp")).text()).trim() === "true",
       async add({ name, code, kg, weighted, product }) {
@@ -112,12 +146,12 @@
         const tiles = async q => {
           const html = await (await fetch(ctx + "/search?text=" + encodeURIComponent(q))).text();
           return [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("li[data-product-code]")]
-            .map(e => ({ code: e.dataset.productCode, method: e.dataset.sellingMethod, name: e.dataset.productName, ok: e.dataset.productPurchasable !== "false" }));
+            .map(e => ({ code: e.dataset.productCode, method: e.dataset.sellingMethod, name: e.dataset.productName, ok: e.dataset.productPurchasable !== "false", price: +e.dataset.productPrice || null }));
         };
         let found = null;
         const tries = code ? ["P_" + code].concat(/^7290{5,}\d+$/.test(code) ? ["P_" + parseInt(code.slice(3), 10)] : []) : [];
         for (const c of tries) { found = (await tiles(c.slice(2))).find(x => x.code === c); if (found) break; }
-        if (!found) { const m = await searchPick(async q => (await tiles(q)).filter(x => x.ok), x => x.name, this.it, x => /WEIGHT/i.test(x.method || "")); found = m.found; if (!found) return notFound(m); }
+        if (!found) { const m = await searchPick(async q => { const t = await tiles(q); return simMode && !t.some(x => x.ok) ? t : t.filter(x => x.ok); }, x => x.name, this.it, x => /WEIGHT/i.test(x.method || "")); found = m.found; if (!found) return notFound(m); }
         const method = (found.method || "BY_UNIT").toUpperCase(), byW = method === "BY_WEIGHT";
         const q = byW ? round05(kg) : units(this.it);
         // שופרסל מחזיר שגיאה (500) כשכמה מוצרים נוספים לעגלה באותו רגע – לכן ההוספות עצמן אחת-אחת (החיפוש נשאר במקביל),
@@ -151,6 +185,7 @@
     },
     ramilevy: {
       match: /rami-levy\.co\.il$/,
+      priceOf: p => p.price?.price,
       ready: () => window.$nuxt && $nuxt.$store,
       logged: async () => !!$nuxt.$store.getters["authuser/isAuthenticated"],
       // "מחיר משלוח" – שורה שהאתר מוסיף לעגלה בעצמו, לא מוצר
@@ -199,6 +234,7 @@
     },
     sp: {  // טיב טעם, קרפור (אותה פלטפורמה)
       match: /(tivtaam\.co\.il|carrefour\.co\.il)$/,
+      priceOf: p => p.branch?.salePrice ?? p.branch?.regularPrice,
       ready: () => { try { return !!angular.element(document.body).injector().get("Config").branch; } catch { return false; } },
       logged: async () => { const U = angular.element(document.body).injector().get("User"); return !!((U.session && U.session.token) || (U.data && U.data.id)); },
       existing: () => Object.keys(angular.element(document.body).injector().get("Cart").lines || {}).length,
@@ -227,6 +263,7 @@
     },
     victory: {  // ויקטורי – האתר החדש (נובמבר 2026): מוצרים מעמוד החיפוש, עגלה ב-api.victoryonline.co.il
       match: /victoryonline\.co\.il$/,
+      priceOf: p => typeof p.price === "number" ? p.price : parseFloat(p.price) || null,
       ready: () => document.readyState !== "loading",
       logged: async () => !/שלום אורח/.test(document.body.innerText),
       async prepare() {
@@ -307,6 +344,7 @@
     },
     hazihinam: {  // חצי חינם: ה-API של האתר עצמו (proxy/api), Type 1 = יחידות, Type 2 = ק"ג
       match: /hazi-hinam\.co\.il$/,
+      priceOf: p => p.Price_NET || p.Price_Regular,
       ready: () => document.readyState !== "loading",
       logged: async () => !!(await (await fetch("/proxy/api/user/info", { credentials: "include" })).json())?.Results?.UserInfo,
       cartItems: async () => (await (await fetch("/proxy/api/item/getItemsInCart", { credentials: "include" })).json())?.Results?.CartItems?.Items || [],
@@ -352,6 +390,7 @@
     },
     yochananof: {
       match: /yochananof\.co\.il$/,
+      priceOf: p => p.price_range?.minimum_price?.final_price?.value,
       ready: () => document.readyState !== "loading",
       logged: async () => !!(localStorage.getItem("token") || localStorage.getItem("remember-me-token")),
       async prepare() {
@@ -383,7 +422,7 @@
         const gql = async (query, variables = {}) => (await fetch("https://api.yochananof.co.il/graphql", { method: "POST", headers, body: JSON.stringify({ query, variables }) })).json();
         if (!window.__slCart) await this.site?.prepare?.();
         if (!window.__slCart) return { ok: false, reason: "לא נמצאה עגלה" };
-        const find = async q => (await gql("query($q:String!){ products(search:$q, pageSize:20){ items { sku name stock_status } } }", { q })).data?.products?.items || [];
+        const find = async q => (await gql("query($q:String!){ products(search:$q, pageSize:20){ items { sku name stock_status price_range { minimum_price { final_price { value } } } } } }", { q })).data?.products?.items || [];
         let found = null;
         if (code) found = (await find(code)).find(p => p.sku === code);
         if (!found) { const m = await searchPick(async q => (await find(q)).filter(p => p.stock_status !== "OUT_OF_STOCK"), p => p.name, this.it); found = m.found; if (!found) return notFound(m); }
@@ -541,4 +580,66 @@
   go.onclick = e => { e.preventDefault(); e.stopPropagation(); goCart(go); };
   price.after(go);
   window.__slRunning = false;
+
+  // ---------- מוצרים דומים באתר במקום מה שחסר ----------
+  // לכל מוצר שלא עבר מחפשים באתר הזה מוצרים דומים (עד 4), עם מחיר וכפתור "הוסף" – אתם בוחרים, שום דבר לא נוסף לבד.
+  // מה שנוסף כחלופה יוצא מהחוסרים באפליקציה (הדוח נשלח שוב).
+  const failedIdx = results.map((r, k) => !r.ok ? k : -1).filter(k => k >= 0);
+  if (!failedIdx.length) return;
+  const sim = document.createElement("div");
+  sim.style.cssText = "margin:8px 0;padding:8px 10px;border:2px solid #b5470b;border-radius:12px;background:#fdf3ec";
+  sim.innerHTML = '<b>🔍 מוצרים דומים באתר במקום מה שחסר</b><div style="font-size:13px;color:#4b5a51">מחפש…</div>';
+  go.after(sim);
+  const money2 = v => v > 0 ? "₪" + (Math.round(v * 100) / 100).toFixed(2) : "";
+  const resend = () => {
+    const rep = { ...report, at: Date.now(), ok: n - failed.length, failed, substituted };
+    try { window.SuperlistCart?.report(JSON.stringify(rep)); } catch {}
+    try { window.opener?.postMessage({ type: "superlist-fill-report", report: rep }, "https://tk912.github.io"); } catch {}
+  };
+  let chain = Promise.resolve(), any = false;
+  for (const k of failedIdx) {
+    const it = job.items[k], probe = { ...it, code: null, alt: null };
+    let list = [], nameOf = x => x.name;
+    simMode = { list: true };
+    try { await site.add.call({ it: probe, site }, probe); } catch (e) { if (e?.simList) { list = e.simList; nameOf = e.nameOf; } }
+    simMode = null;
+    if (!list.length) continue;
+    any = true;
+    const blk = document.createElement("div");
+    blk.style.cssText = "padding:6px 0;border-top:1px solid #f0d9c8";
+    const t = document.createElement("div");
+    t.style.cssText = "font-weight:600;margin-bottom:4px";
+    t.textContent = "במקום: " + it.name;
+    blk.appendChild(t);
+    for (const x of list) {
+      const b = document.createElement("button");
+      const pr = money2(site.priceOf?.(x));
+      b.style.cssText = "display:flex;align-items:center;gap:8px;width:100%;margin:4px 0;padding:8px 10px;border:1px solid #e3e8e4;border-radius:10px;background:#fff;color:#1b2620;font:15px system-ui;text-align:start;cursor:pointer;min-height:44px";
+      b.innerHTML = '<span style="flex:1"></span><b style="white-space:nowrap"></b><span style="color:#0f7a4a;font-weight:700;white-space:nowrap">+ הוסף</span>';
+      b.children[0].textContent = nameOf(x);
+      b.children[1].textContent = pr;
+      b.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        if (b.disabled) return;
+        b.disabled = true; b.children[2].textContent = "מוסיף…";
+        chain = chain.then(async () => {
+          simMode = { pick: x };
+          let r;
+          try { r = await site.add.call({ it: probe, site }, probe); } catch (err) { r = { ok: false, reason: String(err?.message || err).slice(0, 60) }; }
+          simMode = null;
+          if (r?.ok) {
+            b.children[2].textContent = "✓ נוסף";
+            b.style.borderColor = "#0f7a4a"; b.style.background = "#eef7f1";
+            const f = failed.findIndex(f => f.name === it.name);
+            if (f >= 0) failed.splice(f, 1);
+            substituted.push({ name: it.name, alt: nameOf(x) });
+            resend();
+          } else { b.disabled = false; b.children[2].textContent = "לא הצלחתי – שוב"; }
+        });
+      };
+      blk.appendChild(b);
+    }
+    sim.appendChild(blk);
+  }
+  sim.querySelector("div").textContent = any ? "בחרו מה להוסיף לעגלה במקום. שום דבר לא נוסף בלי שתבחרו." : "לא נמצאו מוצרים דומים באתר.";
 })();
