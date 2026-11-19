@@ -290,6 +290,20 @@ body.compact .tile-check { position: static; order: 0; }
 .save-tag { font-size: 13px; color: var(--accent); font-weight: 600; margin-top: 2px; }
 .save-card { background: var(--accent-soft); }
 .save-big { font-size: 30px; font-weight: 800; color: var(--accent); line-height: 1.15; font-variant-numeric: tabular-nums; }
+/* סימון מוצר: ה-✓ "קופץ" והאריח נלחץ קלות */
+@keyframes sl-pop { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes sl-press { 0% { transform: scale(1); } 40% { transform: scale(.96); } 100% { transform: scale(1); } }
+.tile.just-done { animation: sl-press .3s ease-out; }
+.tile.just-done .tile-check { animation: sl-pop .35s ease-out; }
+@media (prefers-reduced-motion: reduce) { .tile.just-done, .tile.just-done .tile-check { animation: none; } }
+/* הדרכה למשתמש חדש */
+.ob { text-align: center; padding: 6px 4px 2px; }
+.ob-ic { width: 84px; height: 84px; margin: 4px auto 12px; border-radius: 24px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+.ob h3 { margin: 0 0 8px; font-size: 21px; }
+.ob p { margin: 0 auto 6px; max-width: 320px; font-size: 16px; color: var(--muted); }
+.ob-dots { display: flex; justify-content: center; gap: 6px; margin: 14px 0; }
+.ob-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); transition: width .2s; }
+.ob-dots i.on { width: 22px; border-radius: 4px; background: var(--accent); }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
@@ -1475,6 +1489,7 @@ function priceFor(item) {
 // אייקונים (Lucide, רישיון MIT) – במקום אימוג'י, שנראים אחרת בכל טלפון ונחתכים
 const ICON = {"list": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M12 11h4\"/><path d=\"M12 16h4\"/><path d=\"M8 11h.01\"/><path d=\"M8 16h.01\"/>", "book": "<path d=\"M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z\"/><path d=\"M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z\"/>", "prices": "<path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>", "settings": "<line x1=\"21\" x2=\"14\" y1=\"4\" y2=\"4\"/><line x1=\"10\" x2=\"3\" y1=\"4\" y2=\"4\"/><line x1=\"21\" x2=\"12\" y1=\"12\" y2=\"12\"/><line x1=\"8\" x2=\"3\" y1=\"12\" y2=\"12\"/><line x1=\"21\" x2=\"16\" y1=\"20\" y2=\"20\"/><line x1=\"12\" x2=\"3\" y1=\"20\" y2=\"20\"/><line x1=\"14\" x2=\"14\" y1=\"2\" y2=\"6\"/><line x1=\"8\" x2=\"8\" y1=\"10\" y2=\"14\"/><line x1=\"16\" x2=\"16\" y1=\"18\" y2=\"22\"/>", "help": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/><path d=\"M12 17h.01\"/>", "mic": "<path d=\"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" x2=\"12\" y1=\"19\" y2=\"22\"/>", "scan": "<path d=\"M3 7V5a2 2 0 0 1 2-2h2\"/><path d=\"M17 3h2a2 2 0 0 1 2 2v2\"/><path d=\"M21 17v2a2 2 0 0 1-2 2h-2\"/><path d=\"M7 21H5a2 2 0 0 1-2-2v-2\"/><path d=\"M8 7v10\"/><path d=\"M12 7v10\"/><path d=\"M17 7v10\"/>", "x": "<path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/>", "cart": "<circle cx=\"8\" cy=\"21\" r=\"1\"/><circle cx=\"19\" cy=\"21\" r=\"1\"/><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\"/>", "more": "<circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/><circle cx=\"5\" cy=\"12\" r=\"1\"/>", "store": "<path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\"/><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\"/><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\"/><path d=\"M2 7h20\"/><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\"/>", "receipt": "<path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\"/><path d=\"M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8\"/><path d=\"M12 17.5v-11\"/>", "users": "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>", "repeat": "<path d=\"m17 2 4 4-4 4\"/><path d=\"M3 11v-1a4 4 0 0 1 4-4h14\"/><path d=\"m7 22-4-4 4-4\"/><path d=\"M21 13v1a4 4 0 0 1-4 4H3\"/>", "import": "<path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" x2=\"12\" y1=\"15\" y2=\"3\"/>", "sort": "<path d=\"m21 16-4 4-4-4\"/><path d=\"M17 20V4\"/><path d=\"m3 8 4-4 4 4\"/><path d=\"M7 4v16\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/>", "eraser": "<path d=\"m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21\"/><path d=\"M22 21H7\"/><path d=\"m5 11 9 9\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/>", "cloud": "<path d=\"M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z\"/>", "alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/>"};
 const icon = (n, s = 20) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+var justToggled = null;
 // תצוגה מקוצרת של הרשימה (שורה לכל מוצר) – נשמרת במכשיר
 var COMPACT_KEY = "superlist-compact", compactView = false;
 try { compactView = !!localStorage.getItem(COMPACT_KEY); } catch {}
@@ -1498,7 +1513,7 @@ function renderList() {
       <button class="btn small ghost" style="width:100%;margin:2px 0 0;display:flex;align-items:center;justify-content:center;gap:6px" data-act="link">${icon("search", 16)} חלופה</button>
       <button class="miss-keep" data-act="unmiss">להשאיר לפעם הבאה</button>` : "";
     const img = thumb(i.code, "tile-img", `data-act="img" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img">${DEPT_ICON[i.cat] || "🛒"}</span>`;
-    return `<div class="tile ${i.done ? "done" : ""}" data-id="${i.id}">
+    return `<div class="tile ${i.done ? "done" : ""} ${i.id === justToggled ? "just-done" : ""}" data-id="${i.id}">
       ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
       <div class="tile-top">${img}<div class="tile-name" data-act="toggle">${esc(i.name)} ${who}</div>
         ${i.done || shop ? "" : `<div class="tile-tools"><button class="icon-btn" data-act="del" title="מחק" aria-label="מחק">${icon("x", 18)}</button></div>`}</div>
@@ -3683,6 +3698,7 @@ function renderHelp() {
   const sec = (title, body, open = false) => `<details ${open ? "open" : ""}><summary>${title}</summary>${body}</details>`;
   return `<div class="help">
   <h2>❓ הוראות הפעלה</h2>
+  <button class="btn ghost" style="width:100%;margin-bottom:10px" data-act="onboard">👋 הדרכה קצרה (3 מסכים)</button>
   <div class="card">הסל החכם עושה בשבילך את הקניות בסופר אונליין: בונים רשימה (גם יחד עם בן/בת הזוג), רואים כמה עולה הסל בכל רשת ומתי המשלוח הכי קרוב, ובלחיצה אחת העגלה באתר הסופר מתמלאת. <b>התשלום תמיד נשאר אצלך.</b></div>
 
   ${sec("👤 בלי חשבון (מצב אורח)", `<ul>
@@ -3782,7 +3798,36 @@ function renderHelp() {
 }
 
 // ================= תשתית תצוגה =================
+// ---------- הדרכה קצרה למשתמש חדש (3 מסכים) ----------
+// מוצגת פעם אחת, רק למי שעוד אין לו רשימה או הזמנות. אפשר לראות שוב מ"הוראות".
+var ONBOARD_KEY = "superlist-onboarded", onboardChecked = false;
+const ONBOARD = [
+  ["list", "בונים רשימה", "כותבים, אומרים בקול 🎤 או סורקים ברקוד. אפשר לשתף את הרשימה עם בן/בת הזוג – וכל שינוי מופיע אצל שניכם."],
+  ["prices", "רואים איפה הכי זול", "האפליקציה משווה את מחיר הסל בכל הרשתות, כולל מבצעים, ומראה גם מתי המשלוח הקרוב."],
+  ["cart", "שולחים לסופר בלחיצה", "\"שלח לסופר\" ממלא את העגלה באתר בשבילך. מה שחסר – מקבל הצעות לחלופות, ובסוף רואים כמה חסכת 💚."],
+];
+function onboardSheet(k = 0) {
+  const [ic, title, text] = ONBOARD[k], last = k === ONBOARD.length - 1;
+  sheet(`<div class="ob" role="group" aria-label="הדרכה ${k + 1} מתוך ${ONBOARD.length}">
+      <div class="ob-ic">${icon(ic, 44)}</div><h3>${title}</h3><p>${text}</p>
+      <div class="ob-dots" aria-hidden="true">${ONBOARD.map((_, j) => `<i class="${j === k ? "on" : ""}"></i>`).join("")}</div></div>
+    <button class="btn" style="width:100%" id="ob-next">${last ? "בואו נתחיל" : "הבא ←"}</button>
+    ${last ? "" : `<button class="btn ghost" style="width:100%;margin-top:8px" id="ob-skip">דלג</button>`}`);
+  const done = () => { try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {} closeSheet(); };
+  $("#ob-next").onclick = () => last ? done() : onboardSheet(k + 1);
+  if ($("#ob-skip")) $("#ob-skip").onclick = done;
+}
+function maybeOnboard() {
+  if (onboardChecked || gate !== "ok") return;
+  onboardChecked = true;
+  let seen = false; try { seen = !!localStorage.getItem(ONBOARD_KEY); } catch {}
+  if (seen) return;
+  // מי שכבר משתמש באפליקציה – לא צריך הדרכה
+  if (live().length || (S.orders || []).length) { try { localStorage.setItem(ONBOARD_KEY, "1"); } catch {} return; }
+  setTimeout(() => { if (!sheetOpen()) onboardSheet(0); }, 700);
+}
 function render() {
+  setTimeout(maybeOnboard, 0);
   const view = $("#view");
   const focus = document.activeElement?.id, val = focus && $("#" + focus)?.value;
   view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings, help: renderHelp }[tab]();
@@ -4021,7 +4066,13 @@ function onViewClick(e) {
   const item = S.items.find(i => i.id === t.closest("[data-id]")?.dataset.id);
   const touch = () => { item.t = now(); commit(); };
   switch (act) {
-    case "toggle": item.done = !item.done; return touch();
+    case "toggle":
+      item.done = !item.done;
+      // רטט קצר (בטלפון) ואנימציה של "✓" על המוצר שסומן
+      try { navigator.vibrate?.(item.done ? 18 : 8); } catch {}
+      justToggled = item.done ? item.id : null;
+      setTimeout(() => { justToggled = null; }, 600);
+      return touch();
     case "inc": item.qty = item.unit === "kg" ? roundKg((item.qty || 0) + KG_STEP) : (item.qty || 1) + 1; touch(); return refreshCompare().then(render);
     case "dec": {
       const min = item.unit === "kg" ? KG_STEP : 1;
@@ -4047,6 +4098,7 @@ function onViewClick(e) {
     case "autolink": return autoLink();
     case "import": return importSheet();
     case "orders": return ordersSheet();
+    case "onboard": return onboardSheet(0);
     case "view-mode":
       compactView = !compactView;
       try { localStorage.setItem(COMPACT_KEY, compactView ? "1" : ""); } catch {}
