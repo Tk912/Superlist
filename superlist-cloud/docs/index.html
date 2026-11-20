@@ -715,6 +715,56 @@ function budgetWarn(best) {
   const after = monthSpent() + best.total;
   return after > b ? `<div class="warn">💸 עם הסל הזה ההוצאה החודש תגיע ל-${money(after)} – מעל התקציב (${money(b)}) ב-${money(after - b)}.</div>` : "";
 }
+// ---------- הדוח החודשי ----------
+// כמה הוצאתם, השוואה לחודש הקודם, לפי רשת, כמה חסכתם, ומה קניתם הכי הרבה. אפשר לשתף בוואטסאפ.
+function monthReport(key) {
+  const name = new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString(LOC(), { month: "long", year: "numeric" });
+  const orders = (S.orders || []).filter(o => !o.deleted && monthKey(o.at) === key);
+  const spent = monthSpent(key), prev = monthSpent(key - 1);
+  const byChain = {};
+  for (const o of spentOrders().filter(o => monthKey(o.at) === key)) byChain[o.chain] = (byChain[o.chain] || 0) + orderTotal(o);
+  const saved = savedIn(orders.filter(o => o.save > 0));
+  const counts = {};
+  for (const o of orders) for (const i of o.items) counts[i.name] = (counts[i.name] || 0) + 1;
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const b = S.settings.budget;
+  return { key, name, orders: orders.length, spent, prev, byChain, saved, top, budget: b };
+}
+function monthReportText(r) {
+  const pct = r.prev ? Math.round((r.spent - r.prev) / r.prev * 100) : null;
+  return [`📊 הסל החכם – ${r.name}`,
+    `💸 הוצאה: ${money(r.spent)}${pct != null ? ` (${pct > 0 ? "+" : ""}${pct}% מהחודש הקודם)` : ""}`,
+    r.budget ? `🎯 תקציב ${money(r.budget)}: ${r.spent > r.budget ? `חריגה של ${money(r.spent - r.budget)}` : `נשארו ${money(r.budget - r.spent)}`}` : "",
+    `🧾 ${r.orders} הזמנות${Object.keys(r.byChain).length ? ": " + Object.entries(r.byChain).sort((a, b) => b[1] - a[1]).map(([c, v]) => `${ORDER_PLACE(c)} ${money(v)}`).join(", ") : ""}`,
+    r.saved ? `💚 חסכתם ${money(r.saved)} לעומת הרשת היקרה` : "",
+    r.top.length ? `🛒 הכי הרבה: ${r.top.map(([n, c]) => `${n}${c > 1 ? ` ×${c}` : ""}`).join(", ")}` : ""].filter(Boolean).join("\n");
+}
+var reportMonth = null;
+function monthReportSheet() {
+  const cur = monthKey(Date.now());
+  // בתחילת החודש (עד ה-5) – ברירת המחדל היא החודש שעבר
+  if (reportMonth == null) reportMonth = new Date().getDate() <= 5 && monthSpent(cur - 1) ? cur - 1 : cur;
+  const r = monthReport(reportMonth), text = monthReportText(r);
+  const pct = r.prev ? Math.round((r.spent - r.prev) / r.prev * 100) : null;
+  sheet(`<h2 style="margin-top:0">📊 הדוח החודשי</h2>
+    <div class="row" style="gap:8px;margin-bottom:8px"><button class="btn small ghost" id="mr-prev" aria-label="החודש הקודם">→</button>
+      <b class="grow" style="text-align:center">${esc(r.name)}</b>
+      <button class="btn small ghost" id="mr-next" aria-label="החודש הבא" ${reportMonth >= cur ? "disabled" : ""}>←</button></div>
+    <div class="card" style="text-align:center"><div class="muted">הוצאה</div><div class="save-big" style="color:var(--text)">${money(r.spent)}</div>
+      ${pct != null ? `<div class="muted" style="color:${pct > 0 ? "var(--warn)" : "var(--accent)"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% מהחודש הקודם (${money(r.prev)})</div>` : ""}
+      ${r.saved ? `<div style="margin-top:6px;color:var(--accent);font-weight:700">💚 חסכתם ${money(r.saved)}</div>` : ""}</div>
+    <div class="card" style="white-space:pre-line;font-size:15px" id="mr-text">${esc(text)}</div>
+    <div class="row" style="gap:8px"><button class="btn grow" id="mr-share">📤 שיתוף</button><button class="btn ghost grow" id="mr-copy">📋 העתקה</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>סגור</button>`);
+  $("#mr-prev").onclick = () => { reportMonth--; sub(monthReportSheet, ordersSheet); };
+  $("#mr-next").onclick = () => { if (reportMonth < cur) { reportMonth++; sub(monthReportSheet, ordersSheet); } };
+  $("#mr-copy").onclick = async () => toast(await copyText(text) ? "הדוח הועתק" : "לא הצלחתי להעתיק");
+  $("#mr-share").onclick = () => {
+    if (inApp && window.SuperlistNative?.share) return window.SuperlistNative.share(text);
+    if (navigator.share) return navigator.share({ title: "הדוח החודשי", text }).catch(() => {});
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+  };
+}
 function spendingCard() {
   const now0 = monthKey(Date.now()), b = S.settings.budget, spent = monthSpent(now0);
   const months = [5, 4, 3, 2, 1, 0].map(k => { const key = now0 - k; return { key, total: monthSpent(key), name: new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString(LOC(), { month: "short" }) }; });
@@ -870,10 +920,12 @@ function ordersSheet() {
     <button role="tab" data-otab="orders" aria-selected="${ordersTab === "orders"}" class="${ordersTab === "orders" ? "on" : ""}">${icon("receipt", 18)} הזמנות (${all.length})</button>
     <button role="tab" data-otab="spend" aria-selected="${ordersTab === "spend"}" class="${ordersTab === "spend" ? "on" : ""}">💚 הוצאות וחיסכון</button></div>`;
   if (ordersTab === "spend") {
-    sheet(`<h2 style="margin-top:0">🧾 הזמנות והוצאות</h2>${seg}${savingsCard()}${spendingCard()}
+    sheet(`<h2 style="margin-top:0">🧾 הזמנות והוצאות</h2>${seg}${savingsCard()}
+      <button class="btn ghost" style="width:100%;margin-bottom:10px" data-act="month-report">📊 הדוח החודשי – לצפייה ולשיתוף</button>${spendingCard()}
       <button class="btn ghost" style="width:100%" data-close>סגור</button>`);
     const r0 = $("#sheet-root");
     r0.querySelectorAll("[data-otab]").forEach(el => el.onclick = () => { ordersTab = el.dataset.otab; ordersSheet(); });
+    r0.querySelector("[data-act=month-report]").onclick = () => { reportMonth = null; sub(monthReportSheet, ordersSheet); };
     const bi0 = r0.querySelector("#budget-in");
     if (bi0) bi0.onchange = () => {
       const v = parseFloat(bi0.value.replace(/[^\d.]/g, ""));
@@ -1255,6 +1307,13 @@ function reminderPlan() {
       if (d > now()) out.push({ at: d, title: `🪄 הרשימה לשבוע מוכנה: ${wl.length} מוצרים`, body: `${wl.slice(0, 4).map(x => x.name).join(", ")}${wl.length > 4 ? "…" : ""} – פתחו את הסל החכם כדי לבחור ולהוסיף.` });
     }
   }
+  // הדוח החודשי: ב-1 לחודש ב-10:00, אם היו הזמנות בחודש שעבר
+  {
+    const d = new Date(now()); d.setMonth(d.getMonth() + 1, 1); d.setHours(10, 0, 0, 0);
+    const last = monthKey(now());
+    if ((S.orders || []).some(o => !o.deleted && monthKey(o.at) === last))
+      out.push({ at: d.getTime(), title: "📊 הדוח החודשי שלכם מוכן", body: "כמה הוצאתם, כמה חסכתם ומה קניתם הכי הרבה – בהזמנות ← הוצאות וחיסכון." });
+  }
   // מבצע על מוצר שקונים בקביעות (קבוע, או נקנה לפחות פעמיים) ולא ברשימה: התראה אחת ביום, על כל מבצע פעם אחת
   try { out.push(...dealAlerts(onList)); } catch {}
   for (const [day, names] of Object.entries(due)) out.push({ at: atHour(+day, 18), title: `⏰ כנראה נגמר לכם: ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`, body: "להוסיף לרשימת הקניות? פתחו את הסל החכם." });
@@ -1529,7 +1588,8 @@ function shopBar(items, done) {
       ${have.length ? `<select id="shop-chain" aria-label="באיזה סופר">${have.map(x => `<option value="${x.chain}" ${x.chain === c ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : ""}</div>
     <div class="row" style="margin-top:6px;font-size:14px"><span class="grow">✓ ${done.length} מתוך ${items.length}</span>
       ${all ? `<span>בעגלה <b>${money(inCart)}</b> מתוך ~${money(all)}</span>` : ""}</div>
-    <div class="bar" style="height:8px;margin-top:6px"><i style="width:${items.length ? done.length / items.length * 100 : 0}%"></i></div></div>`;
+    <div class="bar" style="height:8px;margin-top:6px"><i style="width:${items.length ? done.length / items.length * 100 : 0}%"></i></div>
+    <div class="muted" style="font-size:13px;margin-top:4px">⇅ ${learnedRoute(c) ? `המחלקות מסודרות לפי המסלול שלך ב${esc(chains[c] || c)}` : "סמנו מוצרים לפי הסדר שבו אתם עוברים בחנות – אחרי 2 קניות הרשימה תסתדר לפי המסלול שלכם"}</div></div>`;
 }
 document.addEventListener("change", e => {
   if (e.target.id !== "shop-chain") return;
@@ -1537,9 +1597,40 @@ document.addEventListener("change", e => {
   render();
 });
 // סדר המחלקות (כמו במעברים בסניף שלך). נשמר ברשימה, ומשמש גם מחוץ למצב קנייה.
+// במצב קנייה: אחרי 2 קניות באותה רשת – הסדר שבו סימנת בפועל (המסלול שלך בחנות)
 function deptOrder() {
   const saved = (S.settings.deptOrder || []).filter(c => CAT_ORDER.includes(c));
-  return [...saved, ...CAT_ORDER.filter(c => !saved.includes(c))];
+  const base = [...saved, ...CAT_ORDER.filter(c => !saved.includes(c))];
+  const L = shopMode ? learnedRoute(shopChain()) : null;
+  if (!L) return base;
+  return base.slice().sort((a, b) => (L[a]?.pos ?? 2 + base.indexOf(a) / 100) - (L[b]?.pos ?? 2 + base.indexOf(b) / 100));
+}
+var TRAIL_KEY = "superlist-shop-trail";
+// סדר שנלמד: לכל מחלקה – המיקום הממוצע (0 = ראשונה, 1 = אחרונה) לאורך הקניות; צריך לפחות 2 קניות
+function learnedRoute(chain) {
+  const L = chain && S.settings.deptLearn?.[chain];
+  return L && L.n >= 2 ? L.pos : null;
+}
+// מחלקה שסומן בה מוצר ראשון בקנייה הזו – נרשמת לפי הסדר
+function trailMark(item) {
+  if (!shopMode || !item?.done) return;
+  let t = []; try { t = JSON.parse(localStorage.getItem(TRAIL_KEY) || "[]"); } catch {}
+  const cat = CAT_ORDER.includes(item.cat) ? item.cat : "אחר";
+  if (!t.includes(cat)) { t.push(cat); try { localStorage.setItem(TRAIL_KEY, JSON.stringify(t)); } catch {} }
+}
+// בסוף הקנייה: מעדכנים את הסדר הנלמד לרשת הזו (ממוצע מצטבר, הקניות האחרונות שוקלות יותר)
+function trailLearn() {
+  let t = []; try { t = JSON.parse(localStorage.getItem(TRAIL_KEY) || "[]"); localStorage.removeItem(TRAIL_KEY); } catch {}
+  const chain = shopChain();
+  if (!chain || t.length < 3) return false;
+  const all = (S.settings.deptLearn ||= {}), L = all[chain] || { n: 0, pos: {} }, w = Math.min(L.n, 4);
+  t.forEach((cat, k) => {
+    const p = t.length > 1 ? k / (t.length - 1) : 0, cur = L.pos[cat];
+    L.pos[cat] = cur ? { pos: (cur.pos * w + p) / (w + 1), n: cur.n + 1 } : { pos: p, n: 1 };
+  });
+  L.n++; L.at = now();
+  all[chain] = L; S.settings.t = now();
+  return L.n === 2;
 }
 function deptOrderSheet() {
   const order = deptOrder();
@@ -1590,6 +1681,7 @@ let pressTimer = null, pressedAt = 0;
 function finishShopping() {
   const done = live().filter(i => i.done);
   if (!done.length) return toast("סמן קודם את מה שקנית");
+  if (trailLearn()) setTimeout(() => toast("⇅ מעכשיו הרשימה בחנות מסודרת לפי המסלול שלך"), 3500);
   const t = now();
   for (const i of done) {
     const k = norm(i.name), h = S.history[k] || { name: i.name, buys: [] };
@@ -4311,6 +4403,7 @@ function onViewClick(e) {
   switch (act) {
     case "toggle":
       item.done = !item.done;
+      trailMark(item);
       // רטט קצר (בטלפון) ואנימציה של "✓" על המוצר שסומן
       try { navigator.vibrate?.(item.done ? 18 : 8); } catch {}
       justToggled = item.done ? item.id : null;
@@ -4358,7 +4451,7 @@ function onViewClick(e) {
       document.body.classList.toggle("compact", compactView);
       return render();
     case "shop-enter": shopMode = true; try { localStorage.setItem(SHOP_KEY, "1"); } catch {} keepAwake(true); window.scrollTo(0, 0); setShoppingNow(true); return render();
-    case "shop-exit": shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); setShoppingNow(false); return render();
+    case "shop-exit": trailLearn(); shopMode = false; try { localStorage.removeItem(SHOP_KEY); } catch {} keepAwake(false); setShoppingNow(false); return render();
     case "dept-order": return deptOrderSheet();
     case "recurring": return recurringSheet();
     case "cook-have": return cookHaveSheet();
