@@ -309,6 +309,9 @@ body.compact .tile-check { position: static; order: 0; }
 .own-tip b { color: var(--accent); white-space: nowrap; }
 body.compact .own-tip { order: 6; flex-basis: 100%; }
 .split-opt { border: 2px solid var(--accent); background: var(--accent-soft); }
+.weekly-card { border: 2px solid var(--accent); }
+.wk-row { gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--line); cursor: pointer; min-height: 44px; }
+.wk-row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
@@ -620,6 +623,77 @@ function suggestions() {
   }
   due.sort((a, b) => b.score - a.score); freq.sort((a, b) => b.score - a.score);
   return { due: due.slice(0, 8).map(x => x.name), freq: freq.slice(0, 10).map(x => x.name) };
+}
+
+// ================= הרשימה לשבוע (אוטומטית) =================
+// מה שבדרך כלל קונים בשבוע הקרוב: מוצרים שנקנו לפחות פעמיים (לפי הזמן הממוצע בין קניות) ומוצרים קבועים.
+var WEEKLY_KEY = "superlist-weekly-hide";
+const weekNo = t => Math.floor((t + 3 * 864e5) / (7 * 864e5));
+function weeklyList() {
+  const onList = new Set(live().map(i => norm(i.name))), t = now(), end = t + 7 * 864e5, out = new Map();
+  for (const [k, h] of Object.entries(S.history)) {
+    const b = h.buys || [];
+    if (onList.has(k) || b.length < 2) continue;
+    const avg = (b[b.length - 1] - b[0]) / (b.length - 1);
+    if (avg < 864e5) continue;
+    const at = b[b.length - 1] + avg;
+    if (at <= end) out.set(k, { k, name: h.name, at, late: at < t, unit: h.unit || null, code: h.code || null, product: h.product || null });
+  }
+  for (const r of S.settings.recurring || []) {
+    const k = norm(r.name), at = (r.last || t) + r.every * 864e5;
+    if (!onList.has(k) && at <= end && !out.has(k)) out.set(k, { k, name: r.name, at, late: at < t, rec: true, unit: S.history[k]?.unit || null, code: S.history[k]?.code || null, product: S.history[k]?.product || null });
+  }
+  return [...out.values()].sort((a, b) => a.at - b.at).slice(0, 30);
+}
+// יום הקנייה הרגיל: היום בשבוע שבו היו הכי הרבה הזמנות ב-3 החודשים האחרונים (לפחות 3 הזמנות)
+function shoppingDay() {
+  const recent = (S.orders || []).filter(o => !o.deleted && now() - o.at < 90 * 864e5);
+  if (recent.length < 3) return null;
+  const n = [0, 0, 0, 0, 0, 0, 0];
+  recent.forEach(o => n[new Date(o.at).getDay()]++);
+  return n.indexOf(Math.max(...n));
+}
+function weeklyCard() {
+  const list = weeklyList();
+  let hidden = ""; try { hidden = localStorage.getItem(WEEKLY_KEY) || ""; } catch {}
+  if (list.length < 3 || hidden === String(weekNo(now()))) return "";
+  return `<div class="card weekly-card">
+    <div class="row" style="gap:8px;align-items:flex-start"><div class="grow"><b>🪄 הרשימה לשבוע מוכנה</b>
+      <div class="muted">${list.length} מוצרים שבדרך כלל קונים בשבוע הקרוב</div>
+      <div style="font-size:14px;margin-top:4px">${esc(list.slice(0, 6).map(x => x.name).join(" · "))}${list.length > 6 ? " …" : ""}</div></div>
+      <button class="icon-btn" data-act="weekly-hide" aria-label="הסתר לשבוע הזה" title="הסתר לשבוע הזה">${icon("x", 18)}</button></div>
+    <button class="btn" style="width:100%;margin-top:8px" data-act="weekly">בחירה והוספה לרשימה</button></div>`;
+}
+function weeklySheet() {
+  const list = weeklyList();
+  if (!list.length) return toast("אין כרגע מוצרים שבדרך כלל קונים השבוע");
+  const when = x => x.late ? "⏰ כנראה כבר נגמר" : new Date(x.at).toLocaleDateString(LOC(), { weekday: "long" });
+  sheet(`<h2 style="margin-top:0">🪄 הרשימה לשבוע</h2>
+    <div class="muted" style="margin-bottom:8px">לפי מה שקניתם עד היום ומה שקבוע. מסמנים מה להוסיף:</div>
+    <div class="card" id="wk-list">${list.map((x, k) => `<label class="row wk-row"><input type="checkbox" data-k="${k}" checked>
+      <span class="grow">${esc(x.name)}${x.rec ? ` <span class="muted">🔁</span>` : ""}</span><span class="muted" style="font-size:13px">${esc(when(x))}</span></label>`).join("")}</div>
+    <div class="row" style="gap:8px;margin-bottom:8px"><button class="btn ghost small" id="wk-all">סמן הכל</button><button class="btn ghost small" id="wk-none">נקה סימון</button></div>
+    <button class="btn" style="width:100%" id="wk-add"></button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" data-close>ביטול</button>`);
+  const boxes = [...$("#wk-list").querySelectorAll("input")];
+  const upd = () => { const n = boxes.filter(b => b.checked).length; $("#wk-add").textContent = n ? `➕ הוסף ${n} מוצרים לרשימה` : "לא סומן כלום"; $("#wk-add").disabled = !n; };
+  boxes.forEach(b => b.onchange = upd);
+  $("#wk-all").onclick = () => { boxes.forEach(b => b.checked = true); upd(); };
+  $("#wk-none").onclick = () => { boxes.forEach(b => b.checked = false); upd(); };
+  upd();
+  $("#wk-add").onclick = () => {
+    const pick = boxes.filter(b => b.checked).map(b => list[+b.dataset.k]);
+    const ids = [];
+    for (const x of pick) {
+      addItem(x.name, 1, "weekly", x.unit);
+      const it = live().find(i => norm(i.name) === norm(x.name) && !i.done);
+      if (it) { if (x.code && !it.code) Object.assign(it, { code: x.code, product: x.product, t: now() }); ids.push(it.id); }
+    }
+    try { localStorage.setItem(WEEKLY_KEY, String(weekNo(now()))); } catch {}
+    closeSheet(); commit();
+    toast(`🪄 נוספו ${pick.length} מוצרים לרשימה`, () => { ids.forEach(id => { const x = S.items.find(v => v.id === id); if (x) Object.assign(x, { deleted: true, t: now() }); }); commit(); });
+    refreshCompare().then(render);
+  };
 }
 
 // ================= הוצאות ותקציב =================
@@ -1165,6 +1239,16 @@ function reminderPlan() {
     if (at <= now() && now() - at < 3 * 864e5) at = atHour(now(), 18) > now() ? now() : now() + 864e5;
     if (at > now() - 1 && at < horizon) byDay(due, at, h.name);
   }
+  // הרשימה לשבוע: בערב שלפני יום הקנייה הרגיל (לפי ההזמנות), אם יש לפחות 3 מוצרים
+  const sd = shoppingDay();
+  if (sd != null) {
+    const wl = weeklyList();
+    if (wl.length >= 3) {
+      let d = atHour(now(), 19);
+      for (let i = 0; i < 8 && (new Date(d + 864e5).getDay() !== sd || d <= now()); i++) d += 864e5;
+      if (d > now()) out.push({ at: d, title: `🪄 הרשימה לשבוע מוכנה: ${wl.length} מוצרים`, body: `${wl.slice(0, 4).map(x => x.name).join(", ")}${wl.length > 4 ? "…" : ""} – פתחו את הסל החכם כדי לבחור ולהוסיף.` });
+    }
+  }
   // מבצע על מוצר שקונים בקביעות (קבוע, או נקנה לפחות פעמיים) ולא ברשימה: התראה אחת ביום, על כל מבצע פעם אחת
   try { out.push(...dealAlerts(onList)); } catch {}
   for (const [day, names] of Object.entries(due)) out.push({ at: atHour(+day, 18), title: `⏰ כנראה נגמר לכם: ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`, body: "להוסיף לרשימת הקניות? פתחו את הסל החכם." });
@@ -1563,6 +1647,7 @@ function renderList() {
   const open = items.filter(i => !i.done), done = items.filter(i => i.done);
   const sug = suggestions();
   const shop = shopMode && items.length > 0;
+  const wkCard = shop ? "" : weeklyCard();
   // אריח: תמונה ושם (לחיצה = בעגלה), המחיר הזול, כמות; 🔗 ו-✕ בפינה. לחיצה ארוכה = העברה למחלקה אחרת
   const tile = i => {
     const p = priceFor(i);
@@ -1633,7 +1718,8 @@ function renderList() {
   ${fillReportCard()}
   ${sn ? `<div class="warn" style="background:var(--accent-soft);color:var(--text)">🛍️ <b>${esc(sn.by)}</b> בסופר עכשיו${sn.chain ? ` (${esc(chains[sn.chain] || sn.chain)})` : ""} – מה שתוסיפו לרשימה יופיע מיד במסך הקנייה.</div>` : ""}
   ${updateBanner() || installBanner()}
-  ${sug.due.length ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
+  ${wkCard}
+  ${sug.due.length && !wkCard ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
   ${items.length ? `<div class="row" style="align-items:center;gap:8px"><h2 class="grow">ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})</h2>
     ${items.length > 3 ? `<button class="chip view-toggle" data-act="view-mode" aria-pressed="${compactView}">${compactView ? "▦ אריחים" : "☰ מקוצר"}</button>` : ""}</div>` : "<h2></h2>"}
@@ -4218,6 +4304,8 @@ function onViewClick(e) {
     case "import": return importSheet();
     case "orders": return ordersSheet();
     case "onboard": return onboardSheet(0);
+    case "weekly": return weeklySheet();
+    case "weekly-hide": try { localStorage.setItem(WEEKLY_KEY, String(weekNo(now()))); } catch {} toast("הרשימה לשבוע תחזור בשבוע הבא"); return render();
     case "view-mode":
       compactView = !compactView;
       try { localStorage.setItem(COMPACT_KEY, compactView ? "1" : ""); } catch {}
