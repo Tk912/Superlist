@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f7a4a">
+<title>הסל החכם – רשימת קניות שחוסכת כסף</title>
+<meta name="description" content="רשימת קניות משותפת שמשווה מחירים בין הרשתות, ממלאת לבד את העגלה באתר הסופר, ומראה כמה חסכת.">
+<!-- תצוגה מקדימה כששולחים את הקישור בוואטסאפ -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="הסל החכם – רשימת קניות שחוסכת כסף">
+<meta property="og:description" content="משווה מחירים בין הרשתות, ממלא את העגלה באתר הסופר בלחיצה, ומראה כמה חסכת.">
+<meta property="og:image" content="https://tk912.github.io/Superlist/img/feature-graphic.png">
+<meta property="og:url" content="https://tk912.github.io/Superlist/welcome.html">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root { --bg: #f4f6f3; --card: #fff; --text: #1b2620; --muted: #55635a; --accent: #0f7a4a; --accent-soft: #e2f3ea; --line: #e3e8e4; --shadow: 0 1px 3px rgba(0,0,0,.06), 0 6px 20px rgba(0,0,0,.05); }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111613; --card: #1a211d; --text: #e6ece8; --muted: #a3b2a9; --accent: #3cc486; --accent-soft: #173326; --line: #2a332e; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Rubik, Arial, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 0 16px 40px; }
+  a { color: var(--accent); }
+  /* כותרת */
+  .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: center; padding: 36px 0 18px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; }
+  .brand img { width: 44px; height: 44px; border-radius: 12px; }
+  h1 { font-size: 40px; line-height: 1.15; margin: 14px 0 10px; letter-spacing: -.5px; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lead { font-size: 19px; color: var(--muted); margin: 0 0 20px; max-width: 30em; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 0 20px; border-radius: 14px; font-weight: 700; text-decoration: none; background: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { .btn { color: #0b1a12; } }
+  .btn.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); box-shadow: var(--shadow); }
+  .note { font-size: 14px; color: var(--muted); margin-top: 10px; }
+  .phone { justify-self: center; width: min(300px, 80vw); aspect-ratio: 9 / 16; border-radius: 34px; padding: 10px; background: #0d1410; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  .phone img { width: 100%; height: 100%; object-fit: cover; border-radius: 26px; display: block; }
+  /* חלקים */
+  section { margin-top: 40px; }
+  h2 { font-size: 28px; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .feat { background: var(--card); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); }
+  .feat .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); display: grid; place-items: center; font-size: 22px; margin-bottom: 10px; }
+  .feat b { display: block; font-size: 18px; margin-bottom: 4px; }
+  .feat p { margin: 0; color: var(--muted); font-size: 15px; }
+  .shots { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 2px 14px; }
+  .shots figure { margin: 0; flex: 0 0 min(240px, 70vw); scroll-snap-align: center; text-align: center; }
+  .shots img { width: 100%; border-radius: 22px; box-shadow: var(--shadow); border: 1px solid var(--line); display: block; }
+  .shots figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .steps { counter-reset: s; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .step { background: var(--card); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); position: relative; }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; top: -12px; inset-inline-start: 16px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; }
+  @media (prefers-color-scheme: dark) { .step::before { color: #0b1a12; } }
+  .step b { display: block; margin: 6px 0 4px; }
+  .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .chains { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chains span { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-weight: 600; }
+  .join { background: var(--accent); color: #fff; border-radius: 24px; padding: 28px 24px; text-align: center; }
+  @media (prefers-color-scheme: dark) { .join { background: var(--accent-soft); color: var(--text); } }
+  .join h2 { color: inherit; }
+  .join p { margin: 6px auto 16px; max-width: 34em; opacity: .92; }
+  .join .btn { background: #fff; color: #0f7a4a; }
+  @media (prefers-color-scheme: dark) { .join .btn { background: var(--accent); color: #0b1a12; } }
+  footer { margin-top: 40px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; }
+  @media (max-width: 760px) {
+    .hero { grid-template-columns: 1fr; padding-top: 20px; text-align: center; }
+    .hero .ctas { justify-content: center; }
+    .lead { margin-inline: auto; }
+    .brand { justify-content: center; }
+    h1 { font-size: 32px; }
+    .grid, .steps { grid-template-columns: 1fr; }
+    .steps { gap: 20px; }
+    .ctas .btn { flex: 1 1 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <div>
+      <div class="brand"><img src="icon-192.png" alt="">הסל החכם</div>
+      <h1>רשימת קניות ש<em>חוסכת לכם כסף</em></h1>
+      <p class="lead">בונים רשימה יחד, רואים איפה הכי זול, ושולחים לסופר בלחיצה – האפליקציה ממלאת את העגלה באתר בשבילכם. התשלום תמיד אצלכם.</p>
+      <div class="ctas">
+        <a class="btn" href="#join">📲 להצטרף לגרסת הבדיקה</a>
+        <a class="btn ghost" href="./">🌐 לנסות עכשיו בדפדפן</a>
+      </div>
+      <div class="note">חינם · בלי פרסומות · עברית, English, Русский, Français, العربية</div>
+    </div>
+    <div class="phone"><img src="img/shot-list.png" alt="מסך הרשימה באפליקציה"></div>
+  </div>
+
+  <section>
+    <h2>מה היא עושה</h2>
+    <p class="sub">כל מה שצריך כדי לקנות בסופר אונליין בפחות כסף ובפחות זמן.</p>
+    <div class="grid">
+      <div class="feat"><div class="ic">💰</div><b>השוואת מחירים</b><p>מחיר הסל בכל הרשתות, כולל מבצעים, לפי קבצי המחירים הרשמיים – מתעדכן כמה פעמים ביום.</p></div>
+      <div class="feat"><div class="ic">🛒</div><b>מילוי עגלה בלחיצה</b><p>"שלח לסופר" שם את כל הרשימה בעגלה באתר הרשת. מה שחסר – מקבל הצעות לחלופות דומות.</p></div>
+      <div class="feat"><div class="ic">✂️</div><b>פיצול חכם</b><p>כשמשתלם לקנות חלק ברשת אחת וחלק בשנייה – גם אחרי המשלוח – האפליקציה מראה כמה תחסכו.</p></div>
+      <div class="feat"><div class="ic">👥</div><b>רשימה משותפת</b><p>עם בן/בת הזוג או המשפחה: כל שינוי מופיע אצל כולם מיד, ו"🙋 אני אקנה" כדי לא לקנות פעמיים.</p></div>
+      <div class="feat"><div class="ic">🪄</div><b>הרשימה לשבוע</b><p>לומדת מה אתם קונים ומתי, ומציעה רשימה מוכנה בכל שבוע. גם צילום של פתק ממלא את הרשימה.</p></div>
+      <div class="feat"><div class="ic">🏷️</div><b>התראות על מבצעים</b><p>מוצר שאתם קונים בקביעות במבצע באחת הרשתות? תקבלו התראה – פעם אחת, בשעה נוחה.</p></div>
+      <div class="feat"><div class="ic">💚</div><b>כמה חסכתם</b><p>בכל הזמנה ובכל חודש – כמה חסכתם לעומת הרשת היקרה, ודוח חודשי שאפשר לשתף.</p></div>
+      <div class="feat"><div class="ic">🍲</div><b>מתכונים</b><p>מוסיפים את המצרכים של מתכון לרשימה בלחיצה, וגם יוצרים מתכון בדיבור.</p></div>
+      <div class="feat"><div class="ic">🛍️</div><b>מצב קנייה בחנות</b><p>הרשימה מסתדרת לפי המסלול שלכם בסניף, עם סכום העגלה תוך כדי קנייה.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>איך זה נראה</h2>
+    <div class="shots">
+      <figure><img src="img/shot-list.png" alt="הרשימה" loading="lazy"><figcaption>הרשימה, לפי מחלקות</figcaption></figure>
+      <figure><img src="img/shot-prices.png" alt="השוואת מחירים" loading="lazy"><figcaption>השוואת מחירים בין הרשתות</figcaption></figure>
+      <figure><img src="img/shot-meals.png" alt="מתכונים" loading="lazy"><figcaption>מתכונים ותכנון ארוחות</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>הרשתות</h2>
+    <p class="sub">השוואה ומילוי עגלה באתרים של:</p>
+    <div class="chains"><span>שופרסל</span><span>רמי לוי</span><span>קרפור</span><span>ויקטורי</span><span>חצי חינם</span><span>יוחננוף</span><span>טיב טעם</span></div>
+  </section>
+
+  <section id="join">
+    <div class="join">
+      <h2>מצטרפים לגרסת הבדיקה</h2>
+      <p>האפליקציה בבדיקה סגורה ב-Google Play. שולחים לנו את כתובת ה-Gmail שאיתה נכנסים לחנות, ומקבלים גישה תוך יום.</p>
+      <a class="btn" href="mailto:tomeraym@gmail.com?subject=%D7%94%D7%A6%D7%98%D7%A8%D7%A4%D7%95%D7%AA%20%D7%9C%D7%91%D7%93%D7%99%D7%A7%D7%94%20-%20%D7%94%D7%A1%D7%9C%20%D7%94%D7%97%D7%9B%D7%9D&body=%D7%94%D7%99%D7%99%2C%20%D7%90%D7%A9%D7%9E%D7%97%20%D7%9C%D7%94%D7%A6%D7%98%D7%A8%D7%A3%20%D7%9C%D7%91%D7%93%D7%99%D7%A7%D7%94.%20%D7%94-Gmail%20%D7%A9%D7%9C%D7%99%3A%20">✉️ בקשה להצטרף</a>
+    </div>
+    <div class="steps" style="margin-top:22px">
+      <div class="step"><b>שולחים בקשה</b><p>מייל עם כתובת ה-Gmail שלכם (הכפתור למעלה מכין אותו).</p></div>
+      <div class="step"><b>מקבלים קישור</b><p>אחרי שנוסיף אתכם – נשלח קישור הצטרפות לבדיקה ב-Google Play.</p></div>
+      <div class="step"><b>מתקינים ומשתמשים</b><p>מתקינים מהחנות כרגיל, ונשארים לפחות 14 יום – זה עוזר לנו לפרסם את האפליקציה לכולם.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <a href="./">פתיחת האפליקציה בדפדפן</a>
+    <a href="app.html">הורדה ישירה לאנדרואיד</a>
+    <a href="privacy.html">מדיניות פרטיות</a>
+    <span>המחירים מקבצי שקיפות המחירים של הרשתות. התשלום תמיד באתר הרשת עצמה.</span>
+  </footer>
+</main>
+</body>
+</html>
