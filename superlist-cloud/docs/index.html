@@ -312,6 +312,9 @@ body.compact .own-tip { order: 6; flex-basis: 100%; }
 .weekly-card { border: 2px solid var(--accent); }
 .wk-row { gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--line); cursor: pointer; min-height: 44px; }
 .wk-row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.who.claim { background: #fef3c7; color: #92400e; white-space: nowrap; display: inline-block; }
+.claim-btn { font-size: 17px; opacity: .45; }
+.claim-btn.on { opacity: 1; background: #fef3c7; border-radius: 50%; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
@@ -996,10 +999,10 @@ async function invoiceCanvas(src) {
   g.drawImage(img, 0, 0, c.width, c.height);
   return c;
 }
-async function ocrCanvases(canvases, progress) {
+async function ocrCanvases(canvases, progress, what = "החשבונית") {
   await loadScript(OCR_LIB);
   const w = await window.Tesseract.createWorker("heb+eng", 1, {
-    logger: m => { if (m.status === "recognizing text") progress(`🔎 קורא את החשבונית… ${Math.round(m.progress * 100)}%`); else if (/load/.test(m.status)) progress("⏳ טוען את קורא הטקסט (פעם ראשונה לוקח רגע)…"); },
+    logger: m => { if (m.status === "recognizing text") progress(`🔎 קורא את ${what}… ${Math.round(m.progress * 100)}%`); else if (/load/.test(m.status)) progress("⏳ טוען את קורא הטקסט (פעם ראשונה לוקח רגע)…"); },
   });
   let text = "";
   try { for (const c of canvases) text += (await w.recognize(c)).data.text + "\n"; } finally { await w.terminate(); }
@@ -1074,8 +1077,11 @@ function invoiceTotal(text) {
   }
   return best;
 }
+// הסריקה של הטלפון משמשת גם לחשבונית וגם לצילום רשימה – docTarget אומר לאן התוצאה הולכת
+var docTarget = null;
 window.onNativeDoc = async (pages, err) => {
-  if (!pages?.length) { if (err && err !== "cancelled") toast("הסריקה נכשלה: " + err); return; }
+  if (!pages?.length) { docTarget = null; if (err && err !== "cancelled") toast("הסריקה נכשלה: " + err); return; }
+  if (docTarget === "list") { docTarget = null; return listPhotoRun(pages); }
   invoiceRun(async progress => ocrCanvases(await Promise.all(pages.map(invoiceCanvas)), progress));
 };
 function invoiceSheet(id) {
@@ -1649,6 +1655,9 @@ function renderList() {
   const shop = shopMode && items.length > 0;
   const wkCard = shop ? "" : weeklyCard();
   // אריח: תמונה ושם (לחיצה = בעגלה), המחיר הזול, כמות; 🔗 ו-✕ בפינה. לחיצה ארוכה = העברה למחלקה אחרת
+  const shared = (curList()?.members?.length || 0) > 1;
+  const claimBtn = i => `<button class="icon-btn claim-btn ${i.claim?.by === me ? "on" : ""}" data-act="claim" aria-pressed="${i.claim?.by === me}"
+    title="${i.claim?.by === me ? "ביטול: לא אני קונה" : "אני אקנה את זה"}" aria-label="${i.claim?.by === me ? "ביטול: לא אני קונה" : "אני אקנה את זה"}">🙋</button>`;
   const tile = i => {
     const p = priceFor(i);
     // שורת מחיר אחת; מבצע / שינוי מחיר / הערה – תגית קטנה, והפרטים המלאים בלחיצה (חלון המוצר)
@@ -1656,7 +1665,9 @@ function renderList() {
       p.trend ? `<span class="tag ${p.trend.to < p.trend.from ? "down" : "up"}">${p.trend.to < p.trend.from ? "📉 ירד" : "📈 עלה"}</span>` : ""].join("") : "";
     const ptag = !i.code ? "" : p?.none ? `<div class="tile-price none" data-act="img">לא נמצא בסניפים</div>`
       : p ? `<div class="tile-price" data-act="img"><b>${money(p.price)}</b>${p.weighted ? " לק״ג" : ""} · ${esc(p.chain)}</div>${tags ? `<div class="tags" data-act="img">${tags}</div>` : ""}` : "";
-    const who = (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
+    // "אני אקנה": ברשימה משותפת – מי לוקח על עצמו את המוצר (כדי שלא יקנו פעמיים)
+    const claimTag = i.claim && !i.done ? `<span class="who claim" title="${esc(i.claim.by === me ? "את/ה קונה את זה" : i.claim.by + " קונה את זה")}">🙋 ${esc(i.claim.by === me ? "אני" : i.claim.by)}</span>` : "";
+    const who = claimTag + (i.by && i.by !== me ? `<span class="who">${esc(i.by)}</span>` : "") + (i.note ? `<div class="tile-note">📝 ${esc(i.note)}</div>` : "");
     // חוסר: שורת אזהרה, כפתור אחד – חלופה, וקישור טקסט קטן – להשאיר לפעם הבאה (יוצא מהחוסרים, נשאר ברשימה)
     const ownTip = it => { const o = cheaperOwn(it); return o ? `<button class="own-tip" data-swap="${esc(o.code0)}" data-to="${esc(o.code)}" data-to-name="${esc(o.name)}" title="${esc(o.name)}">
       💡 דומה וזול יותר: <span>${esc(o.name)}</span> ${money(o.price)} · חוסך ${money(o.save)} <b>החלף</b></button>` : ""; };
@@ -1669,7 +1680,7 @@ function renderList() {
       <div class="tile-top">${img}<div class="tile-name" data-act="toggle">${esc(i.name)} ${who}</div>
         ${i.done || shop ? "" : `<div class="tile-tools"><button class="icon-btn" data-act="del" title="מחק" aria-label="מחק">${icon("x", 18)}</button></div>`}</div>
       ${shop ? shopPriceTag(i) : ptag}${miss}${shop || i.miss ? "" : ownTip(i)}
-      <div class="tile-bottom">${i.done ? `<span class="muted" style="font-size:13px">${fmtQty(i)}</span>`
+      <div class="tile-bottom">${shared && !i.done ? claimBtn(i) : ""}${i.done ? `<span class="muted" style="font-size:13px">${fmtQty(i)}</span>`
         : `<div class="qty ${i.unit === "kg" ? "kg" : ""}"><button data-act="dec" aria-label="פחות">−</button>
           <span data-act="unit" title="${i.unit === "kg" ? "נמכר במשקל. לחיצה: להחליף ליחידות" : "כמות יחידות/אריזות. לחיצה: להחליף לק״ג"}">${fmtQty(i)}</span>
           <button data-act="inc" aria-label="יותר">+</button></div>`}</div>
@@ -1934,13 +1945,17 @@ function importSheet(prefill = "", title = "📥 ייבוא רשימת קניו�
     <div class="muted" style="margin-bottom:8px">מעתיקים רשימה מכל מקום – וואטסאפ, פתקים, Google Keep, AddIt, מייל – ומדביקים כאן. פריט בכל שורה, או מופרדים בפסיקים; כמויות כמו "2 חלב" או "1.5 ק״ג עגבניות" מזוהות. פריטים שסומנו כנקנו (✓) לא ייובאו.
       ${inApp ? `<br>אפשר גם לשתף רשימה מכל אפליקציה ישר לכאן: <b>שיתוף ← הסל החכם</b>.` : ""}</div>
     <textarea id="imp-text" rows="9" placeholder="חלב&#10;לחם x2&#10;1.5 ק״ג עגבניות&#10;ביצים, קוטג', במבה">${esc(prefill)}</textarea>
-    <div class="row" style="margin-top:6px">${navigator.clipboard?.readText ? `<button class="btn small ghost" id="imp-paste">📋 הדבק מהלוח</button>` : ""}
-      <label class="btn small ghost" style="cursor:pointer">📄 מקובץ טקסט<input type="file" id="imp-file" accept=".txt,text/plain" hidden></label></div>
+    <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:6px">${navigator.clipboard?.readText ? `<button class="btn small ghost" id="imp-paste">📋 הדבק מהלוח</button>` : ""}
+      <label class="btn small ghost" style="cursor:pointer">📄 מקובץ טקסט<input type="file" id="imp-file" accept=".txt,text/plain" hidden></label>
+      ${window.SuperlistNative?.scanDoc ? `<button class="btn small ghost" id="imp-photo">📷 צילום רשימה</button>`
+        : `<label class="btn small ghost" style="cursor:pointer">📷 צילום רשימה<input type="file" id="imp-cam" accept="image/*" capture="environment" hidden></label>`}</div>
     <div id="imp-prev" class="muted" style="padding:8px 0"></div>
     <div class="row"><button class="btn grow" id="imp-go" disabled>הוסף לרשימה</button><button class="btn ghost" data-close>ביטול</button></div>`);
   const ta = $("#imp-text"), go = $("#imp-go");
   if ($("#imp-paste")) $("#imp-paste").onclick = async () => { try { ta.value = await navigator.clipboard.readText(); ta.oninput(); } catch { toast("אין הרשאה ללוח – הדבק ידנית (לחיצה ארוכה ← הדבק)"); } };
   $("#imp-file").onchange = async e => { const f = e.target.files[0]; if (f) { ta.value = await f.text(); ta.oninput(); } };
+  if ($("#imp-photo")) $("#imp-photo").onclick = () => { docTarget = "list"; window.SuperlistNative.scanDoc(); };
+  if ($("#imp-cam")) $("#imp-cam").onchange = e => { const f = e.target.files[0]; if (f) listPhotoRun([f]); };
   ta.oninput = () => {
     const p = parseListText(ta.value);
     go.disabled = !p.length;
@@ -1954,6 +1969,29 @@ function importSheet(prefill = "", title = "📥 ייבוא רשימת קניו�
     toast(`יובאו ${p.length} פריטים`);
   };
   if (prefill) ta.oninput();
+}
+
+// צילום רשימה (פתק, לוח, רשימה מודפסת): קוראים את הטקסט, מנקים, ומציגים בחלון הייבוא לבדיקה לפני ההוספה
+function listPhotoClean(text) {
+  return String(text || "").split(/\n+/)
+    // תבליטים, תיבות סימון ומספור ("1." / "2)") בתחילת שורה – יוצאים; כמות ("2 חלב") נשארת
+    .map(l => l.replace(/^\s*(?:[-–—•*·○●□☐✓✔☑▪>]+|\d+[.)])\s*/, "").replace(/[|_~"“”„`^{}<>\[\]]/g, "").replace(/\s{2,}/g, " ").trim())
+    .filter(l => l.length >= 2 && /[א-תA-Za-z]{2}/.test(l) && !/^(רשימת קניות|קניות|לקנות)[:：]?$/.test(l))
+    .join("\n");
+}
+async function listPhotoRun(srcs) {
+  sheet(`<h2 style="margin-top:0">📷 צילום רשימה</h2><div class="card" id="lp-status">⏳ מכין את התמונה…</div>`);
+  const status = t => { const el = $("#lp-status"); if (el) el.textContent = t; };
+  try {
+    const text = await ocrCanvases(await Promise.all(srcs.map(invoiceCanvas)), status, "הרשימה");
+    const clean = listPhotoClean(text);
+    if (!clean) { status("לא הצלחתי לקרוא טקסט מהתמונה. נסו צילום קרוב וחד יותר, באור טוב."); return; }
+    importSheet(clean, "📷 רשימה מהצילום – בדקו ותקנו");
+    const note = document.createElement("div");
+    note.className = "warn"; note.style.margin = "6px 0";
+    note.textContent = "✍️ כתב יד נקרא פחות טוב מטקסט מודפס – עברו על השורות ותקנו מה שצריך לפני ההוספה.";
+    $("#imp-text").before(note);
+  } catch (e) { status("הקריאה נכשלה: " + (e.message || e)); }
 }
 
 // ================= שליחה לסופר (כפתור הסימנייה, cart.js) =================
@@ -4295,6 +4333,14 @@ function onViewClick(e) {
     }
     case "del": item.deleted = true; item.delBy = me || null; touch(); return toast(`🗑 "${item.name}" נמחק`, () => restore("items", item.id));
     case "link": return linkSheet(item);
+    case "claim":
+      if (item.claim?.by === me) { delete item.claim; touch(); return toast(`"${item.name}" – כבר לא עליך`); }
+      // מוצר שמישהו אחר כבר לקח – לוקחים ממנו רק אחרי אישור
+      return (async () => {
+        if (item.claim && item.claim.by !== me && !(await askOk(`${item.claim.by} כבר אמר/ה שיקנה את "${item.name}". לקחת את זה במקומו?`, "כן, אני אקנה"))) return;
+        item.claim = { by: me || "אני", at: now() }; touch();
+        toast(`🙋 "${item.name}" עליך – השותפים יראו`);
+      })();
     case "unmiss": { const was = item.miss; delete item.miss; touch(); return toast(`"${item.name}" הוסר מהחוסרים`, () => restore("items", item.id, { miss: was })); }
     case "img": return imageSheet(item);
     case "finish": return finishShopping();
