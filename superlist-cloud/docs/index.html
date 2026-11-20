@@ -315,6 +315,13 @@ body.compact .own-tip { order: 6; flex-basis: 100%; }
 .who.claim { background: #fef3c7; color: #92400e; white-space: nowrap; display: inline-block; }
 .claim-btn { font-size: 17px; opacity: .45; }
 .claim-btn.on { opacity: 1; background: #fef3c7; border-radius: 50%; }
+/* ה-✕ בפינת האריח (ולא ליד השם) – כך שם המוצר מקבל את כל הרוחב ולא נשבר באמצע מילה בטלפון צר */
+.tile-tools { position: absolute; top: 2px; inset-inline-end: 2px; margin: 0; }
+.tile-tools .icon-btn { width: 34px; height: 34px; min-width: 34px; min-height: 34px; }
+.tile-top { padding-inline-end: 24px; }
+.tile-name { overflow-wrap: break-word; hyphens: auto; }
+body.compact .tile-tools { position: static; }
+body.compact .tile-top { padding-inline-end: 0; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
