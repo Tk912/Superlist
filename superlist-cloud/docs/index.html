@@ -321,6 +321,17 @@ body.compact .own-tip { order: 6; flex-basis: 100%; }
 .tile-top { padding-inline-end: 24px; }
 .tile-name { overflow-wrap: break-word; hyphens: auto; }
 body.compact .tile-tools { position: static; }
+/* טלפון צר (360px ופחות): תמונה קטנה יותר ומרווחים צפופים – יותר מקום לשם המוצר */
+@media (max-width: 380px) {
+  main { padding-inline: 10px; }
+  .dept { padding: 6px; }
+  .tiles { gap: 6px; }
+  .tile { padding: 6px; }
+  .tile-top { gap: 6px; padding-inline-end: 20px; }
+  .tile-img, .tile-ph { width: 34px; height: 34px; font-size: 18px; }
+  .tile-name { font-size: 14.5px; }
+  .tile-tools .icon-btn { width: 30px; height: 30px; min-width: 30px; min-height: 30px; }
+}
 body.compact .tile-top { padding-inline-end: 0; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
