@@ -338,6 +338,30 @@ body.compact .tile-top { padding-inline-end: 0; }
 html.in-app { --sat: 0px; --sab: 0px; }
 </style>
 <script>if (/SuperlistApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");</script>
+<script>
+// ---------- דיווח שגיאות ----------
+// שגיאה שקורית אצל משתמש נשלחת (בלי מידע אישי) כדי שנדע עליה ונתקן – עד 5 בכל פתיחה, בלי כפילויות.
+// עד ש-Firebase נטען – השגיאות מחכות בתור.
+(function () {
+  const seen = new Set(), queue = [];
+  let sent = 0;
+  const clean = s => String(s || "").replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "<email>");   // ליתר ביטחון: בלי כתובות מייל
+  function report(msg, stack, where) {
+    msg = clean(msg); if (!msg || sent >= 5 || seen.has(msg)) return;
+    // רעש שלא קשור לקוד שלנו (תוספים בדפדפן, סקריפטים חיצוניים)
+    if (/^Script error\.?$|ResizeObserver loop|extension:\/\//i.test(msg + " " + (stack || ""))) return;
+    seen.add(msg); sent++;
+    let ver = "web";
+    try { ver = window.SuperlistNative ? "android 1." + (window.SuperlistNative.appVersion?.() || "?") : "web"; } catch {}
+    const e = { msg, stack: clean(stack), where: where || location.hash || location.pathname, ver, ua: navigator.userAgent };
+    if (window.Cloud?.logError) window.Cloud.logError(e); else queue.push(e);
+  }
+  window.addEventListener("error", ev => report(ev.message, ev.error?.stack || `${ev.filename}:${ev.lineno}:${ev.colno}`));
+  window.addEventListener("unhandledrejection", ev => { const r = ev.reason; report(r?.message || String(r), r?.stack); });
+  window.addEventListener("cloud-ready", () => { while (queue.length) window.Cloud.logError(queue.shift()); });
+  window.reportError2 = report;
+})();
+</script>
 </head>
 <body>
 <header>

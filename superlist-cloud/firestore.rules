@@ -35,6 +35,18 @@ service cloud.firestore {
       allow delete: if signedIn() && (!exists(/databases/$(database)/documents/lists/$(listId)) || memberOf(listId));
     }
 
+    // דיווחי שגיאות מהאפליקציה (בלי מידע אישי): כל אחד יכול רק להוסיף, בגודל מוגבל. אף אחד לא קורא מהאפליקציה –
+    // צופים בהם רק ב-Firebase Console.
+    match /errors/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['msg', 'stack', 'where', 'ver', 'ua', 'at'])
+        && request.resource.data.msg is string && request.resource.data.msg.size() <= 400
+        && request.resource.data.stack is string && request.resource.data.stack.size() <= 1800
+        && request.resource.data.where is string && request.resource.data.where.size() <= 200
+        && request.resource.data.ver is string && request.resource.data.ver.size() <= 40
+        && request.resource.data.ua is string && request.resource.data.ua.size() <= 200
+        && request.resource.data.at is int;
+    }
+
     // הגרסה הקודמת (רשימה אחת): נשאר לקריאה בלבד
     match /public/config {
       allow read: if true;

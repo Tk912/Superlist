@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, query, where, onSnapshot,
-  runTransaction, setDoc, updateDoc, deleteDoc, arrayRemove,
+  runTransaction, setDoc, updateDoc, deleteDoc, arrayRemove, addDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -123,6 +123,17 @@ window.Cloud = {
     try { await deleteUser(auth.currentUser); } catch { removed = false; }   // לפעמים Google דורשת התחברות מחדש לפני מחיקה
     await this.signOut().catch(() => {});
     return removed;
+  },
+
+  // דיווח על שגיאה באפליקציה – בלי מידע אישי (בלי מייל, בלי תוכן הרשימה): ההודעה, איפה, גרסה ודפדפן.
+  // נשמר באוסף errors, שאפשר רק להוסיף אליו (לא לקרוא) – רואים אותו רק ב-Firebase Console.
+  logError(e) {
+    if (!configured) return Promise.resolve();
+    const cut = (v, n) => String(v ?? "").slice(0, n);
+    return addDoc(collection(db, "errors"), {
+      msg: cut(e.msg, 400), stack: cut(e.stack, 1800), where: cut(e.where, 200),
+      ver: cut(e.ver, 40), ua: cut(e.ua, 200), at: Date.now(),
+    }).catch(() => {});
   },
 
   // מספרי הסניפים שנבחרו ברשימה (בלי שום מידע אישי) - כדי שהעדכון האוטומטי ב-GitHub ידע אילו מחירים להוריד
