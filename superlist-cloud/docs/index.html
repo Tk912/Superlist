@@ -333,6 +333,10 @@ body.compact .tile-tools { position: static; }
   .tile-tools .icon-btn { width: 30px; height: 30px; min-width: 30px; min-height: 30px; }
 }
 body.compact .tile-top { padding-inline-end: 0; }
+/* הוספה מהירה כשיש כבר מוצרים: שורה אחת שגוללים הצידה */
+.chips.chips-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+.chips.chips-row::-webkit-scrollbar { display: none; }
+.chips.chips-row .chip { flex: none; }
 #lang-btn { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; min-width: 40px; min-height: 36px; padding: 0 9px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 #sync { display: inline-flex; align-items: center; gap: 4px; }
 html.in-app { --sat: 0px; --sab: 0px; }
@@ -1865,7 +1869,14 @@ function renderList() {
   ${updateBanner() || installBanner()}
   ${wkCard}
   ${sug.due.length && !wkCard ? `<h2>⏰ כנראה נגמר לך</h2><div class="chips">${sug.due.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
-  ${!items.length ? `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips">${(sug.freq.length ? sug.freq : QUICK).map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>` : ""}
+  ${(() => {
+    // הוספה מהירה: תמיד מוצגת (גם כשיש כבר מוצרים ברשימה) – בלי מה שכבר ברשימה.
+    // כשהרשימה לא ריקה: שורה אחת שגוללים הצידה, כדי לא לתפוס מקום
+    const onList = new Set(items.filter(i => !i.done).map(i => norm(i.name)));
+    const pool = [...new Set([...sug.freq, ...QUICK])].filter(n => !onList.has(norm(n))).slice(0, 16);
+    if (!pool.length) return "";
+    return `<h2>${sug.freq.length ? "קונים בדרך כלל" : "הוספה מהירה"}</h2><div class="chips ${items.length ? "chips-row" : ""}">${pool.map(n => `<button class="chip add" data-add="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
+  })()}
   ${items.length ? `<div class="row" style="align-items:center;gap:8px"><h2 class="grow">ברשימה (${open.length}${done.length ? ` · ${done.length} בעגלה` : ""})</h2>
     ${items.length > 3 ? `<button class="chip view-toggle" data-act="view-mode" aria-pressed="${compactView}">${compactView ? "▦ אריחים" : "☰ מקוצר"}</button>` : ""}</div>` : "<h2></h2>"}
   ${missBlock}
