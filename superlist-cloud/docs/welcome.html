@@ -4,15 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f7a4a">
-<title>הסל החכם – רשימת קניות שחוסכת כסף</title>
-<meta name="description" content="רשימת קניות משותפת שמשווה מחירים בין הרשתות, ממלאת לבד את העגלה באתר הסופר, ומראה כמה חסכת.">
+<title>הסל החכם – רשימת קניות והשוואת מחירים בין סופרמרקטים</title>
+<link rel="canonical" href="https://tk912.github.io/Superlist/welcome.html">
+<meta name="description" content="אפליקציית רשימת קניות חינמית: משווה מחירים בין שופרסל, רמי לוי, קרפור, ויקטורי ועוד, ממלאת את עגלת הסופר אונליין בלחיצה ומראה כמה חסכתם.">
 <!-- תצוגה מקדימה כששולחים את הקישור בוואטסאפ -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="הסל החכם – רשימת קניות שחוסכת כסף">
+<meta property="og:title" content="הסל החכם – רשימת קניות והשוואת מחירים בין סופרמרקטים">
+<meta property="og:site_name" content="הסל החכם">
+<meta property="og:locale" content="he_IL">
 <meta property="og:description" content="משווה מחירים בין הרשתות, ממלא את העגלה באתר הסופר בלחיצה, ומראה כמה חסכת.">
 <meta property="og:image" content="https://tk912.github.io/Superlist/img/feature-graphic.png">
+<meta property="og:image:width" content="1024">
+<meta property="og:image:height" content="500">
+<meta property="og:image:alt" content="הסל החכם – רשימת קניות שמשווה מחירים">
+<meta name="twitter:card" content="summary_large_image">
 <meta property="og:url" content="https://tk912.github.io/Superlist/welcome.html">
 <link rel="icon" href="icon.svg">
+<script type="application/ld+json">[{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "הסל החכם", "alternateName": "Smart Basket", "applicationCategory": "ShoppingApplication", "operatingSystem": "Android, Web", "inLanguage": ["he", "en", "ru", "fr", "ar"], "url": "https://tk912.github.io/Superlist/welcome.html", "image": "https://tk912.github.io/Superlist/img/feature-graphic.png", "description": "רשימת קניות משותפת שמשווה מחירים בין רשתות הסופר בישראל וממלאת את העגלה באתר הרשת.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "ILS"}}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "כמה עולה הסל החכם?", "acceptedAnswer": {"@type": "Answer", "text": "האפליקציה חינמית ובלי פרסומות."}}, {"@type": "Question", "name": "באילו רשתות אפשר להשוות מחירים ולמלא עגלה?", "acceptedAnswer": {"@type": "Answer", "text": "שופרסל, רמי לוי, קרפור, ויקטורי, חצי חינם, יוחננוף וטיב טעם."}}, {"@type": "Question", "name": "מאיפה המחירים?", "acceptedAnswer": {"@type": "Answer", "text": "מקבצי שקיפות המחירים הרשמיים שהרשתות מפרסמות, והם מתעדכנים כמה פעמים ביום."}}, {"@type": "Question", "name": "האם האפליקציה משלמת בשבילי?", "acceptedAnswer": {"@type": "Answer", "text": "לא. האפליקציה רק ממלאת את העגלה באתר הרשת, והתשלום תמיד נעשה באתר הרשת עצמה."}}, {"@type": "Question", "name": "אפשר להשתמש בלי להתקין?", "acceptedAnswer": {"@type": "Answer", "text": "כן, אפשר לפתוח את האפליקציה ישירות בדפדפן, ויש גם גרסה לאנדרואיד ב-Google Play (כרגע בבדיקה סגורה)."}}, {"@type": "Question", "name": "אפשר לקנות יחד עם המשפחה?", "acceptedAnswer": {"@type": "Answer", "text": "כן. הרשימה משותפת: כל שינוי מופיע אצל כולם מיד, ואפשר לסמן \"אני אקנה\" כדי לא לקנות פעמיים."}}, {"@type": "Question", "name": "באילו שפות האפליקציה זמינה?", "acceptedAnswer": {"@type": "Answer", "text": "עברית, English, Русский, Français ו-العربية."}}]}]</script>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root { --bg: #f4f6f3; --card: #fff; --text: #1b2620; --muted: #55635a; --accent: #0f7a4a; --accent-soft: #e2f3ea; --line: #e3e8e4; --shadow: 0 1px 3px rgba(0,0,0,.06), 0 6px 20px rgba(0,0,0,.05); }
@@ -64,6 +72,10 @@
   .join p { margin: 6px auto 16px; max-width: 34em; opacity: .92; }
   .join .btn { background: #fff; color: #0f7a4a; }
   @media (prefers-color-scheme: dark) { .join .btn { background: var(--accent); color: #0b1a12; } }
+  .faq details { background: var(--card); border-radius: 14px; padding: 4px 16px; margin-bottom: 8px; box-shadow: var(--shadow); }
+  .faq summary { cursor: pointer; font-weight: 700; padding: 12px 0; }
+  .faq p { margin: 0 0 12px; color: var(--muted); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   footer { margin-top: 40px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; }
   @media (max-width: 760px) {
     .hero { grid-template-columns: 1fr; padding-top: 20px; text-align: center; }
@@ -81,7 +93,7 @@
 <main>
   <div class="hero">
     <div>
-      <div class="brand"><img src="icon-192.png" alt="">הסל החכם</div>
+      <div class="brand"><img src="icon-192.png" alt="" width="44" height="44">הסל החכם</div>
       <h1>רשימת קניות ש<em>חוסכת לכם כסף</em></h1>
       <p class="lead">בונים רשימה יחד, רואים איפה הכי זול, ושולחים לסופר בלחיצה – האפליקציה ממלאת את העגלה באתר בשבילכם. התשלום תמיד אצלכם.</p>
       <div class="ctas">
@@ -90,7 +102,7 @@
       </div>
       <div class="note">חינם · בלי פרסומות · עברית, English, Русский, Français, العربية</div>
     </div>
-    <div class="phone"><img src="img/shot-list.png" alt="מסך הרשימה באפליקציה"></div>
+    <div class="phone"><img src="img/shot-list.png" alt="מסך הרשימה באפליקציה" width="1080" height="1920" fetchpriority="high"></div>
   </div>
 
   <section>
@@ -112,11 +124,11 @@
   <section>
     <h2>איך זה נראה</h2>
     <div class="shots">
-      <figure><img src="img/shot-list.png" alt="הרשימה" loading="lazy"><figcaption>הרשימה, לפי מחלקות</figcaption></figure>
-      <figure><img src="img/shot-prices.png" alt="השוואת מחירים" loading="lazy"><figcaption>השוואת מחירים בין הרשתות</figcaption></figure>
-      <figure><img src="img/shot-send.png" alt="שליחה לסופר" loading="lazy"><figcaption>שולחים לסופר – לאן שהכי משתלם</figcaption></figure>
-      <figure><img src="img/shot-savings.png" alt="הוצאות וחיסכון" loading="lazy"><figcaption>כמה הוצאתם וכמה חסכתם</figcaption></figure>
-      <figure><img src="img/shot-meals.png" alt="מתכונים" loading="lazy"><figcaption>תכנון ארוחות לשבוע</figcaption></figure>
+      <figure><img src="img/shot-list.png" alt="הרשימה" width="1080" height="1920" loading="lazy"><figcaption>הרשימה, לפי מחלקות</figcaption></figure>
+      <figure><img src="img/shot-prices.png" alt="השוואת מחירים" width="1080" height="1920" loading="lazy"><figcaption>השוואת מחירים בין הרשתות</figcaption></figure>
+      <figure><img src="img/shot-send.png" alt="שליחה לסופר" width="1080" height="1920" loading="lazy"><figcaption>שולחים לסופר – לאן שהכי משתלם</figcaption></figure>
+      <figure><img src="img/shot-savings.png" alt="הוצאות וחיסכון" width="1080" height="1920" loading="lazy"><figcaption>כמה הוצאתם וכמה חסכתם</figcaption></figure>
+      <figure><img src="img/shot-meals.png" alt="מתכונים" width="1080" height="1920" loading="lazy"><figcaption>תכנון ארוחות לשבוע</figcaption></figure>
     </div>
   </section>
 
@@ -124,6 +136,19 @@
     <h2>הרשתות</h2>
     <p class="sub">השוואה ומילוי עגלה באתרים של:</p>
     <div class="chains"><span>שופרסל</span><span>רמי לוי</span><span>קרפור</span><span>ויקטורי</span><span>חצי חינם</span><span>יוחננוף</span><span>טיב טעם</span></div>
+  </section>
+
+  <section id="faq">
+    <h2>שאלות נפוצות</h2>
+    <div class="faq">
+      <details><summary>כמה עולה הסל החכם?</summary><p>האפליקציה חינמית ובלי פרסומות.</p></details>
+      <details><summary>באילו רשתות אפשר להשוות מחירים ולמלא עגלה?</summary><p>שופרסל, רמי לוי, קרפור, ויקטורי, חצי חינם, יוחננוף וטיב טעם.</p></details>
+      <details><summary>מאיפה המחירים?</summary><p>מקבצי שקיפות המחירים הרשמיים שהרשתות מפרסמות, והם מתעדכנים כמה פעמים ביום.</p></details>
+      <details><summary>האם האפליקציה משלמת בשבילי?</summary><p>לא. האפליקציה רק ממלאת את העגלה באתר הרשת, והתשלום תמיד נעשה באתר הרשת עצמה.</p></details>
+      <details><summary>אפשר להשתמש בלי להתקין?</summary><p>כן, אפשר לפתוח את האפליקציה ישירות בדפדפן, ויש גם גרסה לאנדרואיד ב-Google Play (כרגע בבדיקה סגורה).</p></details>
+      <details><summary>אפשר לקנות יחד עם המשפחה?</summary><p>כן. הרשימה משותפת: כל שינוי מופיע אצל כולם מיד, ואפשר לסמן "אני אקנה" כדי לא לקנות פעמיים.</p></details>
+      <details><summary>באילו שפות האפליקציה זמינה?</summary><p>עברית, English, Русский, Français ו-العربية.</p></details>
+    </div>
   </section>
 
   <section id="join">
