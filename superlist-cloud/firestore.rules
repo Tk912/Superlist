@@ -40,9 +40,9 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    // App error reports (no personal data): anyone may only add a small report; nobody reads them from the app.
+    // App error reports (no personal data): only signed-in users may add a small report; nobody reads them from the app.
     match /errors/{id} {
-      allow create: if request.resource.data.keys().hasOnly(['msg', 'stack', 'where', 'ver', 'ua', 'at'])
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['msg', 'stack', 'where', 'ver', 'ua', 'at'])
         && request.resource.data.msg is string && request.resource.data.msg.size() <= 400
         && request.resource.data.stack is string && request.resource.data.stack.size() <= 1800
         && request.resource.data.where is string && request.resource.data.where.size() <= 200
