@@ -230,7 +230,7 @@ body.has-sendbar main { padding-bottom: calc(136px + var(--sab)); }
 .pline-row .pr { white-space: nowrap; }
 .tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .tag { font-size: 12px; border-radius: 6px; padding: 0 5px; background: var(--chip); color: var(--muted); line-height: 1.6; }
-.tag.promo-t { background: #fff1e6; color: #c2410c; } .tag.down { background: #e7f6ec; color: #15803d; } .tag.up { background: #fdeaea; color: #b91c1c; }
+.tag.promo-t { background: #fff1e6; color: #c2410c; } .tag.down { background: #e7f6ec; color: #166534; } .tag.up { background: #fdeaea; color: #b91c1c; }
 @media (prefers-color-scheme: dark) { .tag.promo-t { background: #3a2414; color: #fb923c; } .tag.down { background: #15301f; color: #4ade80; } .tag.up { background: #3a1818; color: #f87171; } }
 .menu-list button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: var(--card); padding: 14px; border-radius: 12px;
   margin-bottom: 8px; font-size: 16px; text-align: start; cursor: pointer; box-shadow: var(--shadow); }
@@ -262,6 +262,16 @@ nav button .t { white-space: nowrap; }
 .btn.small { min-height: 40px; font-size: 15px; }
 .chip { min-height: 36px; }
 .icon-btn { min-width: 40px; min-height: 40px; }
+/* נגישות: סימון ברור של האלמנט שבפוקוס (מקלדת / קורא מסך), אזורי לחיצה גדולים יותר, ופחות אנימציה למי שביקש */
+a:not(.btn):not(.chip) { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.tile-tools .icon-btn, .qty button { position: relative; }
+.tile-tools .icon-btn::after { content: ""; position: absolute; inset: -4px; }
+.qty button::after { content: ""; position: absolute; inset: -4px; }
+.tile-check::after { content: ""; position: absolute; inset: -9px; }
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
 .qty button { width: 36px; height: 36px; }
 /* ---------- תצוגה מקוצרת: שורה אחת לכל מוצר (לרשימות ארוכות) ---------- */
 body.compact .tiles { grid-template-columns: 1fr; gap: 4px; }
@@ -374,7 +384,7 @@ html.in-app { --sat: 0px; --sab: 0px; }
 </header>
 <main id="view"></main>
 <nav>
-  <button data-tab="list" class="on"><span class="i"><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span><span class="t">רשימה</span></button>
+  <button data-tab="list" class="on" aria-current="page"><span class="i"><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span><span class="t">רשימה</span></button>
   <button data-tab="meals"><span class="i"><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span><span class="t">מתכונים</span></button>
   <button data-tab="prices"><span class="i"><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg></span><span class="t">מחירים וזמנים</span></button>
   <button data-tab="settings"><span class="i"><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></span><span class="t">הגדרות</span></button>
@@ -382,6 +392,7 @@ html.in-app { --sat: 0px; --sab: 0px; }
 </nav>
 <div id="sendbar" class="hidden"></div>
 <div id="sheet-root"></div>
+<div id="sr-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
 <script src="i18n.js"></script>
 <script src="prices.js"></script>
@@ -1812,15 +1823,15 @@ function renderList() {
     const miss = i.miss && !i.done && !shop ? `<div class="miss-note">לא נמצא ב${esc(CART_NAMES[i.miss.chain] || i.miss.chain)}${i.miss.reason ? ` · ${esc(i.miss.reason.slice(0, 60))}` : ""}</div>
       <button class="btn small ghost" style="width:100%;margin:2px 0 0;display:flex;align-items:center;justify-content:center;gap:6px" data-act="link">${icon("search", 16)} חלופה</button>
       <button class="miss-keep" data-act="unmiss">להשאיר לפעם הבאה</button>` : "";
-    const img = thumb(i.code, "tile-img", `data-act="img" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img">${DEPT_ICON[i.cat] || "🛒"}</span>`;
-    return `<div class="tile ${i.done ? "done" : ""} ${i.id === justToggled ? "just-done" : ""}" data-id="${i.id}">
-      ${i.done ? `<span class="tile-check" data-act="toggle" aria-label="החזר לרשימה">✓</span>` : ""}
-      <div class="tile-top">${img}<div class="tile-name" data-act="toggle">${esc(i.name)} ${who}</div>
+    const img = thumb(i.code, "tile-img", `data-act="img" role="button" tabindex="0" aria-label="פרטי המוצר" title="פרטי המוצר" data-ph="${DEPT_ICON[i.cat] || "🛒"}"`) || `<span class="tile-ph" data-act="img" role="button" tabindex="0" aria-label="פרטי המוצר">${DEPT_ICON[i.cat] || "🛒"}</span>`;
+    return `<div class="tile ${i.done ? "done" : ""} ${i.id === justToggled ? "just-done" : ""}" data-id="${i.id}" role="group" aria-label="${esc(i.name)}">
+      ${i.done ? `<span class="tile-check" data-act="toggle" role="button" tabindex="-1" aria-label="החזר לרשימה">✓</span>` : ""}
+      <div class="tile-top">${img}<div class="tile-name" data-act="toggle" role="checkbox" tabindex="0" aria-checked="${i.done ? "true" : "false"}">${esc(i.name)} ${who}</div>
         ${i.done || shop ? "" : `<div class="tile-tools"><button class="icon-btn" data-act="del" title="מחק" aria-label="מחק">${icon("x", 18)}</button></div>`}</div>
       ${shop ? shopPriceTag(i) : ptag}${miss}${shop || i.miss ? "" : ownTip(i)}
       <div class="tile-bottom">${shared && !i.done ? claimBtn(i) : ""}${i.done ? `<span class="muted" style="font-size:13px">${fmtQty(i)}</span>`
         : `<div class="qty ${i.unit === "kg" ? "kg" : ""}"><button data-act="dec" aria-label="פחות">−</button>
-          <span data-act="unit" title="${i.unit === "kg" ? "נמכר במשקל. לחיצה: להחליף ליחידות" : "כמות יחידות/אריזות. לחיצה: להחליף לק״ג"}">${fmtQty(i)}</span>
+          <span data-act="unit" role="button" tabindex="0" title="${i.unit === "kg" ? "נמכר במשקל. לחיצה: להחליף ליחידות" : "כמות יחידות/אריזות. לחיצה: להחליף לק״ג"}">${fmtQty(i)}</span>
           <button data-act="inc" aria-label="יותר">+</button></div>`}</div>
     </div>`;
   };
@@ -1858,7 +1869,7 @@ function renderList() {
     ${cl.members.length > 1 ? `<span class="muted" style="font-size:13px">👥 משותפת עם ${cl.members.length - 1}</span>` : ""}</div>` : ""}
   ${quickBar()}
   <form class="card row" id="add-form" autocomplete="off">
-    <input type="text" id="add-input" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
+    <input type="text" id="add-input" aria-label="מה להוסיף? (2 חלב…)" placeholder="מה להוסיף? (2 חלב…)" enterkeyhint="done" role="combobox" aria-autocomplete="list" aria-expanded="false">
     <button type="button" class="icon-btn add-tool" data-act="voice" title="הוספה קולית" aria-label="הוספה קולית">${icon("mic", 22)}</button>
     <button type="button" class="icon-btn add-tool" data-act="scan" title="סריקת ברקוד" aria-label="סריקת ברקוד">${icon("scan", 22)}</button>
     <button class="btn">הוסף</button>
@@ -3115,7 +3126,7 @@ function thumb(code, cls = "thumb", attrs = "") {
 function imgFail(el) {
   if (el.dataset.alt) { const [next, ...rest] = el.dataset.alt.split("|"); el.dataset.alt = rest.join("|"); el.src = next; return; }
   if (el.classList.contains("sm") || el.classList.contains("big-img")) return el.remove();
-  if (el.classList.contains("tile-img")) { el.outerHTML = `<span class="tile-ph" data-act="img">${el.dataset.ph || "🛒"}</span>`; return; }
+  if (el.classList.contains("tile-img")) { el.outerHTML = `<span class="tile-ph" data-act="img" role="button" tabindex="0" aria-label="פרטי המוצר">${el.dataset.ph || "🛒"}</span>`; return; }
   el.outerHTML = `<div class="thumb-ph">🛒</div>`;
 }
 // חלון המוצר: תמונה גדולה, המחיר בכל רשת (מבצע, מחיר ל-100 גרם, שינוי מחיר, מוצר מקביל), הערה, והחלפת מוצר
@@ -3206,6 +3217,24 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowUp") { acSel = acSel <= 0 ? acRows.length - 1 : acSel - 1; acMark(); e.preventDefault(); }
   else if (e.key === "Enter" && acSel >= 0) { e.preventDefault(); acPick(acSel); }
   else if (e.key === "Escape") acHide();
+});
+// נגישות מקלדת: Enter/רווח מפעילים אלמנט עם role=button/checkbox שאינו כפתור אמיתי;
+// Escape סוגר חלון; Tab מסתובב בתוך החלון הפתוח (ולא בורח לרשימה שמאחוריו)
+document.addEventListener("keydown", e => {
+  if (document.querySelector(".dlg-bg")) return;
+  const r = e.target.closest?.('[role="button"], [role="checkbox"]');
+  if (r && r.tagName !== "BUTTON" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); r.click(); return; }
+  if (!sheetOpen()) return;
+  if (e.key === "Escape") { e.preventDefault(); sheetGoBack(); return; }
+  if (e.key === "Tab") {
+    const sh = $(".sheet"); if (!sh) return;
+    const f = [...sh.querySelectorAll('button, [href], input, select, textarea, [tabindex="0"]')].filter(x => !x.disabled && x.offsetParent);
+    if (!f.length) return;
+    const a = f[0], z = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === a || document.activeElement === sh)) { e.preventDefault(); z.focus(); }
+    else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    else if (!sh.contains(document.activeElement)) { e.preventDefault(); a.focus(); }
+  }
 });
 // mousedown ולא click: כדי שהשדה לא יאבד פוקוס לפני הבחירה
 document.addEventListener("mousedown", e => {
@@ -4210,10 +4239,15 @@ function render() {
   setTimeout(maybeOnboard, 0);
   const view = $("#view");
   const focus = document.activeElement?.id, val = focus && $("#" + focus)?.value;
+  const fEl = document.activeElement, fId = fEl?.closest?.("[data-id]")?.dataset.id, fAct = fEl?.dataset?.act;
   view.innerHTML = gate !== "ok" ? renderGate() : { list: renderList, meals: renderMeals, prices: renderPrices, settings: renderSettings, help: renderHelp }[tab]();
   renderSendBar();
   if (focus && $("#" + focus)) { const el = $("#" + focus); el.value = val; el.focus(); }
   if (focus === "add-input" && val) acShow();
+  if (!focus && fId && fAct) {
+    const again = view.querySelector(`[data-id="${CSS.escape(fId)}"] [data-act="${CSS.escape(fAct)}"]:not([tabindex="-1"])`) || view.querySelector(`[data-id="${CSS.escape(fId)}"] [data-act="toggle"][tabindex="0"]`);
+    again?.focus({ preventScroll: true });
+  }
   view.querySelectorAll(".lang-sel").forEach(s => s.onchange = () => I18N.set(s.value));
   // בורר השפה בכותרת (🌐) – נבנה פעם אחת
   const ls = $("#lang-slot");
@@ -4238,7 +4272,7 @@ function runSheetCleanup() { const f = sheetCleanup; sheetCleanup = null; try { 
 // ---------- חזרה למסך הקודם ----------
 // לכל חלון יש כפתור "→ חזרה". חלון שנפתח מתוך חלון אחר (sub) חוזר אליו; אחרת "חזרה" סוגרת וחוזרים למסך שמתחת.
 // גם כפתור/מחוות "חזרה" של הטלפון (והדפדפן) עושים אותו דבר, במקום לצאת מהאפליקציה.
-let sheetBack = null, nextBack = null, ignorePop = 0;
+let sheetBack = null, nextBack = null, ignorePop = 0, sheetOpener = null;
 const sheetOpen = () => !!$("#sheet-root").innerHTML;
 // פותח חלון מתוך החלון הנוכחי, כך ש"חזרה" תחזיר לחלון הנוכחי
 const sub = (open, back) => { nextBack = back; open(); };
@@ -4246,14 +4280,18 @@ function sheet(html) {
   runSheetCleanup();
   const wasOpen = sheetOpen();
   sheetBack = nextBack; nextBack = null;
-  $("#sheet-root").innerHTML = `<div class="sheet-bg"><div class="sheet"><button type="button" class="sheet-back" data-back aria-label="חזרה למסך הקודם">→ חזרה</button>${html}</div></div>`;
+  if (!wasOpen) { const o = document.activeElement; sheetOpener = { el: o, id: o?.closest?.("[data-id]")?.dataset.id, act: o?.dataset?.act, sel: o?.id ? "#" + CSS.escape(o.id) : null }; }
+  $("#sheet-root").innerHTML = `<div class="sheet-bg"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><button type="button" class="sheet-back" data-back aria-label="חזרה למסך הקודם">→ חזרה</button>${html}</div></div>`;
   const bg = $(".sheet-bg");
   bg.onclick = e => {
     if (e.target.closest("[data-back]")) return sheetGoBack();
     if (e.target === bg || e.target.matches("[data-close]")) closeSheet();
   };
+  const sh = bg.querySelector(".sheet"), h = sh.querySelector("h2, h3");
+  if (h) { h.id ||= "sheet-title"; sh.setAttribute("aria-labelledby", h.id); }
   const first = bg.querySelector("input");
   if (first && matchMedia("(pointer: fine)").matches) first.focus();
+  else sh.focus({ preventScroll: true });
   if (!wasOpen) try { history.pushState({ slSheet: 1 }, ""); } catch {}
 }
 function sheetGoBack() {
@@ -4267,6 +4305,12 @@ function closeSheet() {
   const was = sheetOpen();
   $("#sheet-root").innerHTML = "";
   sheetBack = nextBack = null;
+  if (was && sheetOpener) {
+    const o = sheetOpener;
+    const el = o.el?.isConnected ? o.el : (o.sel && $(o.sel)) || (o.id && o.act && document.querySelector(`[data-id="${CSS.escape(o.id)}"] [data-act="${CSS.escape(o.act)}"]:not([tabindex="-1"])`));
+    if (el && el !== document.body) el.focus({ preventScroll: true });
+  }
+  sheetOpener = null;
   if (was && history.state?.slSheet) { ignorePop++; history.back(); }
 }
 window.addEventListener("popstate", () => {
@@ -4285,8 +4329,8 @@ let toastTimer;
 function toast(msg, undo) {
   document.querySelector(".toast")?.remove();
   const el = document.createElement("div"); el.className = "toast" + (undo ? " has-undo" : "");
-  el.setAttribute("role", "status");
   const t = document.createElement("span"); t.textContent = msg; el.append(t);
+  const lv = $("#sr-live"); if (lv) { lv.textContent = ""; setTimeout(() => { lv.textContent = t.textContent; }, 50); }
   if (undo) {
     const b = document.createElement("button"); b.type = "button"; b.textContent = "↶ בטל";
     b.onclick = () => { clearTimeout(toastTimer); el.remove(); undo(); };
@@ -4340,7 +4384,7 @@ document.querySelector("nav").onclick = async e => {
   if (!b) return;
   const from = tab;
   tab = b.dataset.tab;
-  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("nav button").forEach(x => { x.classList.toggle("on", x === b); if (x === b) x.setAttribute("aria-current", "page"); else x.removeAttribute("aria-current"); });
   // מעבר מהרשימה ללשונית אחרת נרשם, כדי ש"חזרה" בטלפון תחזיר לרשימה (ולא תצא מהאפליקציה)
   try {
     if (from === "list" && tab !== "list" && !history.state?.slTab) history.pushState({ slTab: 1 }, "");
